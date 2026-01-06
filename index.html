@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AE86 Freeroam</title>
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <div id="loading-screen">
         <div class="loader">
@@ -16,7 +18,12 @@
 
     <div id="game-container">
         <canvas id="game-canvas"></canvas>
-        
+
+        <!-- Cockpit Overlay (First Person View) -->
+        <div id="cockpit-overlay" class="hidden">
+            <img src="assets/car-cockpit.png" alt="Cockpit" />
+        </div>
+
         <!-- HUD -->
         <div id="hud">
             <div id="speedometer">
@@ -63,7 +70,8 @@
         }
     }
     </script>
-    
+
     <script type="module" src="js/main.js"></script>
 </body>
+
 </html>

@@ -71,6 +71,33 @@ body {
     display: block;
 }
 
+/* Cockpit Overlay (First Person View) */
+#cockpit-overlay {
+    position: absolute;
+    top: 60px;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 100;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    transition: opacity 0.3s ease;
+}
+
+#cockpit-overlay img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center bottom;
+}
+
+#cockpit-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
 /* HUD */
 #hud {
     position: absolute;

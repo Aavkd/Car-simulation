@@ -9,7 +9,7 @@ export class CameraController {
         this.domElement = domElement || document.body;
 
         // Camera modes
-        this.modes = ['chase', 'far', 'hood'];
+        this.modes = ['chase', 'far', 'hood', 'cockpit'];
         this.currentModeIndex = 0;
 
         // Mode configurations
@@ -31,6 +31,12 @@ export class CameraController {
                 height: 1.2,
                 lookAtHeight: 1.5,
                 fov: 75
+            },
+            cockpit: {
+                distance: 0,        // Inside the car
+                height: 4.5,        // Driver eye level (scaled for the large car model)
+                lookAtHeight: 4.5,  // Look straight ahead
+                fov: 85             // Wide FOV for immersive cockpit view
             }
         };
 
@@ -164,6 +170,10 @@ export class CameraController {
         return this.modeConfigs[this.currentMode];
     }
 
+    get isCockpitMode() {
+        return this.currentMode === 'cockpit';
+    }
+
     nextMode() {
         this.currentModeIndex = (this.currentModeIndex + 1) % this.modes.length;
         // Reset orbit when changing modes
@@ -192,17 +202,58 @@ export class CameraController {
 
         const config = this.config;
 
-        // Smooth orbit angle interpolation
-        this.orbitAngleX = THREE.MathUtils.lerp(this.orbitAngleX, this.targetOrbitX, 8 * deltaTime);
-        this.orbitAngleY = THREE.MathUtils.lerp(this.orbitAngleY, this.targetOrbitY, 8 * deltaTime);
-
         // Get target's world position and direction
         const targetPos = new THREE.Vector3();
         target.getWorldPosition(targetPos);
 
-        // Car forward is +Z, so camera should be behind at -Z relative to car
+        // Car forward is +Z
         const targetDir = new THREE.Vector3(0, 0, 1);
         targetDir.applyQuaternion(target.quaternion);
+
+        // Handle cockpit (first-person) mode specially
+        if (this.isCockpitMode) {
+            // Position camera inside the car at driver's head position
+            const cockpitOffset = new THREE.Vector3(0, config.height, 2); // Slightly forward of center
+            cockpitOffset.applyQuaternion(target.quaternion);
+
+            const desiredPosition = new THREE.Vector3();
+            desiredPosition.copy(targetPos).add(cockpitOffset);
+
+            // Look forward in the car's direction
+            const lookAtPoint = new THREE.Vector3();
+            lookAtPoint.copy(targetPos);
+            lookAtPoint.add(targetDir.clone().multiplyScalar(50)); // Look 50 units ahead
+            lookAtPoint.y = targetPos.y + config.lookAtHeight;
+
+            // Faster smoothing for responsive first-person feel
+            this.currentPosition.lerp(desiredPosition, 15 * deltaTime);
+            this.currentLookAt.lerp(lookAtPoint, 15 * deltaTime);
+
+            // Apply position with reduced shake for cockpit
+            const shakeOffset = new THREE.Vector3();
+            if (this.shakeIntensity > 0.01) {
+                shakeOffset.x = (Math.random() - 0.5) * this.shakeIntensity * 0.03;
+                shakeOffset.y = (Math.random() - 0.5) * this.shakeIntensity * 0.03;
+                shakeOffset.z = (Math.random() - 0.5) * this.shakeIntensity * 0.03;
+                this.shakeIntensity -= this.shakeDecay * deltaTime;
+            }
+
+            this.camera.position.copy(this.currentPosition).add(shakeOffset);
+            this.camera.lookAt(this.currentLookAt);
+
+            // Speed-based FOV for cockpit
+            const speedRatio = Math.min(speed / this.maxSpeedForFov, 1);
+            const targetFov = config.fov + speedRatio * this.maxFovIncrease * 0.7; // Reduced FOV increase
+            this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, this.fovSmoothing * deltaTime);
+            this.camera.fov = this.currentFov;
+            this.camera.updateProjectionMatrix();
+            return;
+        }
+
+        // Standard third-person camera modes (chase, far, hood)
+        // Smooth orbit angle interpolation
+        this.orbitAngleX = THREE.MathUtils.lerp(this.orbitAngleX, this.targetOrbitX, 8 * deltaTime);
+        this.orbitAngleY = THREE.MathUtils.lerp(this.orbitAngleY, this.targetOrbitY, 8 * deltaTime);
 
         // Calculate base camera offset (behind the car = negative of forward direction)
         // Use currentDistance instead of config.distance
@@ -223,12 +274,12 @@ export class CameraController {
         // orbitAngleY controls elevation: negative = look from above, positive = look from below
         const cosY = Math.cos(this.orbitAngleY);
         const sinY = Math.sin(this.orbitAngleY);
-        
+
         // Scale horizontal offset by cosY (camera gets closer horizontally when pitched)
         const horizontalScale = cosY;
         offsetX *= horizontalScale;
         offsetZ *= horizontalScale;
-        
+
         // Height is based on config height plus vertical orbit component
         offsetY = config.height + this.currentDistance * sinY;
 

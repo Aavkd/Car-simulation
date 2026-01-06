@@ -96,6 +96,11 @@ export class CarPhysics {
         // Headlights
         this.headlightsOn = false;
         this._createHeadlights();
+
+        // Taillights (rear lights)
+        this.taillightsOn = false;
+        this.isBraking = false;
+        this._createTaillights();
     }
 
     /**
@@ -173,6 +178,99 @@ export class CarPhysics {
             glow.position.set(pos.x, pos.y, pos.z + 0.3);
             this.mesh.add(glow);
             this.headlightGlows.push(glow);
+        });
+    }
+
+    /**
+     * Create taillights (rear red lights) for the car
+     */
+    _createTaillights() {
+        this.taillights = [];
+        this.taillightGlows = [];
+        
+        // Taillight positions (rear left and rear right) - at back of car
+        const rearZ = -this.specs.length / 2;  // Rear edge of car
+        const taillightPositions = [
+            { x: -2., y: 3, z: rearZ },  // Left taillight
+            { x: 2, y: 3, z: rearZ }    // Right taillight
+        ];
+
+        taillightPositions.forEach((pos) => {
+            // Main rear light (always dim red at night, bright when braking)
+            const rearLight = new THREE.PointLight(0xff0000, 0, 50, 1.5);
+            rearLight.position.set(pos.x, pos.y, pos.z);
+            this.mesh.add(rearLight);
+            this.taillights.push({ light: rearLight, type: 'rear' });
+
+            // Spotlight pointing backward for brake light effect on ground
+            const brakeSpot = new THREE.SpotLight(0xff0000, 0, 100, Math.PI / 4, 0.5, 1.0);
+            brakeSpot.position.set(pos.x, pos.y, pos.z);
+            
+            const brakeTarget = new THREE.Object3D();
+            brakeTarget.position.set(pos.x, pos.y - 5, pos.z - 50);
+            brakeSpot.target = brakeTarget;
+            
+            this.mesh.add(brakeSpot);
+            this.mesh.add(brakeTarget);
+            this.taillights.push({ light: brakeSpot, target: brakeTarget, type: 'brakespot' });
+        });
+
+        // Add taillight glow meshes (invisible - only the light effect is visible)
+        taillightPositions.forEach((pos) => {
+            const glowGeom = new THREE.SphereGeometry(0.4, 8, 8);
+            const glowMat = new THREE.MeshBasicMaterial({
+                color: 0xff0000,
+                transparent: true,
+                opacity: 0,
+                visible: false
+            });
+            const glow = new THREE.Mesh(glowGeom, glowMat);
+            glow.visible = false;  // Hide the bulb mesh entirely
+            glow.position.set(pos.x, pos.y, pos.z - 0.3);
+            this.mesh.add(glow);
+            this.taillightGlows.push(glow);
+        });
+    }
+
+    /**
+     * Update taillights based on night time and braking
+     * @param {boolean} isNight - Whether it's currently night time
+     * @param {boolean} isBraking - Whether the car is currently braking
+     */
+    updateTaillights(isNight, isBraking) {
+        this.taillightsOn = isNight;
+        this.isBraking = isBraking;
+        
+        // Determine light intensities
+        // Night mode: dim red lights always on
+        // Braking: bright red lights (day or night)
+        const nightBaseIntensity = isNight ? 3.0 : 0;
+        const brakeIntensity = isBraking ? 15.0 : 0;
+        const brakeSpotIntensity = isBraking ? 25.0 : 0;
+        
+        this.taillights.forEach((tl) => {
+            if (tl.type === 'rear') {
+                // Combine night base + brake boost
+                tl.light.intensity = nightBaseIntensity + brakeIntensity;
+            } else if (tl.type === 'brakespot') {
+                // Brake spotlight only active when braking
+                tl.light.intensity = brakeSpotIntensity;
+            }
+        });
+        
+        // Update glow opacity
+        const nightGlowOpacity = isNight ? 0.4 : 0;
+        const brakeGlowOpacity = isBraking ? 1.0 : 0;
+        const totalGlowOpacity = Math.min(nightGlowOpacity + brakeGlowOpacity, 1.0);
+        
+        this.taillightGlows.forEach((glow) => {
+            glow.material.opacity = totalGlowOpacity;
+            // Make the glow color brighter when braking
+            if (isBraking) {
+                glow.material.color.setHex(0xff2200);  // Brighter red-orange
+            } else {
+                glow.material.color.setHex(0xff0000);  // Normal red
+            }
         });
     }
 

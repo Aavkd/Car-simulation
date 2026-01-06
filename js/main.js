@@ -94,6 +94,9 @@ class Game {
             timeStatus: document.querySelector('.time-status')
         };
 
+        // Cockpit overlay element
+        this.cockpitOverlay = document.getElementById('cockpit-overlay');
+
         // Time control state
         this.timeSpeed = 1.0;  // Multiplier for time passage
         this.timePaused = false;
@@ -124,7 +127,7 @@ class Game {
 
         // Setup camera controller (pass canvas for mouse events)
         this.cameraController = new CameraController(this.camera, this.canvas);
-        this.input.onCameraChange = () => this.cameraController.nextMode();
+        this.input.onCameraChange = () => this._handleCameraChange();
 
         // Initialize car physics
         this.car = new CarPhysics(this.carMesh, this.terrain, this.scene);
@@ -308,7 +311,7 @@ class Game {
         this.camera.updateProjectionMatrix();
 
         this.renderer.setSize(width, height);
-        
+
         // Update post-processing composer and shader resolution
         if (this.composer) {
             this.composer.setSize(width, height);
@@ -344,12 +347,12 @@ class Game {
             } else if (this.input.keys.timeBackward) {
                 effectiveTimeSpeed = -10.0;  // Rewind
             }
-            
+
             // Temporarily adjust day duration based on speed
             if (!this.timePaused) {
                 const baseDuration = 300;  // 5 minutes base
                 this.sky.setDayDuration(baseDuration / Math.abs(effectiveTimeSpeed));
-                
+
                 // Handle rewind by manually adjusting time
                 if (effectiveTimeSpeed < 0) {
                     this.sky.setPaused(true);
@@ -359,12 +362,18 @@ class Game {
                     this.sky.setPaused(false);
                 }
             }
-            
+
             this.sky.update(deltaTime, this.camera.position);
 
             // Update car headlights based on time of day (unless manual override)
             if (this.car && !this.headlightsManualOverride) {
                 this.car.setHeadlights(this.sky.isNight());
+            }
+
+            // Update taillights based on night and braking status
+            if (this.car) {
+                const isBraking = this.input.brake > 0.1 || this.input.handbrake > 0.1;
+                this.car.updateTaillights(this.sky.isNight(), isBraking);
             }
         }
 
@@ -410,12 +419,12 @@ class Game {
         // Time display
         if (this.sky && this.hudElements.timeValue) {
             this.hudElements.timeValue.textContent = this.sky.getTimeString();
-            
+
             // Update time status
             const statusEl = this.hudElements.timeStatus;
             if (statusEl) {
                 statusEl.classList.remove('paused', 'fast-forward', 'rewind');
-                
+
                 if (this.timePaused) {
                     statusEl.textContent = '⏸ PAUSED';
                     statusEl.classList.add('paused');
@@ -441,7 +450,7 @@ class Game {
 
     _setTimePreset(preset) {
         if (!this.sky) return;
-        
+
         // Time presets: 1 = Dawn, 2 = Noon, 3 = Sunset, 4 = Midnight
         const presets = {
             1: 0.25,   // Dawn (6:00)
@@ -449,7 +458,7 @@ class Game {
             3: 0.75,   // Sunset (18:00)
             4: 0.0     // Midnight (00:00)
         };
-        
+
         if (presets[preset] !== undefined) {
             this.sky.setTime(presets[preset]);
         }
@@ -457,10 +466,31 @@ class Game {
 
     _toggleHeadlights() {
         if (!this.car) return;
-        
+
         // Enable manual override and toggle
         this.headlightsManualOverride = true;
         this.car.toggleHeadlights();
+    }
+
+    _handleCameraChange() {
+        this.cameraController.nextMode();
+
+        // Check if in cockpit (first-person) mode
+        const isCockpit = this.cameraController.isCockpitMode;
+
+        // Toggle car 3D model visibility (hide in cockpit mode)
+        if (this.carMesh) {
+            this.carMesh.visible = !isCockpit;
+        }
+
+        // Toggle cockpit overlay visibility (show in cockpit mode)
+        if (this.cockpitOverlay) {
+            if (isCockpit) {
+                this.cockpitOverlay.classList.remove('hidden');
+            } else {
+                this.cockpitOverlay.classList.add('hidden');
+            }
+        }
     }
 
     _toggleRetroFilter() {
