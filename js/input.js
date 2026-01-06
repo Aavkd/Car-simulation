@@ -11,7 +11,8 @@ export class InputHandler {
             handbrake: false,
             shiftUp: false,
             shiftDown: false,
-            camera: false
+            camera: false,
+            debug: false
         };
 
         // Smoothed input values (0-1 range)
@@ -44,7 +45,7 @@ export class InputHandler {
             case 'ArrowDown':
                 this.keys.backward = true;
                 break;
-            case 'KeyA':
+            case 'KeyQ':
             case 'ArrowLeft':
                 this.keys.left = true;
                 break;
@@ -62,6 +63,24 @@ export class InputHandler {
                     this.onCameraChange?.();
                 }
                 break;
+            case 'KeyP':
+                if (!this.keys.debug) {
+                    this.keys.debug = true;
+                    this.onDebugToggle?.();
+                }
+                break;
+            case 'KeyA':
+                if (!this.keys.shiftDown) {
+                    this.keys.shiftDown = true;
+                    this.onShiftDown?.();
+                }
+                break;
+            case 'KeyE':
+                if (!this.keys.shiftUp) {
+                    this.keys.shiftUp = true;
+                    this.onShiftUp?.();
+                }
+                break;
         }
     }
 
@@ -75,7 +94,7 @@ export class InputHandler {
             case 'ArrowDown':
                 this.keys.backward = false;
                 break;
-            case 'KeyA':
+            case 'KeyQ':
             case 'ArrowLeft':
                 this.keys.left = false;
                 break;
@@ -89,6 +108,15 @@ export class InputHandler {
             case 'KeyC':
                 this.keys.camera = false;
                 break;
+            case 'KeyP':
+                this.keys.debug = false;
+                break;
+            case 'KeyA':
+                this.keys.shiftDown = false;
+                break;
+            case 'KeyE':
+                this.keys.shiftUp = false;
+                break;
         }
     }
 
@@ -97,24 +125,123 @@ export class InputHandler {
      * @param {number} deltaTime - Time since last frame in seconds
      */
     update(deltaTime) {
+        this._updateGamepad(deltaTime);
+
         // Throttle
-        const targetThrottle = this.keys.forward ? 1 : 0;
+        let targetThrottle = this.keys.forward ? 1 : 0;
+        if (this.gamepad) {
+            targetThrottle = Math.max(targetThrottle, this.gamepad.throttle);
+        }
         this.throttle = this._lerp(this.throttle, targetThrottle, this.throttleRate * deltaTime);
 
         // Brake
-        const targetBrake = this.keys.backward ? 1 : 0;
+        let targetBrake = this.keys.backward ? 1 : 0;
+        if (this.gamepad) {
+            targetBrake = Math.max(targetBrake, this.gamepad.brake);
+        }
         this.brake = this._lerp(this.brake, targetBrake, this.brakeRate * deltaTime);
 
         // Steering
         let targetSteering = 0;
-        if (this.keys.left) targetSteering = 1;
-        if (this.keys.right) targetSteering = -1;
+        if (this.keys.left) targetSteering = -1;
+        if (this.keys.right) targetSteering = 1;
+
+        if (this.gamepad && Math.abs(this.gamepad.steering) > 0.1) {
+            targetSteering = this.gamepad.steering;
+        }
 
         const steerRate = targetSteering !== 0 ? this.steeringRate : this.steeringReturnRate;
         this.steering = this._lerp(this.steering, targetSteering, steerRate * deltaTime);
 
         // Handbrake
         this.handbrake = this.keys.handbrake ? 1 : 0;
+        if (this.gamepad && this.gamepad.handbrake) {
+            this.handbrake = 1;
+        }
+    }
+
+    _updateGamepad(deltaTime) {
+        const gamepads = navigator.getGamepads();
+        if (!gamepads) return;
+
+        // Find the first active gamepad
+        let gp = null;
+        for (const g of gamepads) {
+            if (g && g.connected) {
+                gp = g;
+                break;
+            }
+        }
+
+        if (!gp) {
+            this.gamepad = null;
+            return;
+        }
+
+        // Initialize gamepad state if needed
+        if (!this.gamepad) {
+            this.gamepad = {
+                throttle: 0,
+                brake: 0,
+                steering: 0,
+                handbrake: false,
+                lookX: 0,
+                lookY: 0
+            };
+            console.log("Gamepad connected:", gp.id);
+        }
+
+        // Standard Mapping (DualSense / Xbox)
+        // Axes: 0:L-Right, 1:L-Down, 2:R-Right, 3:R-Down
+        // Buttons: 6:L2, 7:R2, 4:L1, 5:R1, 0:X/A, 1:O/B, 2:Sq/X, 3:Tri/Y
+
+        // Normalize axes with deadzone
+        const deadzone = 0.1;
+
+        // Steering (Left Stick X - Axis 0)
+        let steerRaw = gp.axes[0];
+        if (Math.abs(steerRaw) < deadzone) steerRaw = 0;
+        this.gamepad.steering = steerRaw; // Left stick: negative = left, positive = right
+
+        // Throttle (R2 - Button 7)
+        // Gamepad API: buttons[7].value is 0..1
+        this.gamepad.throttle = gp.buttons[7].value;
+
+        // Brake (L2 - Button 6)
+        this.gamepad.brake = gp.buttons[6].value;
+
+        // Handbrake (X/A Button - Button 0 or Square - Button 2? Let's use Cross/A for handbrake usually, or maybe Circle)
+        // Request didn't specify, but space is handbrake. Let's map Button 0 (X/Cross on DS, A on Xbox) or Button 1 (Circle/B)
+        // Let's use Button 1 (Circle/B) for Handbrake as it's common in racing (or R1, but R1 is Gear Up requested)
+        this.gamepad.handbrake = gp.buttons[1].pressed; // Circle
+
+        // Camera (Right Stick - Axes 2, 3)
+        let camX = gp.axes[2];
+        let camY = gp.axes[3];
+        if (Math.abs(camX) < deadzone) camX = 0;
+        if (Math.abs(camY) < deadzone) camY = 0;
+        this.gamepad.lookX = camX;
+        this.gamepad.lookY = camY;
+
+        // Shifting (L1/R1 - Buttons 4, 5)
+        // We need single-press detection
+        if (gp.buttons[4].pressed) { // L1 - Down
+            if (!this._l1Pressed) {
+                this._l1Pressed = true;
+                this.onShiftDown?.();
+            }
+        } else {
+            this._l1Pressed = false;
+        }
+
+        if (gp.buttons[5].pressed) { // R1 - Up
+            if (!this._r1Pressed) {
+                this._r1Pressed = true;
+                this.onShiftUp?.();
+            }
+        } else {
+            this._r1Pressed = false;
+        }
     }
 
     _lerp(current, target, rate) {

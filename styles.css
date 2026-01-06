@@ -46,7 +46,9 @@ body {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .loader p {
@@ -89,7 +91,7 @@ body {
     padding: 20px 30px;
     text-align: center;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5),
-                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .speed-value {
@@ -211,11 +213,11 @@ kbd {
         bottom: 15px;
         right: 15px;
     }
-    
+
     .speed-value {
         font-size: 48px;
     }
-    
+
     #controls-help {
         display: none;
     }

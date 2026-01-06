@@ -58,7 +58,8 @@ class Game {
         this.input.onCameraChange = () => this.cameraController.nextMode();
 
         // Initialize car physics
-        this.car = new CarPhysics(this.carMesh, this.terrain);
+        this.car = new CarPhysics(this.carMesh, this.terrain, this.scene);
+        this.input.onDebugToggle = () => this.car.toggleDebug();
 
         // Start position
         const startX = 0;
@@ -257,6 +258,16 @@ class Game {
 
         // Update camera
         if (this.cameraController && this.carMesh) {
+            // Apply gamepad camera control
+            if (this.input.gamepad) {
+                // Adjust sensitivity as needed
+                this.cameraController.handleAnalogInput(
+                    this.input.gamepad.lookX,
+                    this.input.gamepad.lookY,
+                    20.0 // Stick needs much higher multiplier than mouse pixels
+                );
+            }
+
             this.cameraController.update(
                 this.carMesh,
                 this.car ? Math.abs(this.car.speed) : 0,

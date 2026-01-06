@@ -59,10 +59,15 @@ export class CameraController {
         this.targetOrbitX = 0;
         this.targetOrbitY = 0;
 
+        // Zoom/Distance control
+        this.currentDistance = this.modeConfigs.chase.distance; // Initialize with default
+        this.minDistance = 2;
+        this.maxDistance = 20;
+
         this.orbitSensitivity = 0.003;
-        this.orbitReturnSpeed = 2;    // Speed at which camera returns to default position
-        this.minOrbitY = -0.3;        // Min pitch (looking up)
-        this.maxOrbitY = 0.8;         // Max pitch (looking down)
+        this.zoomSensitivity = 0.005; // Zoom speed
+        this.minOrbitY = -0.2;        // Min pitch (looking from below)
+        this.maxOrbitY = 1.2;         // Max pitch (looking from above, ~70 degrees)
 
         this.isMouseDown = false;
         this.lastMouseX = 0;
@@ -76,9 +81,24 @@ export class CameraController {
         this.domElement.addEventListener('mouseup', (e) => this._onMouseUp(e));
         this.domElement.addEventListener('mousemove', (e) => this._onMouseMove(e));
         this.domElement.addEventListener('mouseleave', (e) => this._onMouseUp(e));
+        this.domElement.addEventListener('wheel', (e) => this._onMouseWheel(e), { passive: false });
 
         // Prevent context menu on right click
         this.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+
+    _onMouseWheel(e) {
+        // e.deltaY > 0 means scrolling down (zoom out), < 0 means scrolling up (zoom in)
+        this.currentDistance += e.deltaY * this.zoomSensitivity;
+
+        // Clamp distance
+        this.currentDistance = THREE.MathUtils.clamp(
+            this.currentDistance,
+            this.minDistance,
+            this.maxDistance
+        );
+
+        e.preventDefault(); // Prevent page scrolling if necessary
     }
 
     _onMouseDown(e) {
@@ -115,6 +135,27 @@ export class CameraController {
         this.lastMouseY = e.clientY;
     }
 
+    /**
+     * Handle analog input (e.g. from Gamepad)
+     * @param {number} x - Horizontal input (-1 to 1)
+     * @param {number} y - Vertical input (-1 to 1)
+     * @param {number} factor - Sensitivity multiplier
+     */
+    handleAnalogInput(x, y, factor = 1.0) {
+        if (Math.abs(x) < 0.05 && Math.abs(y) < 0.05) return;
+
+        const sensitivity = 2.0 * factor; // Higher base speed for stick
+        this.targetOrbitX += x * this.orbitSensitivity * sensitivity; // Multiply by orbitSensitivity (which is 0.003)
+        this.targetOrbitY += y * this.orbitSensitivity * sensitivity;
+
+        // Clamp vertical angle
+        this.targetOrbitY = THREE.MathUtils.clamp(
+            this.targetOrbitY,
+            this.minOrbitY,
+            this.maxOrbitY
+        );
+    }
+
     get currentMode() {
         return this.modes[this.currentModeIndex];
     }
@@ -128,6 +169,8 @@ export class CameraController {
         // Reset orbit when changing modes
         this.targetOrbitX = 0;
         this.targetOrbitY = 0;
+        // Reset distance to new mode's default
+        this.currentDistance = this.modeConfigs[this.currentMode].distance;
     }
 
     /**
@@ -149,12 +192,6 @@ export class CameraController {
 
         const config = this.config;
 
-        // Smoothly return orbit angles to default when not dragging
-        if (!this.isMouseDown) {
-            this.targetOrbitX = THREE.MathUtils.lerp(this.targetOrbitX, 0, this.orbitReturnSpeed * deltaTime);
-            this.targetOrbitY = THREE.MathUtils.lerp(this.targetOrbitY, 0, this.orbitReturnSpeed * deltaTime);
-        }
-
         // Smooth orbit angle interpolation
         this.orbitAngleX = THREE.MathUtils.lerp(this.orbitAngleX, this.targetOrbitX, 8 * deltaTime);
         this.orbitAngleY = THREE.MathUtils.lerp(this.orbitAngleY, this.targetOrbitY, 8 * deltaTime);
@@ -168,8 +205,9 @@ export class CameraController {
         targetDir.applyQuaternion(target.quaternion);
 
         // Calculate base camera offset (behind the car = negative of forward direction)
-        let offsetX = -targetDir.x * config.distance;
-        let offsetZ = -targetDir.z * config.distance;
+        // Use currentDistance instead of config.distance
+        let offsetX = -targetDir.x * this.currentDistance;
+        let offsetZ = -targetDir.z * this.currentDistance;
         let offsetY = config.height;
 
         // Apply orbit rotation around the car
@@ -181,9 +219,18 @@ export class CameraController {
         offsetX = rotatedX;
         offsetZ = rotatedZ;
 
-        // Apply vertical orbit (adjusts height and pulls camera in/out)
-        const verticalFactor = 1 + this.orbitAngleY * 0.5;
-        offsetY = config.height * verticalFactor;
+        // Apply vertical orbit (pitch) - camera orbits in a sphere around the car
+        // orbitAngleY controls elevation: negative = look from above, positive = look from below
+        const cosY = Math.cos(this.orbitAngleY);
+        const sinY = Math.sin(this.orbitAngleY);
+        
+        // Scale horizontal offset by cosY (camera gets closer horizontally when pitched)
+        const horizontalScale = cosY;
+        offsetX *= horizontalScale;
+        offsetZ *= horizontalScale;
+        
+        // Height is based on config height plus vertical orbit component
+        offsetY = config.height + this.currentDistance * sinY;
 
         // Calculate desired camera position
         const desiredPosition = new THREE.Vector3();
