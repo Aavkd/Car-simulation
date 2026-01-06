@@ -12,7 +12,13 @@ export class InputHandler {
             shiftUp: false,
             shiftDown: false,
             camera: false,
-            debug: false
+            debug: false,
+            timePause: false,
+            timeForward: false,
+            timeBackward: false,
+            timePreset: false,
+            headlights: false,
+            retroToggle: false
         };
 
         // Smoothed input values (0-1 range)
@@ -81,6 +87,40 @@ export class InputHandler {
                     this.onShiftUp?.();
                 }
                 break;
+            case 'KeyT':
+                if (!this.keys.timePause) {
+                    this.keys.timePause = true;
+                    this.onTimePause?.();
+                }
+                break;
+            case 'KeyH':
+                if (!this.keys.headlights) {
+                    this.keys.headlights = true;
+                    this.onHeadlightsToggle?.();
+                }
+                break;
+            case 'F4':
+                if (!this.keys.retroToggle) {
+                    this.keys.retroToggle = true;
+                    this.onRetroToggle?.();
+                }
+                e.preventDefault();
+                break;
+            case 'BracketRight':
+                this.keys.timeForward = true;
+                break;
+            case 'BracketLeft':
+                this.keys.timeBackward = true;
+                break;
+            case 'Digit1':
+            case 'Digit2':
+            case 'Digit3':
+            case 'Digit4':
+                if (!this.keys.timePreset) {
+                    this.keys.timePreset = true;
+                    this.onTimePreset?.(parseInt(e.code.replace('Digit', '')));
+                }
+                break;
         }
     }
 
@@ -116,6 +156,27 @@ export class InputHandler {
                 break;
             case 'KeyE':
                 this.keys.shiftUp = false;
+                break;
+            case 'KeyT':
+                this.keys.timePause = false;
+                break;
+            case 'KeyH':
+                this.keys.headlights = false;
+                break;
+            case 'F4':
+                this.keys.retroToggle = false;
+                break;
+            case 'BracketRight':
+                this.keys.timeForward = false;
+                break;
+            case 'BracketLeft':
+                this.keys.timeBackward = false;
+                break;
+            case 'Digit1':
+            case 'Digit2':
+            case 'Digit3':
+            case 'Digit4':
+                this.keys.timePreset = false;
                 break;
         }
     }

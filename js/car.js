@@ -14,7 +14,7 @@ export class CarPhysics {
 
         // ==================== VEHICLE SPECS (AE86-inspired) ====================
         this.specs = {
-            mass: 900,                    // kg
+            mass: 1100,                    // kg
             wheelBase: 10.55,              // m (increased matches visual better)
             trackWidth: 6.55,             // m (increased matches visual better)
             cgHeight: 2.4,                // Center of gravity height (Scaled ~4.4x)
@@ -27,7 +27,7 @@ export class CarPhysics {
             // Suspension (tuned for 900kg)
             suspensionRestLength: 1.5,
             suspensionTravel: 1.1,
-            springStrength: 12000,        // N/m - reduced for lighter car
+            springStrength: 10000,        // N/m - reduced for lighter car
             damperStrength: 1500,         // Reduced for lighter car
 
             // Wheels
@@ -68,7 +68,7 @@ export class CarPhysics {
 
         // Derived - Note: In Three.js, -Z is forward
         this.forward = new THREE.Vector3(0, 0, 1);
-        this.right = new THREE.Vector3(1, 0, 0);
+        this.right = new THREE.Vector3(0, 0, 0);
         this.up = new THREE.Vector3(0, 1, 0);
 
         this.speed = 0;
@@ -92,6 +92,121 @@ export class CarPhysics {
         this.throttleInput = 0;
         this.brakeInput = 0;
         this.handbrakeInput = 0;
+
+        // Headlights
+        this.headlightsOn = false;
+        this._createHeadlights();
+    }
+
+    /**
+     * Create headlights for the car
+     */
+    _createHeadlights() {
+        this.headlights = [];
+        
+        // Headlight positions (front left and front right) - at front of car hitbox
+        const frontZ = this.specs.length / 2;  // Front edge of car
+        const headlightPositions = [
+            { x: -2.2, y: 1.5, z: frontZ },  // Left headlight
+            { x: 2.2, y: 1.5, z: frontZ }    // Right headlight
+        ];
+
+        headlightPositions.forEach((pos, index) => {
+            // Main spotlight (low beam) - wider angle, medium range
+            const spotlight = new THREE.SpotLight(0xfff8e8, 0, 600, Math.PI / 3.5, 0.3, 0.8);
+            spotlight.position.set(pos.x, pos.y, pos.z);
+            spotlight.castShadow = true;
+            spotlight.shadow.mapSize.width = 1024;
+            spotlight.shadow.mapSize.height = 1024;
+            
+            // Create target for the spotlight (points forward and slightly down)
+            const target = new THREE.Object3D();
+            target.position.set(pos.x * 0.3, pos.y - 10, pos.z + 150);
+            
+            spotlight.target = target;
+            
+            this.mesh.add(spotlight);
+            this.mesh.add(target);
+            
+            this.headlights.push({ light: spotlight, target: target, type: 'main' });
+
+            // High beam spotlight - narrower, longer range
+            const highBeam = new THREE.SpotLight(0xffffff, 0, 1000, Math.PI / 6, 0.15, 0.6);
+            highBeam.position.set(pos.x, pos.y, pos.z);
+            
+            const highBeamTarget = new THREE.Object3D();
+            highBeamTarget.position.set(pos.x * 0.2, pos.y - 6, pos.z + 400);
+            highBeam.target = highBeamTarget;
+            
+            this.mesh.add(highBeam);
+            this.mesh.add(highBeamTarget);
+            
+            this.headlights.push({ light: highBeam, target: highBeamTarget, type: 'highbeam' });
+
+            // Add a point light for local/ground illumination
+            const pointLight = new THREE.PointLight(0xfff5e6, 0, 120, 1.2);
+            pointLight.position.set(pos.x, pos.y - 0.5, pos.z + 2);
+            this.mesh.add(pointLight);
+            this.headlights.push({ light: pointLight, type: 'point' });
+        });
+
+        // Add center flood light for road illumination
+        const floodLight = new THREE.SpotLight(0xfff8e8, 0, 500, Math.PI / 2.5, 0.4, 1.0);
+        floodLight.position.set(0, 2.0, frontZ);
+        const floodTarget = new THREE.Object3D();
+        floodTarget.position.set(0, -8, frontZ + 150);
+        floodLight.target = floodTarget;
+        this.mesh.add(floodLight);
+        this.mesh.add(floodTarget);
+        this.headlights.push({ light: floodLight, target: floodTarget, type: 'flood' });
+
+        // Add headlight glow meshes (visible light sources)
+        this.headlightGlows = [];
+        headlightPositions.forEach((pos) => {
+            const glowGeom = new THREE.SphereGeometry(0.5, 8, 8);
+            const glowMat = new THREE.MeshBasicMaterial({
+                color: 0xffffcc,
+                transparent: true,
+                opacity: 0
+            });
+            const glow = new THREE.Mesh(glowGeom, glowMat);
+            glow.position.set(pos.x, pos.y, pos.z + 0.3);
+            this.mesh.add(glow);
+            this.headlightGlows.push(glow);
+        });
+    }
+
+    /**
+     * Set headlights on or off
+     * @param {boolean} on - Whether headlights should be on
+     */
+    setHeadlights(on) {
+        if (this.headlightsOn === on) return;
+        
+        this.headlightsOn = on;
+        
+        this.headlights.forEach((hl) => {
+            if (hl.type === 'main') {
+                hl.light.intensity = on ? 50.0 : 0;  // Very bright low beams
+            } else if (hl.type === 'highbeam') {
+                hl.light.intensity = on ? 80.0 : 0;  // Extremely bright high beams for distance
+            } else if (hl.type === 'point') {
+                hl.light.intensity = on ? 15.0 : 0;  // Strong local illumination
+            } else if (hl.type === 'flood') {
+                hl.light.intensity = on ? 35.0 : 0;  // Powerful flood light for road
+            }
+        });
+        
+        this.headlightGlows.forEach((glow) => {
+            glow.material.opacity = on ? 1.0 : 0;
+        });
+    }
+
+    /**
+     * Toggle headlights on/off
+     */
+    toggleHeadlights() {
+        this.setHeadlights(!this.headlightsOn);
     }
 
     /**
