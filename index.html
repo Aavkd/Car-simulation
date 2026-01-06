@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AE86 Freeroam</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="loading-screen">
+        <div class="loader">
+            <div class="spinner"></div>
+            <p>Loading AE86...</p>
+        </div>
+    </div>
+
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        
+        <!-- HUD -->
+        <div id="hud">
+            <div id="speedometer">
+                <div class="speed-value">0</div>
+                <div class="speed-unit">km/h</div>
+            </div>
+            <div id="gear-indicator">
+                <span class="gear-label">GEAR</span>
+                <span class="gear-value">N</span>
+            </div>
+            <div id="rpm-bar">
+                <div class="rpm-fill"></div>
+                <div class="rpm-redline"></div>
+            </div>
+        </div>
+
+        <!-- Controls Help -->
+        <div id="controls-help">
+            <div class="control"><kbd>W</kbd> / <kbd>↑</kbd> Accelerate</div>
+            <div class="control"><kbd>S</kbd> / <kbd>↓</kbd> Brake/Reverse</div>
+            <div class="control"><kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd> Steer</div>
+            <div class="control"><kbd>SPACE</kbd> Handbrake</div>
+            <div class="control"><kbd>C</kbd> Change Camera</div>
+        </div>
+    </div>
+
+    <!-- Three.js and dependencies -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
