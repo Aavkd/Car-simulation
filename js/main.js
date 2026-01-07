@@ -7,6 +7,7 @@ import { InputHandler } from './input.js';
 import { CameraController } from './camera.js';
 import { TerrainGenerator } from './terrain.js';
 import { CarPhysics } from './car.js';
+import { PlayerController } from './player.js';
 import { SkySystem } from './sky.js';
 import { LevelManager } from './level-manager.js';
 import { LevelData, getAllLevels } from './level-data.js';
@@ -95,7 +96,11 @@ class Game {
         this.terrain = null;
         this.car = null;
         this.carMesh = null;
+        this.player = null;  // On-foot player controller
         this.sky = null;
+
+        // Player mode state
+        this.isOnFoot = false;
 
         // Timing
         this.clock = new THREE.Clock();
@@ -110,6 +115,9 @@ class Game {
             timeStatus: document.querySelector('.time-status')
         };
 
+        // Cockpit overlay element
+        this.cockpitOverlay = document.getElementById('cockpit-overlay');
+
         // Time control state
         this.timeSpeed = 1.0;  // Multiplier for time passage
         this.timePaused = false;
@@ -117,37 +125,149 @@ class Game {
         // Headlights state
         this.headlightsManualOverride = false;  // When true, ignores auto on/off
 
+        // Retro filter state
+        this.retroEnabled = true;
+
         this._init();
     }
 
     async _init() {
+        // Phase 1: Setup core rendering systems (always needed)
         this._setupRenderer();
         this._setupScene();
         this._setupLighting();
         this._setupPostProcessing();
         this._setupInput();
 
-        // Generate terrain
-        this.terrain = new TerrainGenerator();
+        // Setup camera controller (needed for menu showcase view)
+        this.cameraController = new CameraController(this.camera, this.canvas);
+        this.input.onRetroToggle = () => this._toggleRetroFilter();
+
+        // Hide loading screen, show main menu
+        this.loadingScreen.classList.add('hidden');
+
+        // Populate and show main menu
+        this._setupMainMenu();
+        this._enterMenuState();
+
+        // Start render loop (always runs, state controls what's updated)
+        this._animate();
+    }
+
+    /**
+     * Setup main menu UI with level cards
+     */
+    _setupMainMenu() {
+        const levelGrid = document.getElementById('level-grid');
+        if (!levelGrid) return;
+
+        const levels = getAllLevels();
+
+        levels.forEach(level => {
+            const card = document.createElement('div');
+            card.className = 'level-card';
+            card.dataset.levelId = level.id;
+            card.style.setProperty('--accent-color', level.color);
+
+            card.innerHTML = `
+                <div class="level-card-preview" style="background: linear-gradient(135deg, ${level.color}22, ${level.color}44);">
+                    <div class="level-icon">${this._getLevelIcon(level.type)}</div>
+                </div>
+                <div class="level-card-info">
+                    <h3 class="level-card-title">${level.name}</h3>
+                    <p class="level-card-desc">${level.description}</p>
+                    <div class="level-card-difficulty">
+                        ${'★'.repeat(level.difficulty)}${'☆'.repeat(3 - level.difficulty)}
+                    </div>
+                </div>
+            `;
+
+            card.addEventListener('click', () => this._selectLevel(level));
+            levelGrid.appendChild(card);
+        });
+    }
+
+    /**
+     * Get icon for level type
+     */
+    _getLevelIcon(type) {
+        const icons = {
+            procedural: '🏔️',
+            dunes: '🏜️',
+            highway: '🛣️',
+            city: '🏙️'
+        };
+        return icons[type] || '🗺️';
+    }
+
+    /**
+     * Handle level selection from menu
+     */
+    _selectLevel(levelConfig) {
+        console.log(`[Game] Selected level: ${levelConfig.name}`);
+        this._enterPlayState(levelConfig);
+    }
+
+    /**
+     * Enter MENU state
+     */
+    _enterMenuState() {
+        this.gameState = GameState.MENU;
+
+        // Show menu, hide HUD
+        if (this.mainMenu) this.mainMenu.classList.remove('hidden');
+        const hud = document.getElementById('hud');
+        if (hud) hud.classList.add('hidden');
+        const controlsHelp = document.getElementById('controls-help');
+        if (controlsHelp) controlsHelp.classList.add('hidden');
+        const timeDisplay = document.getElementById('time-display');
+        if (timeDisplay) timeDisplay.classList.add('hidden');
+
+        console.log('[Game] Entered MENU state');
+    }
+
+    /**
+     * Enter PLAY state - initialize gameplay systems
+     */
+    async _enterPlayState(levelConfig) {
+        this.gameState = GameState.PLAY;
+
+        // Hide menu, show HUD
+        if (this.mainMenu) this.mainMenu.classList.add('hidden');
+        const hud = document.getElementById('hud');
+        if (hud) hud.classList.remove('hidden');
+        const controlsHelp = document.getElementById('controls-help');
+        if (controlsHelp) controlsHelp.classList.remove('hidden');
+        const timeDisplay = document.getElementById('time-display');
+        if (timeDisplay) timeDisplay.classList.remove('hidden');
+
+        // Generate terrain using LevelManager
+        this.terrain = this.levelManager.loadLevel(levelConfig);
         const terrainMesh = this.terrain.generate();
         this.scene.add(terrainMesh);
 
         // Load car model
         await this._loadCarModel();
 
-        // Setup camera controller (pass canvas for mouse events)
-        this.cameraController = new CameraController(this.camera, this.canvas);
-        this.input.onCameraChange = () => this.cameraController.nextMode();
+        // Setup input callbacks
+        this.input.onCameraChange = () => this._handleCameraChange();
 
         // Initialize car physics
         this.car = new CarPhysics(this.carMesh, this.terrain, this.scene);
         this.input.onDebugToggle = () => this.car.toggleDebug();
+        
+        // Pass wheel meshes to car physics for suspension animation
+        if (this.wheelMeshes) {
+            this.car.setWheelMeshes(this.wheelMeshes);
+        }
 
-        // Time control callbacks
+        // Initialize player controller (on-foot mode)
+        this.player = new PlayerController(this.terrain);
+
+        // Input callbacks
+        this.input.onEnterExitVehicle = () => this._toggleVehicleMode();
         this.input.onTimePause = () => this._toggleTimePause();
         this.input.onTimePreset = (preset) => this._setTimePreset(preset);
-
-        // Headlights callback
         this.input.onHeadlightsToggle = () => this._toggleHeadlights();
 
         // Start position
@@ -156,11 +276,10 @@ class Game {
         const startHeight = this.terrain.getHeightAt(startX, startZ) + 2;
         this.car.position.set(startX, startHeight, startZ);
 
-        // Hide loading screen
-        this.loadingScreen.classList.add('hidden');
+        // Setup pointer lock for first-person mouse look
+        this._setupPointerLock();
 
-        // Start game loop
-        this._animate();
+        console.log(`[Game] Entered PLAY state with level: ${levelConfig.name}`);
     }
 
     _setupRenderer() {
@@ -218,6 +337,7 @@ class Game {
         this.retroPass.uniforms['resolution'].value.set(window.innerWidth, window.innerHeight);
         this.retroPass.uniforms['pixelSize'].value = 9.0;  // Adjust for more/less pixelation
         this.retroPass.uniforms['colorDepth'].value = 16.0;  // 16-bit color depth
+        this.retroPass.enabled = this.retroEnabled;
         this.composer.addPass(this.retroPass);
     }
 
@@ -229,6 +349,28 @@ class Game {
 
     _setupInput() {
         this.input = new InputHandler();
+        this.input.onRetroToggle = () => this._toggleRetroFilter();
+    }
+
+    _setupPointerLock() {
+        // Request pointer lock on click when on foot
+        this.canvas.addEventListener('click', () => {
+            if (this.isOnFoot && !document.pointerLockElement) {
+                this.canvas.requestPointerLock();
+            }
+        });
+
+        // Handle mouse movement for player look
+        document.addEventListener('mousemove', (e) => {
+            if (this.isOnFoot && document.pointerLockElement === this.canvas) {
+                this.player.handleMouseLook(e.movementX, e.movementY);
+            }
+        });
+
+        // Exit pointer lock when entering vehicle
+        document.addEventListener('pointerlockchange', () => {
+            // Nothing needed here, handled by mode toggle
+        });
     }
 
     async _loadCarModel() {
@@ -243,13 +385,51 @@ class Game {
                     // Scale and position adjustments
                     this.carMesh.scale.setScalar(1);
 
-                    // Enable shadows
+                    // Find wheel meshes by name pattern
+                    // Common naming: FL_Wheel, FR_Wheel, RL_Wheel, RR_Wheel or similar
+                    this.wheelMeshes = [null, null, null, null]; // FL, FR, RL, RR
+                    const allMeshNames = [];
+                    
                     this.carMesh.traverse((child) => {
                         if (child.isMesh) {
                             child.castShadow = true;
                             child.receiveShadow = true;
+                            allMeshNames.push(child.name);
+                        }
+                        
+                        // Try to find wheel objects by name (case insensitive)
+                        const name = child.name.toLowerCase();
+                        const isWheelCandidate = name.includes('wheel') || name.includes('tire') || 
+                                                  name.includes('rim') || name.includes('tyre');
+                        
+                        if (isWheelCandidate || child.name.match(/^(fl|fr|rl|rr|bl|br)_/i)) {
+                            console.log(`[Car] Found wheel candidate: ${child.name} at position:`, child.position);
+                            
+                            // Identify wheel position by name or position
+                            if (name.includes('fl') || name.includes('front_l') || name.includes('frontleft') || name.includes('lf')) {
+                                this.wheelMeshes[0] = child;
+                            } else if (name.includes('fr') || name.includes('front_r') || name.includes('frontright') || name.includes('rf')) {
+                                this.wheelMeshes[1] = child;
+                            } else if (name.includes('rl') || name.includes('rear_l') || name.includes('rearleft') || name.includes('bl') || name.includes('back_l') || name.includes('lb')) {
+                                this.wheelMeshes[2] = child;
+                            } else if (name.includes('rr') || name.includes('rear_r') || name.includes('rearright') || name.includes('br') || name.includes('back_r') || name.includes('rb')) {
+                                this.wheelMeshes[3] = child;
+                            } else if (isWheelCandidate) {
+                                // Try to identify by position in model space
+                                const pos = child.position;
+                                const isFront = pos.z > 0;
+                                const isLeft = pos.x < 0;
+                                const idx = (isFront ? 0 : 2) + (isLeft ? 0 : 1);
+                                if (!this.wheelMeshes[idx]) {
+                                    this.wheelMeshes[idx] = child;
+                                    console.log(`[Car] Assigned ${child.name} to slot ${idx} by position`);
+                                }
+                            }
                         }
                     });
+                    
+                    console.log('[Car] All mesh names in model:', allMeshNames);
+                    console.log('[Car] Wheel meshes found:', this.wheelMeshes.map(w => w ? w.name : 'null'));
 
                     this.scene.add(this.carMesh);
                     console.log('Car model loaded successfully');
@@ -319,7 +499,7 @@ class Game {
         this.camera.updateProjectionMatrix();
 
         this.renderer.setSize(width, height);
-        
+
         // Update post-processing composer and shader resolution
         if (this.composer) {
             this.composer.setSize(width, height);
@@ -332,74 +512,106 @@ class Game {
 
         const deltaTime = this.clock.getDelta();
 
-        // Update input
+        // Update input (always needed)
         this.input.update(deltaTime);
 
-        // Update car physics
-        if (this.car) {
-            this.car.update(deltaTime, this.input);
+        // ==================== PLAY STATE ONLY ====================
+        if (this.gameState === GameState.PLAY) {
+            // Update car physics (only when in vehicle)
+            if (this.car && !this.isOnFoot) {
+                this.car.update(deltaTime, this.input);
 
-            // Update sun shadow to follow car
-            if (this.sun) {
-                this.sun.target.position.copy(this.car.position);
-                this.sun.target.updateMatrixWorld();
-            }
-        }
-
-        // Update sky system with time controls
-        if (this.sky) {
-            // Handle continuous time forward/backward
-            let effectiveTimeSpeed = this.timeSpeed;
-            if (this.input.keys.timeForward) {
-                effectiveTimeSpeed = 10.0;  // Fast forward
-            } else if (this.input.keys.timeBackward) {
-                effectiveTimeSpeed = -10.0;  // Rewind
-            }
-            
-            // Temporarily adjust day duration based on speed
-            if (!this.timePaused) {
-                const baseDuration = 300;  // 5 minutes base
-                this.sky.setDayDuration(baseDuration / Math.abs(effectiveTimeSpeed));
-                
-                // Handle rewind by manually adjusting time
-                if (effectiveTimeSpeed < 0) {
-                    this.sky.setPaused(true);
-                    const rewindAmount = deltaTime * Math.abs(effectiveTimeSpeed) / baseDuration;
-                    this.sky.setTime(this.sky.getTime() - rewindAmount);
-                } else {
-                    this.sky.setPaused(false);
+                // Update sun shadow to follow car
+                if (this.sun) {
+                    this.sun.target.position.copy(this.car.position);
+                    this.sun.target.updateMatrixWorld();
                 }
             }
-            
+
+            // Update player (only when on foot)
+            if (this.player && this.isOnFoot) {
+                this.player.update(deltaTime, this.input);
+
+                // Gamepad look
+                if (this.input.gamepad) {
+                    this.player.handleAnalogLook(
+                        this.input.gamepad.lookX,
+                        this.input.gamepad.lookY,
+                        deltaTime
+                    );
+                }
+
+                // Update sun shadow to follow player
+                if (this.sun) {
+                    this.sun.target.position.copy(this.player.position);
+                    this.sun.target.updateMatrixWorld();
+                }
+            }
+
+            // Update camera for gameplay
+            if (this.cameraController) {
+                if (this.isOnFoot && this.player) {
+                    this.cameraController.updatePlayerCamera(this.player, deltaTime);
+                } else if (this.carMesh) {
+                    if (this.input.gamepad) {
+                        this.cameraController.handleAnalogInput(
+                            this.input.gamepad.lookX,
+                            this.input.gamepad.lookY,
+                            20.0
+                        );
+                    }
+                    this.cameraController.update(
+                        this.carMesh,
+                        this.car ? Math.abs(this.car.speed) : 0,
+                        deltaTime
+                    );
+                }
+            }
+
+            // Update HUD
+            this._updateHUD();
+        }
+
+        // ==================== ALWAYS UPDATE (MENU & PLAY) ====================
+
+        // Update sky system (needed for menu backdrop too)
+        if (this.sky) {
+            // Handle time controls only in PLAY
+            if (this.gameState === GameState.PLAY) {
+                let effectiveTimeSpeed = this.timeSpeed;
+                if (this.input.keys.timeForward) {
+                    effectiveTimeSpeed = 10.0;
+                } else if (this.input.keys.timeBackward) {
+                    effectiveTimeSpeed = -10.0;
+                }
+
+                if (!this.timePaused) {
+                    const baseDuration = 300;
+                    this.sky.setDayDuration(baseDuration / Math.abs(effectiveTimeSpeed));
+
+                    if (effectiveTimeSpeed < 0) {
+                        this.sky.setPaused(true);
+                        const rewindAmount = deltaTime * Math.abs(effectiveTimeSpeed) / baseDuration;
+                        this.sky.setTime(this.sky.getTime() - rewindAmount);
+                    } else {
+                        this.sky.setPaused(false);
+                    }
+                }
+
+                // Car headlights based on time
+                if (this.car && !this.headlightsManualOverride) {
+                    this.car.setHeadlights(this.sky.isNight());
+                }
+
+                // Taillights
+                if (this.car && !this.isOnFoot) {
+                    const isBraking = this.input.brake > 0.1 || this.input.handbrake > 0.1;
+                    this.car.updateTaillights(this.sky.isNight(), isBraking);
+                }
+            }
+
             this.sky.update(deltaTime, this.camera.position);
-
-            // Update car headlights based on time of day
-            if (this.car) {
-                this.car.setHeadlights(this.sky.isNight());
-            }
         }
-
-        // Update camera
-        if (this.cameraController && this.carMesh) {
-            // Apply gamepad camera control
-            if (this.input.gamepad) {
-                // Adjust sensitivity as needed
-                this.cameraController.handleAnalogInput(
-                    this.input.gamepad.lookX,
-                    this.input.gamepad.lookY,
-                    20.0 // Stick needs much higher multiplier than mouse pixels
-                );
-            }
-
-            this.cameraController.update(
-                this.carMesh,
-                this.car ? Math.abs(this.car.speed) : 0,
-                deltaTime
-            );
-        }
-
-        // Update HUD
-        this._updateHUD();
 
         // Render with post-processing
         this.composer.render();
@@ -421,12 +633,12 @@ class Game {
         // Time display
         if (this.sky && this.hudElements.timeValue) {
             this.hudElements.timeValue.textContent = this.sky.getTimeString();
-            
+
             // Update time status
             const statusEl = this.hudElements.timeStatus;
             if (statusEl) {
                 statusEl.classList.remove('paused', 'fast-forward', 'rewind');
-                
+
                 if (this.timePaused) {
                     statusEl.textContent = '⏸ PAUSED';
                     statusEl.classList.add('paused');
@@ -441,6 +653,12 @@ class Game {
                 }
             }
         }
+
+        // Show/hide vehicle HUD based on mode
+        const vehicleHud = document.getElementById('hud');
+        if (vehicleHud) {
+            vehicleHud.style.opacity = this.isOnFoot ? '0.3' : '1';
+        }
     }
 
     _toggleTimePause() {
@@ -452,7 +670,7 @@ class Game {
 
     _setTimePreset(preset) {
         if (!this.sky) return;
-        
+
         // Time presets: 1 = Dawn, 2 = Noon, 3 = Sunset, 4 = Midnight
         const presets = {
             1: 0.25,   // Dawn (6:00)
@@ -460,9 +678,95 @@ class Game {
             3: 0.75,   // Sunset (18:00)
             4: 0.0     // Midnight (00:00)
         };
-        
+
         if (presets[preset] !== undefined) {
             this.sky.setTime(presets[preset]);
+        }
+    }
+
+    _toggleHeadlights() {
+        if (!this.car) return;
+
+        // Enable manual override and toggle
+        this.headlightsManualOverride = true;
+        this.car.toggleHeadlights();
+    }
+
+    _handleCameraChange() {
+        this.cameraController.nextMode();
+
+        // Check if in cockpit (first-person) mode
+        const isCockpit = this.cameraController.isCockpitMode;
+
+        // Toggle car 3D model visibility (hide in cockpit mode)
+        if (this.carMesh) {
+            this.carMesh.visible = !isCockpit;
+        }
+
+        // Toggle cockpit overlay visibility (show in cockpit mode)
+        if (this.cockpitOverlay) {
+            if (isCockpit) {
+                this.cockpitOverlay.classList.remove('hidden');
+            } else {
+                this.cockpitOverlay.classList.add('hidden');
+            }
+        }
+    }
+
+    _toggleRetroFilter() {
+        this.retroEnabled = !this.retroEnabled;
+        if (this.retroPass) {
+            this.retroPass.enabled = this.retroEnabled;
+        }
+    }
+
+    /**
+     * Toggle between vehicle and on-foot modes
+     */
+    _toggleVehicleMode() {
+        this.isOnFoot = !this.isOnFoot;
+
+        if (this.isOnFoot) {
+            // Exiting vehicle
+            console.log('[Player] Exiting vehicle');
+
+            // Position player at driver's door (left side of car)
+            const exitOffset = new THREE.Vector3(-5, 0, 0); // Left of car
+            exitOffset.applyQuaternion(this.carMesh.quaternion);
+
+            const exitPos = this.car.position.clone().add(exitOffset);
+            exitPos.y = this.terrain.getHeightAt(exitPos.x, exitPos.z) + this.player.specs.height;
+
+            // Set player position and face away from car
+            this.player.setPosition(exitPos, this.car.rotation.y + Math.PI / 2);
+
+            // Update camera controller
+            this.cameraController.setPlayerMode(true);
+
+            // Hide cockpit overlay if visible
+            if (this.cockpitOverlay) {
+                this.cockpitOverlay.classList.add('hidden');
+            }
+
+            // Request pointer lock for mouse look
+            this.canvas.requestPointerLock();
+
+        } else {
+            // Entering vehicle
+            console.log('[Player] Entering vehicle');
+
+            // Release pointer lock
+            if (document.pointerLockElement) {
+                document.exitPointerLock();
+            }
+
+            // Update camera controller
+            this.cameraController.setPlayerMode(false);
+
+            // Restore car visibility in case it was hidden
+            if (this.carMesh) {
+                this.carMesh.visible = !this.cameraController.isCockpitMode;
+            }
         }
     }
 }

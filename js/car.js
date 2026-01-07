@@ -108,7 +108,7 @@ export class CarPhysics {
      */
     _createHeadlights() {
         this.headlights = [];
-        
+
         // Headlight positions (front left and front right) - at front of car hitbox
         const frontZ = this.specs.length / 2;  // Front edge of car
         const headlightPositions = [
@@ -123,29 +123,29 @@ export class CarPhysics {
             spotlight.castShadow = true;
             spotlight.shadow.mapSize.width = 1024;
             spotlight.shadow.mapSize.height = 1024;
-            
+
             // Create target for the spotlight (points forward and slightly down)
             const target = new THREE.Object3D();
             target.position.set(pos.x * 0.3, pos.y - 10, pos.z + 150);
-            
+
             spotlight.target = target;
-            
+
             this.mesh.add(spotlight);
             this.mesh.add(target);
-            
+
             this.headlights.push({ light: spotlight, target: target, type: 'main' });
 
             // High beam spotlight - narrower, longer range
             const highBeam = new THREE.SpotLight(0xffffff, 0, 1000, Math.PI / 6, 0.15, 0.6);
             highBeam.position.set(pos.x, pos.y, pos.z);
-            
+
             const highBeamTarget = new THREE.Object3D();
             highBeamTarget.position.set(pos.x * 0.2, pos.y - 6, pos.z + 400);
             highBeam.target = highBeamTarget;
-            
+
             this.mesh.add(highBeam);
             this.mesh.add(highBeamTarget);
-            
+
             this.headlights.push({ light: highBeam, target: highBeamTarget, type: 'highbeam' });
 
             // Add a point light for local/ground illumination
@@ -187,7 +187,7 @@ export class CarPhysics {
     _createTaillights() {
         this.taillights = [];
         this.taillightGlows = [];
-        
+
         // Taillight positions (rear left and rear right) - at back of car
         const rearZ = -this.specs.length / 2;  // Rear edge of car
         const taillightPositions = [
@@ -205,11 +205,11 @@ export class CarPhysics {
             // Spotlight pointing backward for brake light effect on ground
             const brakeSpot = new THREE.SpotLight(0xff0000, 0, 100, Math.PI / 4, 0.5, 1.0);
             brakeSpot.position.set(pos.x, pos.y, pos.z);
-            
+
             const brakeTarget = new THREE.Object3D();
             brakeTarget.position.set(pos.x, pos.y - 5, pos.z - 50);
             brakeSpot.target = brakeTarget;
-            
+
             this.mesh.add(brakeSpot);
             this.mesh.add(brakeTarget);
             this.taillights.push({ light: brakeSpot, target: brakeTarget, type: 'brakespot' });
@@ -240,14 +240,14 @@ export class CarPhysics {
     updateTaillights(isNight, isBraking) {
         this.taillightsOn = isNight;
         this.isBraking = isBraking;
-        
+
         // Determine light intensities
         // Night mode: dim red lights always on
         // Braking: bright red lights (day or night)
         const nightBaseIntensity = isNight ? 3.0 : 0;
         const brakeIntensity = isBraking ? 15.0 : 0;
         const brakeSpotIntensity = isBraking ? 25.0 : 0;
-        
+
         this.taillights.forEach((tl) => {
             if (tl.type === 'rear') {
                 // Combine night base + brake boost
@@ -257,12 +257,12 @@ export class CarPhysics {
                 tl.light.intensity = brakeSpotIntensity;
             }
         });
-        
+
         // Update glow opacity
         const nightGlowOpacity = isNight ? 0.4 : 0;
         const brakeGlowOpacity = isBraking ? 1.0 : 0;
         const totalGlowOpacity = Math.min(nightGlowOpacity + brakeGlowOpacity, 1.0);
-        
+
         this.taillightGlows.forEach((glow) => {
             glow.material.opacity = totalGlowOpacity;
             // Make the glow color brighter when braking
@@ -280,9 +280,9 @@ export class CarPhysics {
      */
     setHeadlights(on) {
         if (this.headlightsOn === on) return;
-        
+
         this.headlightsOn = on;
-        
+
         this.headlights.forEach((hl) => {
             if (hl.type === 'main') {
                 hl.light.intensity = on ? 50.0 : 0;  // Very bright low beams
@@ -294,7 +294,7 @@ export class CarPhysics {
                 hl.light.intensity = on ? 35.0 : 0;  // Powerful flood light for road
             }
         });
-        
+
         this.headlightGlows.forEach((glow) => {
             glow.material.opacity = on ? 1.0 : 0;
         });
@@ -1028,5 +1028,14 @@ export class CarPhysics {
                 this.debugGroup.visible = false;
             }
         }
+    }
+
+    /**
+     * Set wheel mesh references for visual suspension animation
+     * @param {Array} wheelMeshes - Array of [FL, FR, RL, RR] wheel mesh objects
+     */
+    setWheelMeshes(wheelMeshes) {
+        this.wheelMeshes = wheelMeshes;
+        console.log('[CarPhysics] Wheel meshes set:', wheelMeshes.map(w => w ? w.name : 'null'));
     }
 }
