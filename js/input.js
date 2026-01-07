@@ -18,7 +18,9 @@ export class InputHandler {
             timeBackward: false,
             timePreset: false,
             headlights: false,
-            retroToggle: false
+            retroToggle: false,
+            enterExit: false,
+            sprint: false
         };
 
         // Smoothed input values (0-1 range)
@@ -106,6 +108,16 @@ export class InputHandler {
                 }
                 e.preventDefault();
                 break;
+            case 'KeyF':
+                if (!this.keys.enterExit) {
+                    this.keys.enterExit = true;
+                    this.onEnterExitVehicle?.();
+                }
+                break;
+            case 'ShiftLeft':
+            case 'ShiftRight':
+                this.keys.sprint = true;
+                break;
             case 'BracketRight':
                 this.keys.timeForward = true;
                 break;
@@ -165,6 +177,13 @@ export class InputHandler {
                 break;
             case 'F4':
                 this.keys.retroToggle = false;
+                break;
+            case 'KeyF':
+                this.keys.enterExit = false;
+                break;
+            case 'ShiftLeft':
+            case 'ShiftRight':
+                this.keys.sprint = false;
                 break;
             case 'BracketRight':
                 this.keys.timeForward = false;
@@ -247,7 +266,8 @@ export class InputHandler {
                 steering: 0,
                 handbrake: false,
                 lookX: 0,
-                lookY: 0
+                lookY: 0,
+                sprint: false
             };
             console.log("Gamepad connected:", gp.id);
         }
@@ -264,6 +284,11 @@ export class InputHandler {
         if (Math.abs(steerRaw) < deadzone) steerRaw = 0;
         this.gamepad.steering = steerRaw; // Left stick: negative = left, positive = right
 
+        // Left Stick Y (Axis 1) for on-foot forward/backward
+        let moveYRaw = gp.axes[1];
+        if (Math.abs(moveYRaw) < deadzone) moveYRaw = 0;
+        this.gamepad.moveY = -moveYRaw; // Left stick: up = positive forward, down = negative
+
         // Throttle (R2 - Button 7)
         // Gamepad API: buttons[7].value is 0..1
         this.gamepad.throttle = gp.buttons[7].value;
@@ -275,6 +300,9 @@ export class InputHandler {
         // Request didn't specify, but space is handbrake. Let's map Button 0 (X/Cross on DS, A on Xbox) or Button 1 (Circle/B)
         // Let's use Button 1 (Circle/B) for Handbrake as it's common in racing (or R1, but R1 is Gear Up requested)
         this.gamepad.handbrake = gp.buttons[1].pressed; // Circle
+
+        // Sprint (L3 - Left Stick Press - Button 10) for on-foot mode
+        this.gamepad.sprint = gp.buttons[10].pressed; // L3
 
         // Camera (Right Stick - Axes 2, 3)
         let camX = gp.axes[2];
@@ -302,6 +330,16 @@ export class InputHandler {
             }
         } else {
             this._r1Pressed = false;
+        }
+
+        // Enter/Exit Vehicle (Triangle/Y button - Button 3)
+        if (gp.buttons[3].pressed) {
+            if (!this._trianglePressed) {
+                this._trianglePressed = true;
+                this.onEnterExitVehicle?.();
+            }
+        } else {
+            this._trianglePressed = false;
         }
     }
 

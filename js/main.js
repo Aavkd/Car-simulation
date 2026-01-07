@@ -7,6 +7,7 @@ import { InputHandler } from './input.js';
 import { CameraController } from './camera.js';
 import { TerrainGenerator } from './terrain.js';
 import { CarPhysics } from './car.js';
+import { PlayerController } from './player.js';
 import { SkySystem } from './sky.js';
 
 /**
@@ -79,7 +80,11 @@ class Game {
         this.terrain = null;
         this.car = null;
         this.carMesh = null;
+        this.player = null;  // On-foot player controller
         this.sky = null;
+
+        // Player mode state
+        this.isOnFoot = false;
 
         // Timing
         this.clock = new THREE.Clock();
@@ -133,6 +138,12 @@ class Game {
         this.car = new CarPhysics(this.carMesh, this.terrain, this.scene);
         this.input.onDebugToggle = () => this.car.toggleDebug();
 
+        // Initialize player controller (on-foot mode)
+        this.player = new PlayerController(this.terrain);
+
+        // Enter/Exit vehicle callback
+        this.input.onEnterExitVehicle = () => this._toggleVehicleMode();
+
         // Time control callbacks
         this.input.onTimePause = () => this._toggleTimePause();
         this.input.onTimePreset = (preset) => this._setTimePreset(preset);
@@ -148,6 +159,9 @@ class Game {
 
         // Hide loading screen
         this.loadingScreen.classList.add('hidden');
+
+        // Setup pointer lock for first-person mouse look
+        this._setupPointerLock();
 
         // Start game loop
         this._animate();
@@ -221,6 +235,27 @@ class Game {
     _setupInput() {
         this.input = new InputHandler();
         this.input.onRetroToggle = () => this._toggleRetroFilter();
+    }
+
+    _setupPointerLock() {
+        // Request pointer lock on click when on foot
+        this.canvas.addEventListener('click', () => {
+            if (this.isOnFoot && !document.pointerLockElement) {
+                this.canvas.requestPointerLock();
+            }
+        });
+
+        // Handle mouse movement for player look
+        document.addEventListener('mousemove', (e) => {
+            if (this.isOnFoot && document.pointerLockElement === this.canvas) {
+                this.player.handleMouseLook(e.movementX, e.movementY);
+            }
+        });
+
+        // Exit pointer lock when entering vehicle
+        document.addEventListener('pointerlockchange', () => {
+            // Nothing needed here, handled by mode toggle
+        });
     }
 
     async _loadCarModel() {
@@ -327,13 +362,33 @@ class Game {
         // Update input
         this.input.update(deltaTime);
 
-        // Update car physics
-        if (this.car) {
+        // Update car physics (only when in vehicle)
+        if (this.car && !this.isOnFoot) {
             this.car.update(deltaTime, this.input);
 
             // Update sun shadow to follow car
             if (this.sun) {
                 this.sun.target.position.copy(this.car.position);
+                this.sun.target.updateMatrixWorld();
+            }
+        }
+
+        // Update player (only when on foot)
+        if (this.player && this.isOnFoot) {
+            this.player.update(deltaTime, this.input);
+
+            // Gamepad look
+            if (this.input.gamepad) {
+                this.player.handleAnalogLook(
+                    this.input.gamepad.lookX,
+                    this.input.gamepad.lookY,
+                    deltaTime
+                );
+            }
+
+            // Update sun shadow to follow player
+            if (this.sun) {
+                this.sun.target.position.copy(this.player.position);
                 this.sun.target.updateMatrixWorld();
             }
         }
@@ -371,29 +426,35 @@ class Game {
             }
 
             // Update taillights based on night and braking status
-            if (this.car) {
+            if (this.car && !this.isOnFoot) {
                 const isBraking = this.input.brake > 0.1 || this.input.handbrake > 0.1;
                 this.car.updateTaillights(this.sky.isNight(), isBraking);
             }
         }
 
         // Update camera
-        if (this.cameraController && this.carMesh) {
-            // Apply gamepad camera control
-            if (this.input.gamepad) {
-                // Adjust sensitivity as needed
-                this.cameraController.handleAnalogInput(
-                    this.input.gamepad.lookX,
-                    this.input.gamepad.lookY,
-                    20.0 // Stick needs much higher multiplier than mouse pixels
+        if (this.cameraController) {
+            if (this.isOnFoot && this.player) {
+                // Player first-person camera
+                this.cameraController.updatePlayerCamera(this.player, deltaTime);
+            } else if (this.carMesh) {
+                // Vehicle camera
+                // Apply gamepad camera control
+                if (this.input.gamepad) {
+                    // Adjust sensitivity as needed
+                    this.cameraController.handleAnalogInput(
+                        this.input.gamepad.lookX,
+                        this.input.gamepad.lookY,
+                        20.0 // Stick needs much higher multiplier than mouse pixels
+                    );
+                }
+
+                this.cameraController.update(
+                    this.carMesh,
+                    this.car ? Math.abs(this.car.speed) : 0,
+                    deltaTime
                 );
             }
-
-            this.cameraController.update(
-                this.carMesh,
-                this.car ? Math.abs(this.car.speed) : 0,
-                deltaTime
-            );
         }
 
         // Update HUD
@@ -438,6 +499,12 @@ class Game {
                     statusEl.textContent = '';
                 }
             }
+        }
+
+        // Show/hide vehicle HUD based on mode
+        const vehicleHud = document.getElementById('hud');
+        if (vehicleHud) {
+            vehicleHud.style.opacity = this.isOnFoot ? '0.3' : '1';
         }
     }
 
@@ -497,6 +564,56 @@ class Game {
         this.retroEnabled = !this.retroEnabled;
         if (this.retroPass) {
             this.retroPass.enabled = this.retroEnabled;
+        }
+    }
+
+    /**
+     * Toggle between vehicle and on-foot modes
+     */
+    _toggleVehicleMode() {
+        this.isOnFoot = !this.isOnFoot;
+
+        if (this.isOnFoot) {
+            // Exiting vehicle
+            console.log('[Player] Exiting vehicle');
+
+            // Position player at driver's door (left side of car)
+            const exitOffset = new THREE.Vector3(-5, 0, 0); // Left of car
+            exitOffset.applyQuaternion(this.carMesh.quaternion);
+
+            const exitPos = this.car.position.clone().add(exitOffset);
+            exitPos.y = this.terrain.getHeightAt(exitPos.x, exitPos.z) + this.player.specs.height;
+
+            // Set player position and face away from car
+            this.player.setPosition(exitPos, this.car.rotation.y + Math.PI / 2);
+
+            // Update camera controller
+            this.cameraController.setPlayerMode(true);
+
+            // Hide cockpit overlay if visible
+            if (this.cockpitOverlay) {
+                this.cockpitOverlay.classList.add('hidden');
+            }
+
+            // Request pointer lock for mouse look
+            this.canvas.requestPointerLock();
+
+        } else {
+            // Entering vehicle
+            console.log('[Player] Entering vehicle');
+
+            // Release pointer lock
+            if (document.pointerLockElement) {
+                document.exitPointerLock();
+            }
+
+            // Update camera controller
+            this.cameraController.setPlayerMode(false);
+
+            // Restore car visibility in case it was hidden
+            if (this.carMesh) {
+                this.carMesh.visible = !this.cameraController.isCockpitMode;
+            }
         }
     }
 }

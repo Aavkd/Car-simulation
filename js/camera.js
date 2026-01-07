@@ -79,6 +79,9 @@ export class CameraController {
         this.lastMouseX = 0;
         this.lastMouseY = 0;
 
+        // Player mode (on-foot first person)
+        this.isPlayerMode = false;
+
         this._bindMouseEvents();
     }
 
@@ -172,6 +175,14 @@ export class CameraController {
 
     get isCockpitMode() {
         return this.currentMode === 'cockpit';
+    }
+
+    /**
+     * Set player mode (on-foot first person)
+     * @param {boolean} enabled - Whether player mode is active
+     */
+    setPlayerMode(enabled) {
+        this.isPlayerMode = enabled;
     }
 
     nextMode() {
@@ -316,6 +327,33 @@ export class CameraController {
         // Speed-based FOV
         const speedRatio = Math.min(speed / this.maxSpeedForFov, 1);
         const targetFov = config.fov + speedRatio * this.maxFovIncrease;
+        this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, this.fovSmoothing * deltaTime);
+        this.camera.fov = this.currentFov;
+        this.camera.updateProjectionMatrix();
+    }
+
+    /**
+     * Update camera for player (on-foot) first-person view
+     * @param {PlayerController} player - Player controller reference
+     * @param {number} deltaTime - Time since last frame
+     */
+    updatePlayerCamera(player, deltaTime) {
+        if (!player) return;
+
+        // Get player camera position (eye level)
+        const cameraPos = player.getCameraPosition();
+        const lookAtPoint = player.getLookAtPoint();
+
+        // Smooth camera position (fast for responsive feel)
+        this.currentPosition.lerp(cameraPos, 20 * deltaTime);
+        this.currentLookAt.lerp(lookAtPoint, 20 * deltaTime);
+
+        // Apply position
+        this.camera.position.copy(this.currentPosition);
+        this.camera.lookAt(this.currentLookAt);
+
+        // Fixed FOV for player mode
+        const targetFov = 75;
         this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, this.fovSmoothing * deltaTime);
         this.camera.fov = this.currentFov;
         this.camera.updateProjectionMatrix();
