@@ -195,7 +195,8 @@ class Game {
             procedural: '🏔️',
             dunes: '🏜️',
             highway: '🛣️',
-            city: '🏙️'
+            city: '🏙️',
+            everest: '❄️'
         };
         return icons[type] || '🗺️';
     }
@@ -255,7 +256,7 @@ class Game {
         // Initialize car physics
         this.car = new CarPhysics(this.carMesh, this.terrain, this.scene);
         this.input.onDebugToggle = () => this.car.toggleDebug();
-        
+
         // Pass wheel meshes to car physics for suspension animation
         if (this.wheelMeshes) {
             this.car.setWheelMeshes(this.wheelMeshes);
@@ -270,9 +271,14 @@ class Game {
         this.input.onTimePreset = (preset) => this._setTimePreset(preset);
         this.input.onHeadlightsToggle = () => this._toggleHeadlights();
 
-        // Start position
-        const startX = 0;
-        const startZ = 0;
+        // Start position - check for custom spawn from terrain
+        let startX = 0;
+        let startZ = 0;
+        if (this.terrain.getSpawnPosition) {
+            const spawn = this.terrain.getSpawnPosition();
+            startX = spawn.x;
+            startZ = spawn.z;
+        }
         const startHeight = this.terrain.getHeightAt(startX, startZ) + 2;
         this.car.position.set(startX, startHeight, startZ);
 
@@ -389,22 +395,22 @@ class Game {
                     // Common naming: FL_Wheel, FR_Wheel, RL_Wheel, RR_Wheel or similar
                     this.wheelMeshes = [null, null, null, null]; // FL, FR, RL, RR
                     const allMeshNames = [];
-                    
+
                     this.carMesh.traverse((child) => {
                         if (child.isMesh) {
                             child.castShadow = true;
                             child.receiveShadow = true;
                             allMeshNames.push(child.name);
                         }
-                        
+
                         // Try to find wheel objects by name (case insensitive)
                         const name = child.name.toLowerCase();
-                        const isWheelCandidate = name.includes('wheel') || name.includes('tire') || 
-                                                  name.includes('rim') || name.includes('tyre');
-                        
+                        const isWheelCandidate = name.includes('wheel') || name.includes('tire') ||
+                            name.includes('rim') || name.includes('tyre');
+
                         if (isWheelCandidate || child.name.match(/^(fl|fr|rl|rr|bl|br)_/i)) {
                             console.log(`[Car] Found wheel candidate: ${child.name} at position:`, child.position);
-                            
+
                             // Identify wheel position by name or position
                             if (name.includes('fl') || name.includes('front_l') || name.includes('frontleft') || name.includes('lf')) {
                                 this.wheelMeshes[0] = child;
@@ -427,7 +433,7 @@ class Game {
                             }
                         }
                     });
-                    
+
                     console.log('[Car] All mesh names in model:', allMeshNames);
                     console.log('[Car] Wheel meshes found:', this.wheelMeshes.map(w => w ? w.name : 'null'));
 

@@ -23,6 +23,7 @@
 | **Desert Dunes** | 5km island with sand dunes and ocean border |
 | **Highway** | Multi-lane road through rolling hills with lane markings |
 | **City Streets** | 10km² urban grid with 5 districts and procedural buildings |
+| **The Everest** | 10km² snow mountain with 800m peak - start at the summit! |
 
 ### 🎮 Controls
 
@@ -117,6 +118,7 @@ Racing/
 │   ├── dunes.js            # Desert island terrain generator
 │   ├── highway.js          # Highway road generator
 │   ├── city.js             # Urban grid generator
+│   ├── everest.js          # Snow mountain terrain generator
 │   ├── level-manager.js    # Factory for terrain types
 │   ├── level-data.js       # Level configuration presets
 │   ├── physics-provider.js # Surface type definitions
@@ -160,6 +162,8 @@ TARMAC  // High grip, low drag
 GRASS   // Medium grip, medium drag
 SAND    // Low grip, high drag
 DIRT    // Medium grip, some drag
+SNOW    // Very low grip, high drag
+ICE     // Ultra low grip
 ```
 
 ### State Machine

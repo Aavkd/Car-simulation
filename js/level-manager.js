@@ -2,6 +2,7 @@ import { TerrainGenerator } from './terrain.js';
 import { DunesGenerator } from './dunes.js';
 import { HighwayGenerator } from './highway.js';
 import { CityGenerator } from './city.js';
+import { EverestGenerator } from './everest.js';
 
 /**
  * Level Manager
@@ -38,6 +39,10 @@ export class LevelManager {
 
             case 'city':
                 this.currentTerrain = new CityGenerator(config.params);
+                break;
+
+            case 'everest':
+                this.currentTerrain = new EverestGenerator(config.params);
                 break;
         }
 

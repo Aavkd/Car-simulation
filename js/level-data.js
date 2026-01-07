@@ -45,6 +45,18 @@ export const LevelData = {
         difficulty: 3,
         color: '#f472b6', // Pink accent
         params: {}
+    },
+    everest: {
+        id: 'everest',
+        name: 'The Everest',
+        description: 'Massive snow mountain - start at the summit!',
+        type: 'everest',
+        difficulty: 3,
+        color: '#e0f2fe', // Light blue/white accent
+        params: {
+            seed: 8848,  // Mount Everest elevation in meters :)
+            peakHeight: 800
+        }
     }
 };
 

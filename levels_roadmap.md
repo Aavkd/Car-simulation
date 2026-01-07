@@ -63,13 +63,10 @@ class LevelManager {
 | Map | Type | Status |
 |-----|------|--------|
 | Grasslands | `procedural` | ✅ Playable |
-
-**Planned (Phase 3):**
-| Map | Type | Description |
-|-----|------|-------------|
-| Desert Dunes | `dunes` | High drag, drift-focused physics |
-| Highway | `highway` | Smooth tarmac for high-speed runs |
-| City Streets | `city` | Urban grid with tight corners |
+| Desert Dunes | `dunes` | ✅ Playable |
+| Highway | `highway` | ✅ Playable |
+| City Streets | `city` | ✅ Playable |
+| The Everest | `everest` | ✅ Playable |
 
 ---
 
@@ -114,6 +111,7 @@ Parameter-based editing (not vertex sculpting):
 - [x] Create `DunesGenerator` (5km island with sand dunes, ocean border)
 - [x] Create `HighwayGenerator` (multi-lane road, grass terrain, lane markings)
 - [x] Create `CityGenerator` (10km² area, 5 distinct districts, procedural buildings)
+- [x] Create `EverestGenerator` (10km² snow mountain, 800m peak, summit spawn)
 
 ### Phase 4: The Editor ⏳ PENDING
 - [ ] Implement FlyControls class
@@ -186,6 +184,7 @@ Parameter-based editing (not vertex sculpting):
 | `js/dunes.js` | Desert island terrain with sand dunes and ocean |
 | `js/highway.js` | Highway road through rolling hills |
 | `js/city.js` | Urban grid with 5 districts and procedural buildings |
+| `js/everest.js` | Snow mountain with 800m peak and summit spawn |
 
 ### Modified Files
 | File | Changes |
