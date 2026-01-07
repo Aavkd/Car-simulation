@@ -11,6 +11,7 @@ import { PlayerController } from './core/player.js';
 import { SkySystem } from './environment/sky.js';
 import { LevelManager } from './levels/level-manager.js';
 import { LevelData, getAllLevels } from './levels/level-data.js';
+import { ToyotaAE86 } from './core/vehicle-specs/ToyotaAE86.js';
 
 /**
  * Game State enum
@@ -253,8 +254,8 @@ class Game {
         // Setup input callbacks
         this.input.onCameraChange = () => this._handleCameraChange();
 
-        // Initialize car physics
-        this.car = new CarPhysics(this.carMesh, this.terrain, this.scene);
+        // Initialize car physics with ToyotaAE86 spec
+        this.car = new CarPhysics(this.carMesh, this.terrain, this.scene, ToyotaAE86);
         this.input.onDebugToggle = () => this.car.toggleDebug();
 
         // Pass wheel meshes to car physics for suspension animation

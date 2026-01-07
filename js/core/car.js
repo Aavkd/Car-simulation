@@ -5,60 +5,25 @@ import * as THREE from 'three';
  * Features: Raycast suspension, tire slip model, engine/gearbox simulation
  */
 export class CarPhysics {
-    constructor(carMesh, terrain, scene) {
+    constructor(carMesh, terrain, scene, carSpec = null) {
         this.mesh = carMesh;
         this.terrain = terrain;
         this.scene = scene;
         this.debug = false;
         this.debugGroup = null;
 
-        // ==================== VEHICLE SPECS (AE86-inspired) ====================
-        this.specs = {
-            mass: 1100,                    // kg
-            wheelBase: 10.55,              // m (increased matches visual better)
-            trackWidth: 6.55,             // m (increased matches visual better)
-            cgHeight: 2.4,                // Center of gravity height (Scaled ~4.4x)
+        // ==================== SCALE FACTOR ====================
+        // Reconciles visual scale (4.5x) with real-world physics
+        this.SCALE = 4.5;
 
-            // Dimensions (for Debug/Collision)
-            width: 6.70,                  // Body width
-            height: 9.35,                 // Body height
-            length: 18.40,                 // Body length
-
-            // Suspension (tuned for 900kg)
-            suspensionRestLength: 1.5,
-            suspensionTravel: 1.1,
-            springStrength: 10000,        // N/m - reduced for lighter car
-            damperStrength: 1500,         // Reduced for lighter car
-
-            // Wheels
-            wheelRadius: 1.35,
-
-            // Engine
-            maxPower: 500000,             // High power for game feel
-            maxTorque: 25000,             // Massive torque for responsive acceleration
-            redlineRPM: 8000,
-            idleRPM: 1000,
-
-            // Transmission
-            gearRatios: [-3.4, 0, 3.6, 2.2, 1.4, 1.0, 0.8], // R, N, 1-5
-            finalDrive: 3.2,              // Lower ratio = higher top speed
-            shiftTime: 0.2,
-
-            // Steering
-            maxSteerAngle: 0.6,
-            steerSpeed: 3.0,
-
-            // Tires
-            gripCoefficient: 1.5,
-            slipAnglePeak: 0.15,
-            rollingResistance: 0.005,     // Reduced - was too high
-
-            // Aero
-            dragCoefficient: 0.25,        // Lower drag for higher top speed
-            frontalArea: 1.8,             // Reduced frontal area
-            airDensity: 1.225,
-            downforce: 0.2
-        };
+        // ==================== VEHICLE SPECS ====================
+        // Use injected spec or build from defaults
+        if (carSpec) {
+            this.specs = this._buildGameSpecs(carSpec);
+        } else {
+            // Fallback to legacy hardcoded specs
+            this.specs = this._getLegacySpecs();
+        }
 
         // ==================== STATE ====================
         this.position = new THREE.Vector3(0, 2, 0); // Start closer to ground (was 10)
@@ -102,6 +67,69 @@ export class CarPhysics {
         this.isBraking = false;
         this._createTaillights();
     }
+
+    /**
+     * Build game-world specs from real-world car specification
+     * Applies scale factor to physics values
+     */
+    _buildGameSpecs(spec) {
+        const S = this.SCALE;
+
+        return {
+            // Mass (unchanged - force scales, mass is constant)
+            mass: spec.mass,
+
+            // Dimensions (already in game units from spec)
+            wheelBase: spec.dimensions.wheelBase,
+            trackWidth: spec.dimensions.trackWidth,
+            cgHeight: spec.dimensions.cgHeight,
+            width: spec.dimensions.width,
+            height: spec.dimensions.height,
+            length: spec.dimensions.length,
+
+            // Suspension (game-tuned values from spec)
+            suspensionRestLength: spec.suspension.restLength,
+            suspensionTravel: spec.suspension.travel,
+            springStrength: spec.suspension.stiffness,
+            damperStrength: spec.suspension.damping,
+
+            // Wheels
+            wheelRadius: spec.dimensions.wheelRadius,
+
+            // Engine - scale torque by S² for proper force scaling
+            maxPower: 500000, // Game feel - kept high
+            maxTorque: spec.engine.maxTorque * S * S, // 150 * 20.25 = 3037.5 Nm
+            redlineRPM: spec.engine.redlineRPM,
+            idleRPM: spec.engine.idleRPM,
+
+            // Transmission (direct from spec)
+            gearRatios: spec.transmission.gears,
+            finalDrive: spec.transmission.finalDrive,
+            shiftTime: spec.transmission.shiftTime,
+
+            // Steering
+            maxSteerAngle: spec.steering.maxAngle,
+            steerSpeed: spec.steering.speed,
+
+            // Tires
+            gripCoefficient: spec.tires.gripCoefficient,
+            slipAnglePeak: spec.tires.slipAnglePeak,
+            rollingResistance: spec.tires.rollingResistance,
+
+            // Aerodynamics - scale air density by 1/S³
+            dragCoefficient: spec.dragCoefficient,
+            frontalArea: spec.frontalArea,
+            airDensity: 1.225 / Math.pow(S, 3), // ≈ 0.0134
+            downforce: spec.aero.downforce,
+
+            // Scaled gravity (for reference in calculations)
+            gravity: 9.81 * S, // 44.145 m/s²
+
+            // Visual offset
+            visualOffsetY: spec.visualOffset?.y || -3.3
+        };
+    }
+
 
     /**
      * Create headlights for the car
@@ -331,8 +359,8 @@ export class CarPhysics {
         let totalForce = new THREE.Vector3();
         let totalTorque = new THREE.Vector3();
 
-        // 1. Gravity 
-        totalForce.y -= this.specs.mass * 20; // Normal gravity
+        // 1. Gravity - uses scaled gravity (g * SCALE) from spec
+        totalForce.y -= this.specs.mass * this.specs.gravity;
 
         // 2. Aerodynamic Drag
         const speedSquared = this.velocity.lengthSq();
@@ -696,43 +724,7 @@ export class CarPhysics {
         return dragForce;
     }
 
-    /**
-     * Integrate forces to update velocity and position
-     */
-    _integrate(force, torque, dt) {
-        // Linear acceleration
-        const acceleration = force.divideScalar(this.specs.mass);
-        this.velocity.addScaledVector(acceleration, dt);
-
-        // Update position
-        this.position.addScaledVector(this.velocity, dt);
-
-        // Keep above terrain
-        const groundHeight = this.terrain.getHeightAt(this.position.x, this.position.z);
-        const minHeight = groundHeight + 0.5;
-        if (this.position.y < minHeight) {
-            this.position.y = minHeight;
-            if (this.velocity.y < 0) this.velocity.y = 0;
-        }
-
-        // Angular acceleration (simplified - using Y-axis rotation mainly)
-        const inertiaY = this.specs.mass * (this.specs.wheelBase * this.specs.wheelBase) / 12;
-        const angularAccelY = torque.y / inertiaY;
-        this.angularVelocity.y += angularAccelY * dt;
-
-        // Angular damping
-        this.angularVelocity.multiplyScalar(0.98);
-
-        // Update rotation
-        this.rotation.y += this.angularVelocity.y * dt;
-
-        // Pitch based on slope
-        const groundNormal = this.terrain.getNormalAt(this.position.x, this.position.z);
-        const targetPitch = Math.asin(-groundNormal.z) * 0.5;
-        const targetRoll = Math.asin(groundNormal.x) * 0.5;
-        this.rotation.x = THREE.MathUtils.lerp(this.rotation.x, targetPitch, 5 * dt);
-        this.rotation.z = THREE.MathUtils.lerp(this.rotation.z, targetRoll, 5 * dt);
-    }
+    // Note: _integrate function removed - logic is now in update() method
 
     /**
      * Update engine and transmission
