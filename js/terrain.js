@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SurfaceTypes } from './physics-provider.js';
 
 /**
  * Perlin Noise implementation for terrain generation
@@ -304,4 +305,27 @@ export class TerrainGenerator {
 
         return normal;
     }
+
+    /**
+     * Get surface type/properties at world position
+     * Returns friction and drag properties based on terrain height
+     * @param {number} worldX - World X coordinate
+     * @param {number} worldZ - World Z coordinate
+     * @returns {SurfaceProperties} Surface properties for physics
+     */
+    getSurfaceType(worldX, worldZ) {
+        const height = this.getHeightAt(worldX, worldZ);
+
+        // Return surface type based on height/biome
+        if (height < 0) {
+            return SurfaceTypes.DIRT;
+        } else if (height < 15) {
+            return SurfaceTypes.GRASS;
+        } else if (height < 25) {
+            return SurfaceTypes.GRAVEL;
+        } else {
+            return SurfaceTypes.SNOW;
+        }
+    }
 }
+

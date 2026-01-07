@@ -98,6 +98,181 @@ body {
     pointer-events: none;
 }
 
+/* ==================== Main Menu ==================== */
+#main-menu {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 200;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: opacity 0.5s ease;
+}
+
+#main-menu.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.menu-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(ellipse at center, rgba(10, 10, 20, 0.85) 0%, rgba(5, 5, 15, 0.95) 100%);
+    backdrop-filter: blur(8px);
+}
+
+.menu-content {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    padding: 40px;
+}
+
+.menu-title {
+    font-size: 72px;
+    font-weight: 900;
+    color: #fff;
+    letter-spacing: 8px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    text-shadow:
+        0 0 40px rgba(255, 107, 53, 0.8),
+        0 0 80px rgba(255, 107, 53, 0.4),
+        0 4px 20px rgba(0, 0, 0, 0.5);
+    animation: titleGlow 3s ease-in-out infinite alternate;
+}
+
+@keyframes titleGlow {
+    from {
+        text-shadow:
+            0 0 40px rgba(255, 107, 53, 0.8),
+            0 0 80px rgba(255, 107, 53, 0.4),
+            0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    to {
+        text-shadow:
+            0 0 60px rgba(255, 107, 53, 1),
+            0 0 100px rgba(255, 107, 53, 0.6),
+            0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+}
+
+.menu-subtitle {
+    font-size: 18px;
+    color: rgba(255, 255, 255, 0.6);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 50px;
+}
+
+.level-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+    max-width: 1000px;
+}
+
+.level-card {
+    background: rgba(15, 15, 25, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.level-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--accent-color, #ff6b35);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.level-card:hover {
+    transform: translateY(-8px) scale(1.02);
+    border-color: var(--accent-color, #ff6b35);
+    box-shadow:
+        0 20px 40px rgba(0, 0, 0, 0.4),
+        0 0 30px color-mix(in srgb, var(--accent-color, #ff6b35) 30%, transparent);
+}
+
+.level-card:hover::before {
+    opacity: 1;
+}
+
+.level-card-preview {
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+}
+
+.level-icon {
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+}
+
+.level-card-info {
+    padding: 16px;
+    text-align: left;
+}
+
+.level-card-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 6px;
+}
+
+.level-card-desc {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+    line-height: 1.4;
+    margin-bottom: 10px;
+}
+
+.level-card-difficulty {
+    font-size: 14px;
+    color: #fbbf24;
+    letter-spacing: 2px;
+}
+
+/* Responsive menu */
+@media (max-width: 900px) {
+    .level-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+    }
+
+    .menu-title {
+        font-size: 48px;
+        letter-spacing: 4px;
+    }
+}
+
+@media (max-width: 500px) {
+    .level-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .menu-title {
+        font-size: 32px;
+    }
+}
+
 /* HUD */
 #hud {
     position: absolute;

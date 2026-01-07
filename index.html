@@ -19,6 +19,18 @@
     <div id="game-container">
         <canvas id="game-canvas"></canvas>
 
+        <!-- Main Menu Overlay -->
+        <div id="main-menu" class="hidden">
+            <div class="menu-backdrop"></div>
+            <div class="menu-content">
+                <h1 class="menu-title">AE86 FREEROAM</h1>
+                <p class="menu-subtitle">Select a level to begin</p>
+                <div class="level-grid" id="level-grid">
+                    <!-- Level cards injected by JavaScript -->
+                </div>
+            </div>
+        </div>
+
         <!-- Cockpit Overlay (First Person View) -->
         <div id="cockpit-overlay" class="hidden">
             <img src="assets/car-cockpit.png" alt="Cockpit" />
