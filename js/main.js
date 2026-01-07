@@ -3,14 +3,14 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { InputHandler } from './input.js';
-import { CameraController } from './camera.js';
-import { TerrainGenerator } from './terrain.js';
-import { CarPhysics } from './car.js';
-import { PlayerController } from './player.js';
-import { SkySystem } from './sky.js';
-import { LevelManager } from './level-manager.js';
-import { LevelData, getAllLevels } from './level-data.js';
+import { InputHandler } from './core/input.js';
+import { CameraController } from './core/camera.js';
+import { TerrainGenerator } from './terrain/terrain.js';
+import { CarPhysics } from './core/car.js';
+import { PlayerController } from './core/player.js';
+import { SkySystem } from './environment/sky.js';
+import { LevelManager } from './levels/level-manager.js';
+import { LevelData, getAllLevels } from './levels/level-data.js';
 
 /**
  * Game State enum

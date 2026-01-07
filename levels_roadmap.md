@@ -26,7 +26,7 @@ The application operates in three distinct states (implemented in `main.js`):
 - **EDITOR**: *(Planned)* Free-camera movement, object placement.
 
 ### 1.2 The LevelManager Abstraction ✅
-`js/level-manager.js` - Factory class for different environment types:
+`js/levels/level-manager.js` - Factory class for different environment types:
 
 ```javascript
 class LevelManager {
@@ -40,7 +40,7 @@ class LevelManager {
 ```
 
 ### 1.3 Physics Interface Standard ✅
-`js/physics-provider.js` - All terrain types implement:
+`js/physics/physics-provider.js` - All terrain types implement:
 
 - `getHeightAt(x, z)` - Returns Y position
 - `getNormalAt(x, z)` - Returns surface normal vector  
@@ -173,23 +173,38 @@ Parameter-based editing (not vertex sculpting):
 
 ---
 
-## Files Created/Modified
+## Folder Structure (Refactored)
 
-### New Files (Phase 1, 2 & 3)
-| File | Purpose |
-|------|---------|
-| `js/physics-provider.js` | Surface types and base physics interface |
-| `js/level-data.js` | Level configuration presets |
-| `js/level-manager.js` | Factory for terrain generators |
-| `js/dunes.js` | Desert island terrain with sand dunes and ocean |
-| `js/highway.js` | Highway road through rolling hills |
-| `js/city.js` | Urban grid with 5 districts and procedural buildings |
-| `js/everest.js` | Snow mountain with 800m peak and summit spawn |
+The `js/` folder is organized into logical subdirectories:
+
+```
+js/
+├── main.js                      # Game entry point, state machine
+├── core/                        # Core game systems
+│   ├── camera.js                # Camera controller (orbit, cockpit, on-foot)
+│   ├── car.js                   # Physics engine (suspension, tires, drivetrain)
+│   ├── input.js                 # Keyboard & gamepad input handling
+│   └── player.js                # On-foot player controller
+├── environment/                 # Visual environment systems
+│   ├── sky.js                   # Day/night sky system
+│   └── starfield.js             # Night sky star rendering
+├── levels/                      # Level management
+│   ├── level-data.js            # Level configuration presets
+│   └── level-manager.js         # Factory for terrain types
+├── physics/                     # Physics interfaces
+│   └── physics-provider.js      # Surface types and physics interface
+└── terrain/                     # Terrain generators
+    ├── terrain.js               # Procedural terrain (Grasslands)
+    ├── city.js                  # Urban grid generator
+    ├── dunes.js                 # Desert island generator
+    ├── everest.js               # Snow mountain generator
+    └── highway.js               # Highway road generator
+```
 
 ### Modified Files
 | File | Changes |
 |------|---------|
 | `js/main.js` | GameState enum, state machine, menu setup |
-| `js/terrain.js` | Added `getSurfaceType()` method |
+| `js/terrain/terrain.js` | Added `getSurfaceType()` method |
 | `index.html` | Added `#main-menu` overlay |
 | `styles.css` | Premium menu styling (180+ lines) |

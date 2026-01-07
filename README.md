@@ -110,20 +110,25 @@ Racing/
 ├── styles.css              # UI styling (glassmorphism, HUD)
 ├── js/
 │   ├── main.js             # Game entry point, state machine
-│   ├── car.js              # Physics engine (suspension, tires, drivetrain)
-│   ├── camera.js           # Camera controller (orbit, cockpit, on-foot)
-│   ├── input.js            # Keyboard & gamepad input handling
-│   ├── player.js           # On-foot player controller
-│   ├── terrain.js          # Procedural terrain generator (Grasslands)
-│   ├── dunes.js            # Desert island terrain generator
-│   ├── highway.js          # Highway road generator
-│   ├── city.js             # Urban grid generator
-│   ├── everest.js          # Snow mountain terrain generator
-│   ├── level-manager.js    # Factory for terrain types
-│   ├── level-data.js       # Level configuration presets
-│   ├── physics-provider.js # Surface type definitions
-│   ├── sky.js              # Day/night sky system
-│   └── starfield.js        # Night sky star rendering
+│   ├── core/               # Core game systems
+│   │   ├── camera.js       # Camera controller (orbit, cockpit, on-foot)
+│   │   ├── car.js          # Physics engine (suspension, tires, drivetrain)
+│   │   ├── input.js        # Keyboard & gamepad input handling
+│   │   └── player.js       # On-foot player controller
+│   ├── environment/        # Visual environment systems
+│   │   ├── sky.js          # Day/night sky system
+│   │   └── starfield.js    # Night sky star rendering
+│   ├── levels/             # Level management
+│   │   ├── level-data.js   # Level configuration presets
+│   │   └── level-manager.js# Factory for terrain types
+│   ├── physics/            # Physics interfaces
+│   │   └── physics-provider.js  # Surface types and physics interface
+│   └── terrain/            # Terrain generators
+│       ├── terrain.js      # Procedural terrain (Grasslands)
+│       ├── city.js         # Urban grid generator
+│       ├── dunes.js        # Desert island generator
+│       ├── everest.js      # Snow mountain generator
+│       └── highway.js      # Highway road generator
 ├── assets/
 │   ├── models/
 │   │   ├── Toyota AE86.glb # Main vehicle model

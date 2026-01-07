@@ -1,8 +1,8 @@
-import { TerrainGenerator } from './terrain.js';
-import { DunesGenerator } from './dunes.js';
-import { HighwayGenerator } from './highway.js';
-import { CityGenerator } from './city.js';
-import { EverestGenerator } from './everest.js';
+import { TerrainGenerator } from '../terrain/terrain.js';
+import { DunesGenerator } from '../terrain/dunes.js';
+import { HighwayGenerator } from '../terrain/highway.js';
+import { CityGenerator } from '../terrain/city.js';
+import { EverestGenerator } from '../terrain/everest.js';
 
 /**
  * Level Manager

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SurfaceTypes } from './physics-provider.js';
+import { SurfaceTypes } from '../physics/physics-provider.js';
 
 /**
  * Perlin Noise implementation for mountain generation
