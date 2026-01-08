@@ -15,19 +15,19 @@ export class CameraController {
         // Mode configurations
         this.modeConfigs = {
             chase: {
-                distance: 8,
-                height: 3,
+                distance: 14,
+                height: 6,
                 lookAtHeight: 1,
                 fov: 60
             },
             far: {
-                distance: 15,
-                height: 6,
-                lookAtHeight: 1,
+                distance: 24,
+                height: 8,
+                lookAtHeight: 4,
                 fov: 50
             },
             hood: {
-                distance: 0.5,
+                distance: -5,
                 height: 1.2,
                 lookAtHeight: 1.5,
                 fov: 75
@@ -68,7 +68,7 @@ export class CameraController {
         // Zoom/Distance control
         this.currentDistance = this.modeConfigs.chase.distance; // Initialize with default
         this.minDistance = 2;
-        this.maxDistance = 20;
+        this.maxDistance = 30;
 
         this.orbitSensitivity = 0.003;
         this.zoomSensitivity = 0.005; // Zoom speed

@@ -126,6 +126,7 @@ export class CarPhysics {
             gravity: 9.81 * S, // 44.145 m/s²
 
             // Visual offset
+            visualOffsetX: spec.visualOffset?.x || 0,
             visualOffsetY: spec.visualOffset?.y || -3.3
         };
     }
@@ -906,20 +907,17 @@ export class CarPhysics {
         // Apply physics position to mesh
         this.mesh.position.copy(this.position);
 
-        // Visual Offset: 
-        // Physics center is ~3.1m above ground (radius 1.35 + susp 1.75).
-        // Car model origin (bottom) needs to be shifted down.
-        // We shift down by ~3.3m to compensate.
-        this.mesh.position.y -= 3.3;
+        // Visual Offset: Transform offset from local to world space
+        // This ensures the offset rotates with the car (fixing drift when airborne/tilted)
+        const localOffset = new THREE.Vector3(
+            this.specs.visualOffsetX,
+            this.specs.visualOffsetY,
+            0
+        );
+        localOffset.applyQuaternion(new THREE.Quaternion().setFromEuler(this.rotation));
+        this.mesh.position.add(localOffset);
 
         this.mesh.rotation.copy(this.rotation);
-
-        // Offset the mesh rotation as well if needed? 
-        // Usually models rotate around 0,0,0 (center bottom).
-        // Physics rotation is around center of mass.
-        // If we rotate the mesh around bottom, it might look weird (pendulum effect).
-        // Ideally we should offset the mesh geometry, but we can't easily here.
-        // For now, simple position offset is standard for this level of physics.
     }
 
     /**

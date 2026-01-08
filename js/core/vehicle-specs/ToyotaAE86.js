@@ -25,7 +25,7 @@ export const ToyotaAE86 = {
         wheelBase: 10.55,       // Game units (real: ~2.4m * 4.5)
         cgHeight: 2.4,          // Game units - Center of gravity height
         width: 6.70,            // Body width (for collision)
-        height: 9.35,           // Body height (for collision)
+        height: 4.5,            // Body height (for collision) - real AE86 ~1.29m * 4.5 scale
         length: 18.40           // Body length (for collision)
     },
 
@@ -87,6 +87,7 @@ export const ToyotaAE86 = {
 
     // Visual offset (mesh origin to physics center)
     visualOffset: {
+        x: -0.3,                 // Mesh shifted left to center with physics hitbox
         y: -3.3                 // Mesh shifted down to align with physics
     }
 };
