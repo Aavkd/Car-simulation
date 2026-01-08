@@ -53,6 +53,10 @@ export class CarPhysics {
             { offset: new THREE.Vector3(this.specs.trackWidth / 2, -1.0, -this.specs.wheelBase / 2), compression: 0, velocity: 0, grounded: false, slipRatio: 0, slipAngle: 0, rpm: 0 }   // RR
         ];
 
+        // Body collision points (8 corners of the hitbox)
+        // These are used for rigid body collision, not suspension
+        this.bodyCollisionPoints = this._createBodyCollisionPoints();
+
         this.steerAngle = 0;
         this.throttleInput = 0;
         this.brakeInput = 0;
@@ -129,6 +133,32 @@ export class CarPhysics {
             visualOffsetX: spec.visualOffset?.x || 0,
             visualOffsetY: spec.visualOffset?.y || -3.3
         };
+    }
+
+    /**
+     * Create body collision points at the 8 corners of the car hitbox
+     * These are for rigid collision, separate from wheel suspension
+     */
+    _createBodyCollisionPoints() {
+        const w = this.specs.width / 2;   // Half width
+        const h = this.specs.height / 2;  // Half height
+        const l = this.specs.length / 2;  // Half length
+
+        // Offset upward to match physics center position
+        const yOffset = 0; // Car center is at this.position
+
+        return [
+            // Front corners (top and bottom)
+            { offset: new THREE.Vector3(-w, h + yOffset, l), name: 'FL_top', colliding: false, penetration: 0 },
+            { offset: new THREE.Vector3(w, h + yOffset, l), name: 'FR_top', colliding: false, penetration: 0 },
+            { offset: new THREE.Vector3(-w, -h + yOffset, l), name: 'FL_bottom', colliding: false, penetration: 0 },
+            { offset: new THREE.Vector3(w, -h + yOffset, l), name: 'FR_bottom', colliding: false, penetration: 0 },
+            // Rear corners (top and bottom)
+            { offset: new THREE.Vector3(-w, h + yOffset, -l), name: 'RL_top', colliding: false, penetration: 0 },
+            { offset: new THREE.Vector3(w, h + yOffset, -l), name: 'RR_top', colliding: false, penetration: 0 },
+            { offset: new THREE.Vector3(-w, -h + yOffset, -l), name: 'RL_bottom', colliding: false, penetration: 0 },
+            { offset: new THREE.Vector3(w, -h + yOffset, -l), name: 'RR_bottom', colliding: false, penetration: 0 },
+        ];
     }
 
 
@@ -380,7 +410,32 @@ export class CarPhysics {
             if (this.wheels[i].grounded) groundedWheels++;
         }
 
-        // 4. Stabilizer bars (Anti-roll)
+        // 4. Body Collision (Frame hitting ground/obstacles)
+        // This is separate from wheel suspension - handles roof/side impacts
+        let bodyCollisionCount = 0;
+        for (let i = 0; i < this.bodyCollisionPoints.length; i++) {
+            const { force, torque } = this._processBodyCollision(i);
+            if (this.bodyCollisionPoints[i].colliding) bodyCollisionCount++;
+            totalForce.add(force);
+            totalTorque.add(torque);
+        }
+
+        // ==================== ISSUE 6: ANTI-ROLL HACKS DISABLED ====================
+        // With correct force application at shock mounts (Issue 4 fix), artificial
+        // stabilization should no longer be needed. The car will now behave more
+        // realistically on slopes and during tilts.
+        // 
+        // REMOVED: The old code applied artificial counter-torque and righting forces
+        // when the car was tilted with partial wheel contact. This masked underlying
+        // physics bugs but caused unpredictable behavior on slopes and jumps.
+        //
+        // If car still flips unexpectedly, the root cause is likely:
+        // - Suspension stiffness too high
+        // - CG height too high  
+        // - Track width too narrow
+        // Rather than adding hacks, tune those physical parameters.
+
+        // 6. Stabilizer bars (Anti-roll)
         // Simplified: prevent excessive roll by applying restoring torque
         // (Optional, can add later if rolls too much)
 
@@ -413,8 +468,24 @@ export class CarPhysics {
         this.angularVelocity.y += (totalTorque.y / Iy) * dt;
         this.angularVelocity.z += (totalTorque.z / Iz) * dt;
 
-        // Angular Damping
-        this.angularVelocity.multiplyScalar(0.98);
+        // Angular Damping - only increase when severely tilted
+        const upDot = this.up.dot(new THREE.Vector3(0, 1, 0));
+        const isUnstable = upDot < 0.4 || (groundedWheels < 2 && upDot < 0.7);
+        const angularDamping = isUnstable ? 0.95 : 0.98;
+        this.angularVelocity.multiplyScalar(angularDamping);
+
+        // Clamp extreme angular velocities only when unstable
+        if (isUnstable) {
+            const maxAngularVel = 4.0;
+            const angularSpeed = this.angularVelocity.length();
+            if (angularSpeed > maxAngularVel) {
+                this.angularVelocity.multiplyScalar(maxAngularVel / angularSpeed);
+            }
+        }
+
+        // Self-righting assist DISABLED (Issue 6)
+        // Cars should behave naturally when airborne - no magic orientation correction
+        // This was masking physics issues and causing unrealistic behavior during jumps
 
         // Apply Rotation
         const rotationChange = new THREE.Euler(
@@ -487,102 +558,240 @@ export class CarPhysics {
 
     /**
      * Process a single wheel - suspension, tire forces
+     * 
+     * Key physics:
+     * - Raycast along car's LOCAL UP vector (not world Y) for correct slope behavior
+     * - Damping calculated from chassis velocity at wheel point (no 1-frame lag)
+     * - Forces applied at shock mount point (reduces destabilizing torque)
+     * - suspensionRestLength = FREE length (fully extended, unloaded spring)
+     * - suspensionTravel = maximum compression distance from free length
      */
     _processWheel(index, dt) {
         const wheel = this.wheels[index];
         const isFront = index < 2;
         const isLeft = index % 2 === 0;
 
-        // Calculate wheel world position
+        // Calculate wheel world position (wheel hub at rest)
         const wheelWorldPos = this.position.clone();
         const localOffset = wheel.offset.clone();
-        localOffset.applyQuaternion(new THREE.Quaternion().setFromEuler(this.rotation));
+        const carQuat = new THREE.Quaternion().setFromEuler(this.rotation);
+        localOffset.applyQuaternion(carQuat);
         wheelWorldPos.add(localOffset);
 
-        // Raycast down for ground contact
-        const rayOrigin = wheelWorldPos.clone();
-        rayOrigin.y += this.specs.suspensionRestLength;
+        // ==================== ISSUE 1 FIX: LOCAL UP RAYCAST ====================
+        // Use car's local UP vector for suspension direction, not world Y
+        // This ensures correct behavior on slopes and when car is tilted/flipped
+        const localUp = this.up.clone();
 
-        const groundHeight = this.terrain.getHeightAt(rayOrigin.x, rayOrigin.z);
+        // Ray origin is at shock mount (wheel position + rest length along local up)
+        const rayOrigin = wheelWorldPos.clone();
+        rayOrigin.addScaledVector(localUp, this.specs.suspensionRestLength);
+
+        // Total ray length from mount to wheel center at full extension + wheel radius
         const rayLength = this.specs.suspensionRestLength + this.specs.suspensionTravel + this.specs.wheelRadius;
-        const distanceToGround = rayOrigin.y - groundHeight;
+
+        // Get ground height and calculate contact point
+        const groundHeight = this.terrain.getHeightAt(wheelWorldPos.x, wheelWorldPos.z);
+        const groundPoint = new THREE.Vector3(wheelWorldPos.x, groundHeight, wheelWorldPos.z);
+
+        // Calculate distance to ground ALONG the local up axis
+        // This is the key fix: measure suspension travel in car's reference frame
+        const toGround = groundPoint.clone().sub(rayOrigin);
+        const distanceToGround = -toGround.dot(localUp); // Positive when ground is below ray origin
 
         let force = new THREE.Vector3();
         let torque = new THREE.Vector3();
 
-        if (distanceToGround < rayLength) {
-            // Wheel is touching ground
+        if (distanceToGround < rayLength && distanceToGround > -this.specs.wheelRadius) {
+            // Wheel is in contact range
             wheel.grounded = true;
 
-            // Suspension compression
+            // ==================== ISSUE 5: REST LENGTH SEMANTICS ====================
+            // compression = how much spring is compressed from FREE length
+            // rayLength = free length + travel + wheel radius (total extended length)
+            // distanceToGround = distance from mount to ground along local up
+            // compression = rayLength - distanceToGround (how much shorter than full extension)
             const compression = rayLength - distanceToGround;
-            // Bump Stop Force (Exponential or stiff linear)
-            let extraForce = 0;
-            const maxCompress = this.specs.suspensionTravel; // Hit stop exactly at travel limit
-            if (compression > maxCompress) {
-                // Bottomed out
-                const penetration = compression - maxCompress;
-                const bumpStiffness = 50000;    // Reduced to prevent explosion
-                const bumpDamping = 5000;       // Damping
-                extraForce = (penetration * bumpStiffness) - (wheel.velocity * bumpDamping);
-                extraForce = Math.max(0, extraForce); // Only push up
-            }
-
-            const compressionRatio = Math.min(compression / this.specs.suspensionTravel, 1.5); // Allow over-compression calculation
-            const prevCompression = wheel.compression;
+            const compressionRatio = Math.min(compression / this.specs.suspensionTravel, 1.5);
             wheel.compression = compressionRatio;
 
-            // Suspension velocity
-            wheel.velocity = (compressionRatio - prevCompression) / dt;
+            // ==================== ISSUE 2 FIX: CHASSIS VELOCITY DAMPING ====================
+            // Calculate chassis velocity at this wheel point (no 1-frame lag)
+            const wheelPointVel = this.velocity.clone();
+            const angularContrib = new THREE.Vector3().crossVectors(this.angularVelocity, localOffset);
+            wheelPointVel.add(angularContrib);
 
-            // Spring force (Hooke's law) + Damping
+            // Damping velocity = rate of compression (positive = compressing)
+            // Project chassis velocity onto local up axis (negative because down = compression)
+            wheel.velocity = -wheelPointVel.dot(localUp);
+
+            // Spring force (Hooke's law)
             const springForce = compressionRatio * this.specs.suspensionTravel * this.specs.springStrength;
             const damperForce = wheel.velocity * this.specs.damperStrength;
 
-            // Correct Damping: Resists motion (Spring + Damper)
+            // ==================== ISSUE 3 FIX: BUMP STOP DAMPING SIGN ====================
+            let extraForce = 0;
+            const maxCompress = this.specs.suspensionTravel;
+            if (compression > maxCompress) {
+                // Bottomed out - bump stop engaged
+                const penetration = compression - maxCompress;
+                const bumpStiffness = 50000;
+                const bumpDamping = 5000;
+                // FIX: ADD damping when compressing (positive velocity = compressing)
+                // Damping should RESIST motion, so add force when moving into stop
+                extraForce = (penetration * bumpStiffness) + (wheel.velocity * bumpDamping);
+                extraForce = Math.max(0, extraForce); // Only push up
+            }
+
+            // Total suspension force
             let suspensionForce = springForce + damperForce + extraForce;
+            suspensionForce = Math.max(0, Math.min(suspensionForce, 200000)); // Clamp
 
-            // Clamp total force to avoid explosions (max ~20 tons)
-            suspensionForce = Math.max(0, Math.min(suspensionForce, 200000));
+            // Store for debug
+            wheel.forceVal = suspensionForce;
 
-            // Apply suspension force - primarily in world UP direction for stability
-            // Using ground normal directly causes instability when tilted (car flips around single wheel contact)
+            // ==================== ISSUE 4 FIX: FORCE APPLICATION POINT ====================
+            // Apply force along car's local UP (suspension axis), not blended world up
+            // This provides correct terrain following and slope handling
             const groundNormal = this.terrain.getNormalAt(wheelWorldPos.x, wheelWorldPos.z);
 
-            // Blend between world up (stable) and ground normal (terrain following)
-            // Heavy bias toward world-up prevents flip-inducing torques
-            const worldUp = new THREE.Vector3(0, 1, 0);
-            const blendedNormal = new THREE.Vector3()
-                .addScaledVector(worldUp, 0.85)      // 85% world up for stability
-                .addScaledVector(groundNormal, 0.15) // 15% ground normal for terrain adaptation
+            // Blend local up with ground normal for some terrain adaptation
+            // But use LOCAL up as primary (70%) to ensure correct orientation handling
+            const forceDirection = new THREE.Vector3()
+                .addScaledVector(localUp, 0.7)
+                .addScaledVector(groundNormal, 0.3)
                 .normalize();
 
-            const suspForceVec = blendedNormal.clone().multiplyScalar(suspensionForce);
+            const suspForceVec = forceDirection.clone().multiplyScalar(suspensionForce);
             force.add(suspForceVec);
 
-            // CRITICAL: Suspension torque calculation
-            // The lever arm is the offset from car's center of mass to the wheel contact point
-            // We need to use the world-space offset for proper torque calculation
-            const leverArm = localOffset.clone(); // World-space offset from car center
+            // ==================== ISSUE 4 FIX: SHOCK MOUNT LEVER ARM ====================
+            // Apply torque at shock mount point (higher on chassis), not wheel contact
+            // This reduces the lever arm and prevents excessive roll torque
+            const shockMountOffset = new THREE.Vector3(
+                wheel.offset.x,  // Same X as wheel (left/right)
+                this.specs.suspensionRestLength * 0.5,  // Midway up the shock travel
+                wheel.offset.z   // Same Z as wheel (front/back)
+            ).applyQuaternion(carQuat);
 
-            // Only calculate stabilizing torque - this helps level the car
-            // Use only the horizontal components of lever arm to prevent flip-inducing moments
-            const horizontalLever = new THREE.Vector3(leverArm.x, 0, leverArm.z);
-            const suspTorque = new THREE.Vector3().crossVectors(horizontalLever, suspForceVec);
+            // Check how upright the car is
+            const upDot = this.up.dot(new THREE.Vector3(0, 1, 0));
+
+            // Calculate torque from suspension force at shock mount
+            const suspTorque = new THREE.Vector3().crossVectors(shockMountOffset, suspForceVec);
+
+            // Reduce torque when severely tilted to prevent instability
+            if (upDot < 0.3) {
+                suspTorque.multiplyScalar(0.2);
+            }
             torque.add(suspTorque);
 
             // Calculate tire forces
             const tireForces = this._calculateTireForces(index, suspensionForce, dt);
+
+            // Reduce tire grip when car is very tilted (wheel nearly sideways)
+            if (upDot < 0.4) {
+                const tireGripFactor = Math.max(0.1, upDot / 0.4);
+                tireForces.multiplyScalar(tireGripFactor);
+            }
             force.add(tireForces);
 
-            // Calculate torque from tire forces
-            const tireTorque = new THREE.Vector3().crossVectors(leverArm, tireForces);
+            // Calculate torque from tire forces (applied at ground contact, not shock mount)
+            // Use horizontal projection of local offset for tire torque
+            const horizontalLever = new THREE.Vector3(localOffset.x, 0, localOffset.z);
+            const tireTorque = new THREE.Vector3().crossVectors(horizontalLever, tireForces);
+            if (upDot < 0.3) {
+                tireTorque.multiplyScalar(0.3);
+            }
             torque.add(tireTorque);
 
         } else {
             wheel.grounded = false;
             wheel.compression = 0;
             wheel.velocity = 0;
+        }
+
+        return { force, torque };
+    }
+
+    /**
+     * Process body collision for a single collision point
+     * This is RIGID collision - no suspension, just prevents penetration
+     * @param {number} pointIndex - Index of the body collision point
+     * @returns {Object} { force: THREE.Vector3, torque: THREE.Vector3 }
+     */
+    _processBodyCollision(pointIndex) {
+        const point = this.bodyCollisionPoints[pointIndex];
+
+        // Calculate world position of this collision point
+        const worldPos = this.position.clone();
+        const localOffset = point.offset.clone();
+        localOffset.applyQuaternion(new THREE.Quaternion().setFromEuler(this.rotation));
+        worldPos.add(localOffset);
+
+        // Get ground height at this point
+        const groundHeight = this.terrain.getHeightAt(worldPos.x, worldPos.z);
+        const penetration = groundHeight - worldPos.y;
+
+        let force = new THREE.Vector3();
+        let torque = new THREE.Vector3();
+
+        // Only apply force if penetrating the ground
+        if (penetration > 0) {
+            // Rigid collision - high stiffness, no spring oscillation
+            const collisionStiffness = 100000; // Very stiff (rigid frame)
+            const collisionDamping = 15000;    // High damping to prevent bouncing
+
+            // Get surface normal (use world up for stability)
+            const groundNormal = this.terrain.getNormalAt(worldPos.x, worldPos.z);
+            const worldUp = new THREE.Vector3(0, 1, 0);
+            const normal = new THREE.Vector3()
+                .addScaledVector(worldUp, 0.8)
+                .addScaledVector(groundNormal, 0.2)
+                .normalize();
+
+            // Calculate velocity at collision point
+            const pointVel = this.velocity.clone();
+            const angularContrib = new THREE.Vector3().crossVectors(this.angularVelocity, localOffset);
+            pointVel.add(angularContrib);
+
+            // Velocity into ground (negative = moving into ground)
+            const normalVel = pointVel.dot(normal);
+
+            // Collision force: push out of ground
+            let collisionForce = penetration * collisionStiffness;
+
+            // Damping: only apply if moving into ground
+            if (normalVel < 0) {
+                collisionForce -= normalVel * collisionDamping;
+            }
+
+            // Clamp force to prevent explosion
+            collisionForce = Math.min(collisionForce, 500000);
+
+            // Apply force in surface normal direction
+            force.copy(normal).multiplyScalar(collisionForce);
+
+            // Calculate torque from collision
+            const upDot = this.up.dot(new THREE.Vector3(0, 1, 0));
+
+            // Use horizontal lever to prevent bad roll torques
+            const horizontalLever = new THREE.Vector3(localOffset.x, 0, localOffset.z);
+            torque.crossVectors(horizontalLever, force);
+
+            // Only reduce torque when severely flipped
+            if (upDot < 0.3) {
+                torque.multiplyScalar(0.2);
+            } else {
+                torque.multiplyScalar(0.7);
+            }
+
+            // Store collision state for debug
+            point.colliding = true;
+            point.penetration = penetration;
+        } else {
+            point.colliding = false;
+            point.penetration = 0;
         }
 
         return { force, torque };
@@ -966,20 +1175,22 @@ export class CarPhysics {
         box.rotation.copy(this.rotation);
         this.debugGroup.add(box);
 
-        // 2. Draw Wheel Raycasts
-        // Re-calculate raycast positions for visualization
+        // 2. Draw Wheel Raycasts (now along LOCAL UP, not world Y)
+        const localUp = this.up.clone();
         this.wheels.forEach((wheel, index) => {
             const wheelWorldPos = this.position.clone();
             const localOffset = wheel.offset.clone();
             localOffset.applyQuaternion(new THREE.Quaternion().setFromEuler(this.rotation));
             wheelWorldPos.add(localOffset);
 
+            // Ray starts at shock mount (wheel pos + rest length along local up)
             const rayOrigin = wheelWorldPos.clone();
-            rayOrigin.y += this.specs.suspensionRestLength; // Start of ray
+            rayOrigin.addScaledVector(localUp, this.specs.suspensionRestLength);
 
-            const rayDest = rayOrigin.clone();
+            // Ray ends at full extension along local down
             const rayMaxLen = this.specs.suspensionRestLength + this.specs.suspensionTravel + this.specs.wheelRadius;
-            rayDest.y -= rayMaxLen; // End of max extension
+            const rayDest = rayOrigin.clone();
+            rayDest.addScaledVector(localUp, -rayMaxLen);
 
             // Draw Ray Line
             const rayPoints = [rayOrigin, rayDest];
@@ -988,23 +1199,13 @@ export class CarPhysics {
             const rayLine = new THREE.Line(rayGeom, rayMat);
             this.debugGroup.add(rayLine);
 
-            // Draw Wheel Point
+            // Draw Wheel Contact Point
             if (wheel.grounded) {
-                // Show contact point
-                // We don't have exact contact point stored easily, effectively it's at rayOrigin.y - distance
-                // Simplified: Just draw a small sphere at the wheel hub position
                 const hubGeom = new THREE.SphereGeometry(0.1);
                 const hubMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
                 const hub = new THREE.Mesh(hubGeom, hubMat);
-                // Calculate actual wheel hub position based on compression
-                const currentLen = this.specs.suspensionRestLength + (1 - wheel.compression) * this.specs.suspensionTravel;
-                // Wait, compression is 0..1. 1 = fully compressed? No, usually compression is ratio. 
-                // Let's just use the wheel mesh position logic if we had it.
-                // Ray origin - current length
-
-                // Actually easier: Draw the ground hit point
-                const groundH = this.terrain.getHeightAt(rayOrigin.x, rayOrigin.z);
-                const hitPoint = new THREE.Vector3(rayOrigin.x, groundH, rayOrigin.z);
+                const groundH = this.terrain.getHeightAt(wheelWorldPos.x, wheelWorldPos.z);
+                const hitPoint = new THREE.Vector3(wheelWorldPos.x, groundH, wheelWorldPos.z);
                 hub.position.copy(hitPoint);
                 this.debugGroup.add(hub);
             }
@@ -1016,6 +1217,23 @@ export class CarPhysics {
         normalOrigin.y -= 0.5; // Draw from bottom
         const arrow = new THREE.ArrowHelper(groundNormal, normalOrigin, 2, 0x0000ff);
         this.debugGroup.add(arrow);
+
+        // 4. Draw Body Collision Points
+        this.bodyCollisionPoints.forEach((point, index) => {
+            const worldPos = this.position.clone();
+            const localOffset = point.offset.clone();
+            localOffset.applyQuaternion(new THREE.Quaternion().setFromEuler(this.rotation));
+            worldPos.add(localOffset);
+
+            // Draw collision point (red if colliding, blue otherwise)
+            const pointGeom = new THREE.SphereGeometry(0.3);
+            const pointMat = new THREE.MeshBasicMaterial({
+                color: point.colliding ? 0xff0000 : 0x0088ff
+            });
+            const pointMesh = new THREE.Mesh(pointGeom, pointMat);
+            pointMesh.position.copy(worldPos);
+            this.debugGroup.add(pointMesh);
+        });
     }
 
     toggleDebug() {
