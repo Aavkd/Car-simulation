@@ -495,22 +495,35 @@ export class CarPhysics {
         // Calculate wheel world position
         const wheelWorldPos = this.position.clone();
         const localOffset = wheel.offset.clone();
-        localOffset.applyQuaternion(new THREE.Quaternion().setFromEuler(this.rotation));
+        const carQuat = new THREE.Quaternion().setFromEuler(this.rotation);
+        localOffset.applyQuaternion(carQuat);
         wheelWorldPos.add(localOffset);
 
-        // Raycast down for ground contact
+        // Get the car's local down direction (where the wheel actually points)
+        const wheelDirection = new THREE.Vector3(0, -1, 0).applyQuaternion(carQuat);
+
+        // Raycast in wheel direction (car's local down) for ground contact
         const rayOrigin = wheelWorldPos.clone();
-        rayOrigin.y += this.specs.suspensionRestLength;
+        // Move ray origin up along wheel direction (opposite of wheel pointing direction)
+        rayOrigin.addScaledVector(wheelDirection, -this.specs.suspensionRestLength);
 
         const groundHeight = this.terrain.getHeightAt(rayOrigin.x, rayOrigin.z);
         const rayLength = this.specs.suspensionRestLength + this.specs.suspensionTravel + this.specs.wheelRadius;
+
+        // Calculate distance to ground along the wheel direction
+        // Only consider contact if wheel is pointing somewhat downward (dot with world down > 0)
+        const worldDown = new THREE.Vector3(0, -1, 0);
+        const wheelDownDot = wheelDirection.dot(worldDown);
+
+        // If wheel is pointing upward (car flipped), no ground contact possible
         const distanceToGround = rayOrigin.y - groundHeight;
+        const wheelCanContact = wheelDownDot > 0.1; // Wheel must be pointing at least slightly downward
 
         let force = new THREE.Vector3();
         let torque = new THREE.Vector3();
 
-        if (distanceToGround < rayLength) {
-            // Wheel is touching ground
+        if (wheelCanContact && distanceToGround < rayLength && distanceToGround > -this.specs.wheelRadius) {
+            // Wheel is touching ground and oriented correctly
             wheel.grounded = true;
 
             // Suspension compression
@@ -544,15 +557,30 @@ export class CarPhysics {
             // Clamp total force to avoid explosions (max ~20 tons)
             suspensionForce = Math.max(0, Math.min(suspensionForce, 200000));
 
-            // Apply suspension force in world up direction
+            // Apply suspension force - primarily in world UP direction for stability
+            // Using ground normal directly causes instability when tilted (car flips around single wheel contact)
             const groundNormal = this.terrain.getNormalAt(wheelWorldPos.x, wheelWorldPos.z);
-            const suspForceVec = groundNormal.clone().multiplyScalar(suspensionForce);
+
+            // Blend between world up (stable) and ground normal (terrain following)
+            // Heavy bias toward world-up prevents flip-inducing torques
+            const worldUp = new THREE.Vector3(0, 1, 0);
+            const blendedNormal = new THREE.Vector3()
+                .addScaledVector(worldUp, 0.85)      // 85% world up for stability
+                .addScaledVector(groundNormal, 0.15) // 15% ground normal for terrain adaptation
+                .normalize();
+
+            const suspForceVec = blendedNormal.clone().multiplyScalar(suspensionForce);
             force.add(suspForceVec);
 
-            // CRITICAL: Suspension forces also create torque (pitch/roll stabilization)
-            // This counters the pitching torque from tire drive forces
-            const leverArm = localOffset.clone(); // Already in world space after applyQuaternion
-            const suspTorque = new THREE.Vector3().crossVectors(leverArm, suspForceVec);
+            // CRITICAL: Suspension torque calculation
+            // The lever arm is the offset from car's center of mass to the wheel contact point
+            // We need to use the world-space offset for proper torque calculation
+            const leverArm = localOffset.clone(); // World-space offset from car center
+
+            // Only calculate stabilizing torque - this helps level the car
+            // Use only the horizontal components of lever arm to prevent flip-inducing moments
+            const horizontalLever = new THREE.Vector3(leverArm.x, 0, leverArm.z);
+            const suspTorque = new THREE.Vector3().crossVectors(horizontalLever, suspForceVec);
             torque.add(suspTorque);
 
             // Calculate tire forces
