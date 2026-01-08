@@ -495,35 +495,22 @@ export class CarPhysics {
         // Calculate wheel world position
         const wheelWorldPos = this.position.clone();
         const localOffset = wheel.offset.clone();
-        const carQuat = new THREE.Quaternion().setFromEuler(this.rotation);
-        localOffset.applyQuaternion(carQuat);
+        localOffset.applyQuaternion(new THREE.Quaternion().setFromEuler(this.rotation));
         wheelWorldPos.add(localOffset);
 
-        // Get the car's local down direction (where the wheel actually points)
-        const wheelDirection = new THREE.Vector3(0, -1, 0).applyQuaternion(carQuat);
-
-        // Raycast in wheel direction (car's local down) for ground contact
+        // Raycast down for ground contact
         const rayOrigin = wheelWorldPos.clone();
-        // Move ray origin up along wheel direction (opposite of wheel pointing direction)
-        rayOrigin.addScaledVector(wheelDirection, -this.specs.suspensionRestLength);
+        rayOrigin.y += this.specs.suspensionRestLength;
 
         const groundHeight = this.terrain.getHeightAt(rayOrigin.x, rayOrigin.z);
         const rayLength = this.specs.suspensionRestLength + this.specs.suspensionTravel + this.specs.wheelRadius;
-
-        // Calculate distance to ground along the wheel direction
-        // Only consider contact if wheel is pointing somewhat downward (dot with world down > 0)
-        const worldDown = new THREE.Vector3(0, -1, 0);
-        const wheelDownDot = wheelDirection.dot(worldDown);
-
-        // If wheel is pointing upward (car flipped), no ground contact possible
         const distanceToGround = rayOrigin.y - groundHeight;
-        const wheelCanContact = wheelDownDot > 0.1; // Wheel must be pointing at least slightly downward
 
         let force = new THREE.Vector3();
         let torque = new THREE.Vector3();
 
-        if (wheelCanContact && distanceToGround < rayLength && distanceToGround > -this.specs.wheelRadius) {
-            // Wheel is touching ground and oriented correctly
+        if (distanceToGround < rayLength) {
+            // Wheel is touching ground
             wheel.grounded = true;
 
             // Suspension compression
