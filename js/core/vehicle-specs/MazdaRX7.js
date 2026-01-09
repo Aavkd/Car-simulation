@@ -81,7 +81,7 @@ export const MazdaRX7 = {
     lights: {
         headlightPos: [
             { x: -0.55, y: 0.69, z: 1.7 },   // Pop-up lights are higher and more centered
-            { x: 0.55, y: 0.69, z: 1.7}
+            { x: 0.55, y: 0.69, z: 1.7 }
         ],
         taillightPos: [
             { x: -0.55, y: 0.69, z: -1.8 },  // Round taillights are wider and lower

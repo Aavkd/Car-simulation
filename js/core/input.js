@@ -271,6 +271,8 @@ export class InputHandler {
                 throttle: 0,
                 brake: 0,
                 steering: 0,
+                moveX: 0, // NEW: Raw movement X for walking
+                moveY: 0,
                 handbrake: false,
                 lookX: 0,
                 lookY: 0,
@@ -291,6 +293,7 @@ export class InputHandler {
         // Steering (Left Stick X - Axis 0)
         let steerRaw = gp.axes[0];
         if (Math.abs(steerRaw) < deadzone) steerRaw = 0;
+        this.gamepad.moveX = steerRaw; // Raw X for player movement
         this.gamepad.steering = -steerRaw; // Left stick: negative = left, positive = right
 
         // Left Stick Y (Axis 1) for on-foot forward/backward

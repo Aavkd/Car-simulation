@@ -110,8 +110,10 @@ export class PlayerController {
         // Gamepad movement (additive, don't override keyboard)
         if (input.gamepad) {
             // Left stick X for strafe
-            if (Math.abs(input.gamepad.steering) > 0.1) {
-                inputRight += input.gamepad.steering;  // Stick right (positive) = strafe right
+            // Use moveX (raw) instead of steering (inverted)
+            const strafe = input.gamepad.moveX !== undefined ? input.gamepad.moveX : -input.gamepad.steering;
+            if (Math.abs(strafe) > 0.1) {
+                inputRight += strafe;  // Stick right (positive) = strafe right
             }
             // Left stick Y for forward/backward (use moveY, not triggers)
             if (input.gamepad.moveY !== undefined && Math.abs(input.gamepad.moveY) > 0.1) {
