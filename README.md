@@ -112,7 +112,7 @@ Racing/
 │   ├── main.js             # Game entry point, state machine
 │   ├── core/               # Core game systems
 │   │   ├── camera.js       # Camera controller (orbit, cockpit, on-foot)
-│   │   ├── car.js          # Physics engine (suspension, tires, drivetrain)
+│   │   ├── car.js          # Car controller (state, visuals, input handling)
 │   │   ├── input.js        # Keyboard & gamepad input handling
 │   │   └── player.js       # On-foot player controller
 │   ├── environment/        # Visual environment systems
@@ -121,8 +121,9 @@ Racing/
 │   ├── levels/             # Level management
 │   │   ├── level-data.js   # Level configuration presets
 │   │   └── level-manager.js# Factory for terrain types
-│   ├── physics/            # Physics interfaces
-│   │   └── physics-provider.js  # Surface types and physics interface
+│   ├── physics/            # Physics systems
+│   │   ├── car_physics.js      # Core physics engine (suspension, tires, drivetrain)
+│   │   └── physics-provider.js # Surface types and terrain interface
 │   └── terrain/            # Terrain generators
 │       ├── terrain.js      # Procedural terrain (Grasslands)
 │       ├── city.js         # Urban grid generator
@@ -156,8 +157,17 @@ See [levels_roadmap.md](levels_roadmap.md) for detailed implementation plans.
 ## 🔧 Technical Details
 
 ### Physics System
-The car physics use a raycast suspension model where each wheel:
-1. Casts a ray downward to detect ground contact
+
+The physics are modular and designed for easy replacement:
+
+| Module | Purpose |
+|--------|---------|
+| `car_physics.js` | Core physics engine (stateless, receives state, returns forces) |
+| `car.js` | State management, visuals, input handling |
+| `physics-provider.js` | Terrain interface for surface types |
+
+**Suspension Model** - Each wheel:
+1. Casts a ray along the car's local UP vector
 2. Calculates spring/damper forces based on compression
 3. Applies tire friction using slip angles and load transfer
 
