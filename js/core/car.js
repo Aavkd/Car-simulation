@@ -50,10 +50,10 @@ export class CarPhysics {
 
         // Wheel states (FL, FR, RL, RR)
         this.wheels = [
-            { offset: new THREE.Vector3(-this.specs.trackWidth / 2, -1.0, this.specs.wheelBase / 2), compression: 0, velocity: 0, grounded: false, slipRatio: 0, slipAngle: 0, rpm: 0 },   // FL
-            { offset: new THREE.Vector3(this.specs.trackWidth / 2, -1.0, this.specs.wheelBase / 2), compression: 0, velocity: 0, grounded: false, slipRatio: 0, slipAngle: 0, rpm: 0 },    // FR
-            { offset: new THREE.Vector3(-this.specs.trackWidth / 2, -1.0, -this.specs.wheelBase / 2), compression: 0, velocity: 0, grounded: false, slipRatio: 0, slipAngle: 0, rpm: 0 },  // RL
-            { offset: new THREE.Vector3(this.specs.trackWidth / 2, -1.0, -this.specs.wheelBase / 2), compression: 0, velocity: 0, grounded: false, slipRatio: 0, slipAngle: 0, rpm: 0 }   // RR
+            { offset: new THREE.Vector3(-this.specs.trackWidth / 2, -1.0, this.specs.wheelBase / 2), compression: 0, velocity: 0, grounded: false, wasGrounded: false, slipRatio: 0, slipAngle: 0, rpm: 0 },   // FL
+            { offset: new THREE.Vector3(this.specs.trackWidth / 2, -1.0, this.specs.wheelBase / 2), compression: 0, velocity: 0, grounded: false, wasGrounded: false, slipRatio: 0, slipAngle: 0, rpm: 0 },    // FR
+            { offset: new THREE.Vector3(-this.specs.trackWidth / 2, -1.0, -this.specs.wheelBase / 2), compression: 0, velocity: 0, grounded: false, wasGrounded: false, slipRatio: 0, slipAngle: 0, rpm: 0 },  // RL
+            { offset: new THREE.Vector3(this.specs.trackWidth / 2, -1.0, -this.specs.wheelBase / 2), compression: 0, velocity: 0, grounded: false, wasGrounded: false, slipRatio: 0, slipAngle: 0, rpm: 0 }   // RR
         ];
 
         // Body collision points (8 corners of the hitbox)
@@ -622,9 +622,19 @@ export class CarPhysics {
         let force = new THREE.Vector3();
         let torque = new THREE.Vector3();
 
-        if (distanceToGround < rayLength && distanceToGround > -this.specs.wheelRadius) {
-            // Wheel is in contact range
+        // ==================== ISSUE 8 FIX: SUSPENSION ONLY PUSHES DOWN (relative to car) ====================
+        // Suspension can only push the car AWAY from the ground. If the car is inverted
+        // (localUp.y < 0), or at extreme angles, suspension should not apply forces.
+        // This prevents the car from being "pushed into" the ground when upside down.
+        // Threshold of 0.1 allows some leeway for steep slopes (~84 degrees from horizontal).
+        const canApplySuspension = localUp.y > 0.1;
+
+        if (distanceToGround < rayLength && distanceToGround > -this.specs.wheelRadius && canApplySuspension) {
+            // Wheel is in contact range and car is oriented correctly for suspension
             wheel.grounded = true;
+
+            // Get ground normal early (needed for velocity and force direction)
+            const groundNormal = this.terrain.getNormalAt(wheelWorldPos.x, wheelWorldPos.z);
 
             // ==================== ISSUE 5: REST LENGTH SEMANTICS ====================
             // compression = how much spring is compressed from FREE length
@@ -641,48 +651,94 @@ export class CarPhysics {
             const angularContrib = new THREE.Vector3().crossVectors(this.angularVelocity, localOffset);
             wheelPointVel.add(angularContrib);
 
+            // ==================== ISSUE 4 FIX: FORCE APPLICATION POINT ====================
+            // Apply force strictly along car's local UP (suspension axis).
+            // A physical suspension strut can only exert force along its axis.
+            // Blending with groundNormal creates phantom lateral forces that destabilize the car.
+            const forceDirection = localUp.clone();
+
+            // Calculate ground vertical velocity for damping (slope effect)
+            let groundVerticalVel = 0;
+            // Prevent division by zero or extreme values on steep walls (limit slope to ~80 degrees)
+            if (groundNormal.y > 0.15) {
+                // v_y = -(n_x*v_x + n_z*v_z) / n_y
+                groundVerticalVel = -(groundNormal.x * wheelPointVel.x + groundNormal.z * wheelPointVel.z) / groundNormal.y;
+                // Clamp ground velocity to prevent explosions on polygon edges
+                groundVerticalVel = Math.max(-50, Math.min(50, groundVerticalVel));
+            }
+
+            // Construct velocity vector of the contact point on the ground
+            // It moves horizontally with the car (at the wheel's location), but changes Y based on slope
+            // Use wheelPointVel X/Z components, not global velocity
+            const groundPointVel = new THREE.Vector3(wheelPointVel.x, groundVerticalVel, wheelPointVel.z);
+
+            // Relative velocity = Closing speed between chassis and ground
+            const relVel = wheelPointVel.clone().sub(groundPointVel);
+
             // Damping velocity = rate of compression (positive = compressing)
-            // Project chassis velocity onto local up axis (negative because down = compression)
-            wheel.velocity = -wheelPointVel.dot(localUp);
+            // Project relative velocity onto local up axis (negative because down = compression)
+            wheel.velocity = -relVel.dot(localUp);
 
             // Spring force (Hooke's law)
             const springForce = compressionRatio * this.specs.suspensionTravel * this.specs.springStrength;
-            const damperForce = wheel.velocity * this.specs.damperStrength;
 
-            // ==================== ISSUE 3 FIX: BUMP STOP DAMPING SIGN ====================
+            // ==================== ISSUE 9 FIX: DAMPER FORCE LIMITS ====================
+            // Damper force should RESIST motion, but never cause the car to launch.
+            // Key insight: suspension can only PUSH (not pull). The damper resists 
+            // compression (positive velocity = wheel moving up into car), but during
+            // rebound (negative velocity = wheel extending), the damper should only
+            // SLOW the extension, not actively push the car upward.
+            //
+            // The damper force is clamped so that:
+            // 1. During compression (velocity > 0): damper adds to spring force (resists compression)
+            // 2. During rebound (velocity < 0): damper subtracts from spring force (slows extension)
+            //    BUT the total force must remain >= 0 (no pulling/launching)
+
+            const dampingMultiplier = wheel.velocity > 0 ? 1.0 : 0.5; // Much less rebound damping
+            let damperForce = wheel.velocity * this.specs.damperStrength * dampingMultiplier;
+
+            // Anti-jitter: reduce micro-oscillations when nearly at rest
+            if (Math.abs(wheel.velocity) < 0.5 && compressionRatio < 0.3 && compressionRatio > 0.05) {
+                damperForce *= 2.0;
+            }
+
+            // ==================== ISSUE 3 FIX: BUMP STOP DAMPING ====================
             let extraForce = 0;
             const maxCompress = this.specs.suspensionTravel;
             if (compression > maxCompress) {
-                // Bottomed out - bump stop engaged
                 const penetration = compression - maxCompress;
                 const bumpStiffness = 50000;
-                const bumpDamping = 5000;
-                // FIX: ADD damping when compressing (positive velocity = compressing)
-                // Damping should RESIST motion, so add force when moving into stop
-                extraForce = (penetration * bumpStiffness) + (wheel.velocity * bumpDamping);
-                extraForce = Math.max(0, extraForce); // Only push up
+                const bumpDamping = 8000;
+                const bumpSpringForce = penetration * bumpStiffness;
+                // Bump stop damping only resists further compression, not rebound
+                const bumpDampForce = wheel.velocity > 0 ? wheel.velocity * bumpDamping : 0;
+                extraForce = bumpSpringForce + bumpDampForce;
             }
 
             // Total suspension force
             let suspensionForce = springForce + damperForce + extraForce;
-            suspensionForce = Math.max(0, Math.min(suspensionForce, 200000)); // Clamp
+
+            // Smooth initial contact
+            if (!wheel.wasGrounded && compressionRatio < 0.15) {
+                suspensionForce *= 0.5 + (compressionRatio / 0.15) * 0.5;
+            }
+
+            // ==================== CRITICAL: FORCE DIRECTION CHECK ====================
+            // Suspension can only PUSH the car away from ground, never pull it down.
+            // Clamp minimum to 0, and also verify final force pushes UP in world space.
+            suspensionForce = Math.max(0, Math.min(suspensionForce, 200000));
 
             // Store for debug
             wheel.forceVal = suspensionForce;
 
-            // ==================== ISSUE 4 FIX: FORCE APPLICATION POINT ====================
-            // Apply force along car's local UP (suspension axis), not blended world up
-            // This provides correct terrain following and slope handling
-            const groundNormal = this.terrain.getNormalAt(wheelWorldPos.x, wheelWorldPos.z);
+            let suspForceVec = forceDirection.clone().multiplyScalar(suspensionForce);
 
-            // Blend local up with ground normal for some terrain adaptation
-            // But use LOCAL up as primary (70%) to ensure correct orientation handling
-            const forceDirection = new THREE.Vector3()
-                .addScaledVector(localUp, 0.7)
-                .addScaledVector(groundNormal, 0.3)
-                .normalize();
-
-            const suspForceVec = forceDirection.clone().multiplyScalar(suspensionForce);
+            // Final safety check: if force would push car INTO ground (negative Y), zero it out
+            // This handles edge cases where localUp is at weird angles
+            if (suspForceVec.y < 0) {
+                suspForceVec.set(0, 0, 0);
+                suspensionForce = 0;
+            }
             force.add(suspForceVec);
 
             // ==================== ISSUE 4 FIX: SHOCK MOUNT LEVER ARM ====================
@@ -698,7 +754,13 @@ export class CarPhysics {
             const upDot = this.up.dot(new THREE.Vector3(0, 1, 0));
 
             // Calculate torque from suspension force at shock mount
-            const suspTorque = new THREE.Vector3().crossVectors(shockMountOffset, suspForceVec);
+            const suspTorqueWorld = new THREE.Vector3().crossVectors(shockMountOffset, suspForceVec);
+
+            // CRITICAL FIX: Transform torque from world space to body-local space
+            // The cross product gives world-space torque, but angularVelocity is in body frame
+            // Apply inverse car quaternion to convert world -> local
+            const carQuatInverse = carQuat.clone().invert();
+            const suspTorque = suspTorqueWorld.clone().applyQuaternion(carQuatInverse);
 
             // Reduce torque when severely tilted to prevent instability
             if (upDot < 0.3) {
@@ -719,16 +781,21 @@ export class CarPhysics {
             // Calculate torque from tire forces (applied at ground contact, not shock mount)
             // Use horizontal projection of local offset for tire torque
             const horizontalLever = new THREE.Vector3(localOffset.x, 0, localOffset.z);
-            const tireTorque = new THREE.Vector3().crossVectors(horizontalLever, tireForces);
+            const tireTorqueWorld = new THREE.Vector3().crossVectors(horizontalLever, tireForces);
+            // Transform tire torque from world space to body-local space
+            const tireTorque = tireTorqueWorld.clone().applyQuaternion(carQuatInverse);
             if (upDot < 0.3) {
                 tireTorque.multiplyScalar(0.3);
             }
             torque.add(tireTorque);
 
+            // Store grounded state for next frame (for smooth contact detection)
+            wheel.wasGrounded = true;
         } else {
             wheel.grounded = false;
             wheel.compression = 0;
             wheel.velocity = 0;
+            wheel.wasGrounded = false;
         }
 
         return { force, torque };

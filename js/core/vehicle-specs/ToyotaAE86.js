@@ -21,7 +21,7 @@ export const ToyotaAE86 = {
     // The 3D model is baked at 4.5x scale, so these are visual/game units
     dimensions: {
         wheelRadius: 1.35,      // Game units (real: ~0.3m * 4.5)
-        trackWidth: 6.55,       // Game units (real: ~1.45m * 4.5)
+        trackWidth: 7.55,       // Game units (real: ~1.45m * 4.5)
         wheelBase: 10.55,       // Game units (real: ~2.4m * 4.5)
         cgHeight: 2.4,          // Game units - Center of gravity height
         width: 6.70,            // Body width (for collision)
