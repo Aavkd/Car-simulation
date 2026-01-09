@@ -230,8 +230,8 @@ export class InputHandler {
 
         // Steering
         let targetSteering = 0;
-        if (this.keys.left) targetSteering = -1;
-        if (this.keys.right) targetSteering = 1;
+        if (this.keys.left) targetSteering = 1;
+        if (this.keys.right) targetSteering = -1;
 
         if (this.gamepad && Math.abs(this.gamepad.steering) > 0.1) {
             targetSteering = this.gamepad.steering;
@@ -291,7 +291,7 @@ export class InputHandler {
         // Steering (Left Stick X - Axis 0)
         let steerRaw = gp.axes[0];
         if (Math.abs(steerRaw) < deadzone) steerRaw = 0;
-        this.gamepad.steering = steerRaw; // Left stick: negative = left, positive = right
+        this.gamepad.steering = -steerRaw; // Left stick: negative = left, positive = right
 
         // Left Stick Y (Axis 1) for on-foot forward/backward
         let moveYRaw = gp.axes[1];
