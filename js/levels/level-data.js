@@ -57,6 +57,20 @@ export const LevelData = {
             seed: 8848,  // Mount Everest elevation in meters :)
             peakHeight: 800
         }
+    },
+    vaporwave: {
+        id: 'vaporwave',
+        name: 'Neon Horizon',
+        description: 'Infinite psychedelic highway in the void',
+        type: 'vaporwave',
+        difficulty: 3,
+        color: '#ff00ff', // Magenta accent
+        params: {
+            roadWidth: 80,
+            segmentLength: 50000, // 50km track
+            curveIntensity: 150,
+            slopeIntensity: 40
+        }
     }
 };
 

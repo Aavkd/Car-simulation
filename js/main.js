@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { InputHandler } from './core/input.js';
 import { CameraController } from './core/camera.js';
@@ -9,6 +10,7 @@ import { TerrainGenerator } from './terrain/terrain.js';
 import { CarPhysics } from './core/car.js';
 import { PlayerController } from './core/player.js';
 import { SkySystem } from './environment/sky.js';
+import { SkyVaporwave } from './environment/sky-vaporwave.js';
 import { LevelManager } from './levels/level-manager.js';
 import { LevelData, getAllLevels } from './levels/level-data.js';
 import { ToyotaAE86 } from './core/vehicle-specs/ToyotaAE86.js';
@@ -248,6 +250,74 @@ class Game {
         const terrainMesh = this.terrain.generate();
         this.scene.add(terrainMesh);
 
+        // Apply visual presets and Skybox based on level type
+        if (levelConfig.type === 'vaporwave') {
+            console.log('Applying Vaporwave Visuals...');
+            // Switch to Vaporwave Skybox
+            if (this.sky instanceof SkySystem) {
+                console.log('Swapping SkySystem -> SkyVaporwave');
+                // Remove standard sky objects
+                if (this.sky.skyDome) this.scene.remove(this.sky.skyDome);
+                if (this.sky.sun) this.scene.remove(this.sky.sun);
+                if (this.sky.moon) this.scene.remove(this.sky.moon);
+                if (this.sky.sunLight) {
+                    this.scene.remove(this.sky.sunLight);
+                    if (this.sky.sunLight.target) this.scene.remove(this.sky.sunLight.target);
+                }
+                if (this.sky.moonLight) this.scene.remove(this.sky.moonLight);
+                if (this.sky.ambientLight) this.scene.remove(this.sky.ambientLight);
+                if (this.sky.hemiLight) this.scene.remove(this.sky.hemiLight);
+                if (this.sky.starfield && this.sky.starfield.starsGroup) {
+                    this.scene.remove(this.sky.starfield.starsGroup);
+                }
+
+                // Create Vaporwave sky
+                this.sky = new SkyVaporwave(this.scene);
+            }
+
+            // Neon Vibe Configuration
+            if (this.bloomPass) {
+                this.bloomPass.strength = 0.6;
+                this.bloomPass.radius = 0.5;
+                this.bloomPass.threshold = 0.2;
+            }
+
+            // Override fog
+            this.scene.fog.color.setHex(0x2a0a3b);
+            this.scene.fog.near = 100;
+            this.scene.fog.far = 2000;
+
+        } else {
+            // Standard Level
+            if (this.sky instanceof SkyVaporwave) {
+                console.log('Swapping SkyVaporwave -> SkySystem');
+                // Remove Vaporwave sky objects
+                if (this.sky.skyDome) this.scene.remove(this.sky.skyDome);
+                if (this.sky.sun) this.scene.remove(this.sky.sun);
+                if (this.sky.sunLight) this.scene.remove(this.sky.sunLight);
+                if (this.sky.ambientLight) this.scene.remove(this.sky.ambientLight);
+                if (this.sky.hemiLight) this.scene.remove(this.sky.hemiLight);
+                if (this.sky.starfield && this.sky.starfield.starsGroup) {
+                    this.scene.remove(this.sky.starfield.starsGroup);
+                }
+
+                // Restore Standard Sky
+                this.sky = new SkySystem(this.scene);
+            }
+
+            this.sky.setPaused(false);
+            this.scene.fog.color.setHex(0x87CEEB); // Default fog
+
+            // Reset standard visuals
+            if (this.bloomPass) {
+                this.bloomPass.strength = 0.0;
+            }
+
+            this.scene.fog.near = 300;
+            this.scene.fog.far = 2000;
+        }
+
+
         // Load car model
         await this._loadCarModel();
 
@@ -316,7 +386,7 @@ class Game {
         // Fog for depth (extended for massive map) - color will be updated by sky system
         this.scene.fog = new THREE.Fog(0x87CEEB, 300, 2000);
 
-        // Initialize dynamic sky system
+        // Initialize dynamic sky system - default to standard
         this.sky = new SkySystem(this.scene);
         this.sky.setTime(0.35); // Start at morning
         this.sky.setDayDuration(300); // 5 minute day cycle
@@ -345,6 +415,15 @@ class Game {
         this.retroPass.uniforms['pixelSize'].value = 9.0;  // Adjust for more/less pixelation
         this.retroPass.uniforms['colorDepth'].value = 16.0;  // 16-bit color depth
         this.retroPass.enabled = this.retroEnabled;
+        // Bloom Pass for pure neon vibes - defaults to low/off, enabled per level
+        this.bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            0.0,    // strength (0 to start)
+            0.4,    // radius
+            0.85    // threshold
+        );
+        this.composer.addPass(this.bloomPass);
+
         this.composer.addPass(this.retroPass);
     }
 
