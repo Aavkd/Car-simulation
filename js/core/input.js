@@ -311,7 +311,7 @@ export class InputHandler {
         // Handbrake (X/A Button - Button 0 or Square - Button 2? Let's use Cross/A for handbrake usually, or maybe Circle)
         // Request didn't specify, but space is handbrake. Let's map Button 0 (X/Cross on DS, A on Xbox) or Button 1 (Circle/B)
         // Let's use Button 1 (Circle/B) for Handbrake as it's common in racing (or R1, but R1 is Gear Up requested)
-        this.gamepad.handbrake = gp.buttons[1].pressed; // Circle
+        this.gamepad.handbrake = gp.buttons[5].pressed; // Circle
 
         // Sprint (L3 - Left Stick Press - Button 10) for on-foot mode
         this.gamepad.sprint = gp.buttons[10].pressed; // L3
@@ -327,8 +327,8 @@ export class InputHandler {
         // Shifting (L1/R1 - Buttons 4, 5)
         // We need single-press detection for gear shifts
         // Also expose as continuous inputs for plane yaw
-        this.gamepad.yawLeft = gp.buttons[4].pressed;  // L1 - Yaw Left (plane mode)
-        this.gamepad.yawRight = gp.buttons[5].pressed; // R1 - Yaw Right (plane mode)
+        this.gamepad.yawLeft = gp.buttons[1].pressed;  // L1 - Yaw Left (plane mode)
+        this.gamepad.yawRight = gp.buttons[2].pressed; // R1 - Yaw Right (plane mode)
         
         if (gp.buttons[4].pressed) { // L1 - Down
             if (!this._l1Pressed) {

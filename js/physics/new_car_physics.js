@@ -84,8 +84,8 @@ export class NewCarPhysicsEngine {
 
         // ==================== DRIVE/STEERING ====================
         this.steeringAngle = 0;
-        this.maxSteeringAngle = carSpec.steering?.maxAngle || 0.6;
-        this.steeringSpeed = carSpec.steering?.speed || 3.0;
+        this.maxSteeringAngle = carSpec.steering?.maxAngle || 0.85; // Increased for sharper turns (~49 degrees)
+        this.steeringSpeed = carSpec.steering?.speed || 4.0; // Faster steering response
 
         // Engine
         this.engineRPM = carSpec.engine?.idleRPM || 900;
@@ -102,6 +102,20 @@ export class NewCarPhysicsEngine {
         // Tires
         this.gripCoefficient = carSpec.tires?.gripCoefficient || 1.5;
         this.rollingResistance = carSpec.tires?.rollingResistance || 0.005;
+
+        // ==================== DRIFT MECHANICS ====================
+        // Drift parameters for lateral inertia and sliding behavior
+        this.driftGripMultiplier = carSpec.drift?.gripMultiplier || 0.2;     // Reduced grip when drifting (lowered for more slide)
+        this.lateralInertiaFactor = carSpec.drift?.lateralInertia || 0.6;   // How much lateral velocity is retained (increased)
+        this.handbrakeGripReduction = carSpec.drift?.handbrakeGripReduction || 0.15; // Rear grip when handbrake is pulled (lowered)
+        this.driftAngleThreshold = carSpec.drift?.angleThreshold || 0.08;    // Slip angle to trigger drift state (lowered)
+        this.driftRecoveryRate = carSpec.drift?.recoveryRate || 1;         // How fast grip recovers after drift (slower)
+
+        // Drift state tracking
+        this.isDrifting = false;
+        this.driftIntensity = 0;         // 0-1, how much the car is currently sliding
+        this.lateralVelocity = 0;        // Tracks lateral speed for inertia
+        this.currentDriftGrip = 1.0;     // Current grip multiplier (smoothed)
 
         // Wheel spin velocities (for realistic wheel-spin)
         this.wheelSpinVelocities = [0, 0, 0, 0]; // rad/s for each wheel
@@ -231,7 +245,10 @@ export class NewCarPhysicsEngine {
         // ==================== 9. UPDATE ENGINE RPM ====================
         this._updateEngineRPM(dt, input, groundedCount);
 
-        // ==================== 10. GROUND COLLISION SAFETY ====================
+        // ==================== 10. UPDATE DRIFT STATE ====================
+        this._updateDriftState(dt, input);
+
+        // ==================== 11. GROUND COLLISION SAFETY ====================
         this._ensureAboveGround();
     }
 
@@ -449,11 +466,75 @@ export class NewCarPhysicsEngine {
             longitudinalForce += rollingForce;
         }
 
-        // ==================== LATERAL (CORNERING) ====================
-        // Simple lateral friction to oppose side-sliding
+        // ==================== LATERAL (CORNERING/DRIFTING) ====================
+        // Calculate slip angle (angle between wheel direction and actual velocity)
+        const groundSpeed = groundVel.length();
+        let slipAngle = 0;
+        if (groundSpeed > 0.5) {
+            // Slip angle = angle between velocity and wheel heading
+            const velNormalized = groundVel.clone().normalize();
+            const dotProduct = velNormalized.dot(wheelForward);
+            const clampedDot = THREE.MathUtils.clamp(dotProduct, -1, 1);
+            slipAngle = Math.acos(clampedDot);
+
+            // Determine sign of slip angle based on lateral velocity
+            if (lateralVel < 0) slipAngle = -slipAngle;
+        }
+
+        // Check if drifting based on slip angle
+        const aboveThreshold = Math.abs(slipAngle) > this.driftAngleThreshold;
+        const handbrakeActive = (input.handbrake || 0) > 0.5;
+
+        // ==================== LATERAL (CORNERING/DRIFTING) ====================
         let lateralForce = 0;
-        if (Math.abs(lateralVel) > 0.1) {
-            lateralForce = -Math.sign(lateralVel) * Math.min(Math.abs(lateralVel) * normalLoad * 0.5, maxFriction * 0.8);
+
+        if (Math.abs(lateralVel) > 0.05) {
+            // Base lateral grip - strong for normal cornering
+            let lateralGripMultiplier = 1.0;
+
+            // HANDBRAKE: Rear wheels lose most lateral grip (allows tail to swing out)
+            if (isRear && handbrakeActive) {
+                lateralGripMultiplier = 0.1; // Only 10% grip on rear when handbrake
+                // Lock rear wheels
+                this.wheelSpinVelocities[wheelIndex] *= 0.85;
+            }
+            // DRIFTING: When already sliding, reduce grip to maintain the slide
+            else if (aboveThreshold) {
+                if (isRear) {
+                    // Rear loses more grip when drifting - allows oversteer
+                    lateralGripMultiplier = this.driftGripMultiplier;
+                } else {
+                    // Front keeps more grip for steering control during drift
+                    lateralGripMultiplier = 0.8;
+                }
+            }
+
+            // Speed-sensitive steering boost - compensate for physics understeer at high speed
+            // At low speed (< 30 km/h): multiplier = 1.0
+            // At high speed (100+ km/h): multiplier = 1.8 for front, 1.3 for rear
+            const speedKMH = this.getSpeedKMH();
+            let speedBoost = 1.0;
+            if (speedKMH > 30) {
+                const speedFactor = Math.min(1.0, (speedKMH - 30) / 70); // 0 at 30km/h, 1 at 100km/h
+                if (isFront) {
+                    speedBoost = 1.0 + speedFactor * 0.8; // Up to 1.8x at high speed
+                } else {
+                    speedBoost = 1.0 + speedFactor * 0.3; // Rear gets less boost to maintain balance
+                }
+            }
+
+            // Calculate lateral friction force
+            // Strong multiplier (1.2) for responsive steering, with speed boost
+            const lateralFriction = Math.abs(lateralVel) * normalLoad * 1.2 * lateralGripMultiplier * speedBoost;
+            const maxLateralForce = maxFriction * lateralGripMultiplier * 0.95 * speedBoost;
+
+            // Lateral force opposes sideways motion
+            lateralForce = -Math.sign(lateralVel) * Math.min(lateralFriction, maxLateralForce);
+
+            // Apply lateral inertia during drift - reduces force to let car carry sideways momentum
+            if ((isRear && handbrakeActive) || aboveThreshold) {
+                lateralForce *= (1.0 - this.lateralInertiaFactor * 0.6);
+            }
         }
 
         // ==================== APPLY FORCES ====================
@@ -597,5 +678,76 @@ export class NewCarPhysicsEngine {
 
     getWheelCompressions() {
         return this.wheelCompressions;
+    }
+
+    // ==================== DRIFT STATE ====================
+    /**
+     * Update drift state variables for UI and audio feedback
+     */
+    _updateDriftState(dt, input) {
+        // Calculate lateral velocity in car's local space
+        const localVelocity = this.velocity.clone().applyQuaternion(this.quaternion.clone().invert());
+        this.lateralVelocity = localVelocity.x; // X is right in local space
+
+        // Calculate drift intensity based on slip angle
+        const forwardSpeed = Math.abs(localVelocity.z);
+        const lateralSpeed = Math.abs(this.lateralVelocity);
+
+        if (forwardSpeed > 2) {
+            // Slip ratio: how much lateral vs forward motion
+            const slipRatio = lateralSpeed / (forwardSpeed + 0.1);
+            this.driftIntensity = THREE.MathUtils.clamp(slipRatio * 2, 0, 1);
+        } else {
+            this.driftIntensity *= 0.95; // Decay when slow
+        }
+
+        // Check if actively drifting
+        const handbrakeActive = (input.handbrake || 0) > 0.5;
+        this.isDrifting = this.driftIntensity > 0.2 || handbrakeActive;
+
+        // Smooth grip recovery when not drifting
+        if (this.isDrifting) {
+            // Reduce grip during drift
+            this.currentDriftGrip = THREE.MathUtils.lerp(
+                this.currentDriftGrip,
+                this.driftGripMultiplier,
+                dt * 5
+            );
+        } else {
+            // Recover grip after drift
+            this.currentDriftGrip = THREE.MathUtils.lerp(
+                this.currentDriftGrip,
+                1.0,
+                dt * this.driftRecoveryRate
+            );
+        }
+    }
+
+    /**
+     * Get current drift intensity (0-1)
+     */
+    getDriftIntensity() {
+        return this.driftIntensity;
+    }
+
+    /**
+     * Check if car is currently drifting
+     */
+    getIsDrifting() {
+        return this.isDrifting;
+    }
+
+    /**
+     * Get current lateral velocity (for tire smoke, audio, etc.)
+     */
+    getLateralVelocity() {
+        return this.lateralVelocity;
+    }
+
+    /**
+     * Get current drift grip multiplier
+     */
+    getCurrentDriftGrip() {
+        return this.currentDriftGrip;
     }
 }
