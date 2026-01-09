@@ -96,7 +96,15 @@ export class PlanePhysics {
         let targetRoll = 0;
         if (input.keys.left) targetRoll = 1; // Roll left
         if (input.keys.right) targetRoll = -1; // Roll right
-        if (input.gamepad) targetRoll += input.gamepad.steering;
+        // Use moveX (raw) instead of steering (inverted) for inverted roll behavior (Left Stick -> Right Roll)
+        // Or actually, steering is inverted (-raw).
+        // If we want inverted roll (Stick Left -> Roll Right), we want Negative value for Left Stick.
+        // Stick Left -> moveX (-1).
+        if (input.gamepad) {
+             // Use moveX if available (added in recent update), else fall back to -steering
+             const rollInput = input.gamepad.moveX !== undefined ? input.gamepad.moveX : -input.gamepad.steering;
+             targetRoll += rollInput;
+        }
 
         // Yaw: Q/E or L1/R1
         let targetYaw = 0;

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { NewCarPhysicsEngine } from '../physics/new_car_physics.js';
+import { TireSmokeSystem } from './tire-smoke.js';
 
 /**
  * Car Physics System (Controller)
@@ -61,6 +62,9 @@ export class CarPhysics {
         this.taillightsOn = false;
         this.isBraking = false;
         this._createTaillights();
+
+        // Tire Smoke System
+        this.smokeSystem = new TireSmokeSystem(scene);
     }
 
     /**
@@ -363,6 +367,25 @@ export class CarPhysics {
 
         // Update visual mesh
         this._updateMesh();
+
+        // Update Smoke System
+        if (this.smokeSystem) {
+            this.smokeSystem.update(deltaTime);
+
+            // Emit smoke if drifting and wheels are on ground
+            if (this.physics.getIsDrifting()) {
+                const driftIntensity = this.physics.getDriftIntensity();
+                // Rear wheels are at index 2 and 3
+                for (let i = 2; i <= 3; i++) {
+                    if (this.physics.wheelGrounded[i]) {
+                        // Position slightly above ground at contact point
+                        const contactPos = this.physics.wheelContactPoints[i].clone();
+                        // contactPos.y += 0.2; 
+                        this.smokeSystem.emit(contactPos, driftIntensity);
+                    }
+                }
+            }
+        }
 
         // Update debug visuals
         this._updateDebug();

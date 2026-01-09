@@ -327,8 +327,8 @@ export class InputHandler {
         // Shifting (L1/R1 - Buttons 4, 5)
         // We need single-press detection for gear shifts
         // Also expose as continuous inputs for plane yaw
-        this.gamepad.yawLeft = gp.buttons[1].pressed;  // L1 - Yaw Left (plane mode)
-        this.gamepad.yawRight = gp.buttons[2].pressed; // R1 - Yaw Right (plane mode)
+        this.gamepad.yawLeft = gp.buttons[4].pressed;  // L1 - Yaw Left (plane mode)
+        this.gamepad.yawRight = gp.buttons[5].pressed; // R1 - Yaw Right (plane mode)
         
         if (gp.buttons[4].pressed) { // L1 - Down
             if (!this._l1Pressed) {
