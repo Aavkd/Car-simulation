@@ -20,7 +20,14 @@ export class InputHandler {
             headlights: false,
             retroToggle: false,
             enterExit: false,
-            sprint: false
+            sprint: false,
+            // Flight specific
+            rollLeft: false,
+            rollRight: false,
+            yawLeft: false,
+            yawRight: false,
+            pitchUp: false,
+            pitchDown: false
         };
 
         // Smoothed input values (0-1 range)
@@ -267,7 +274,9 @@ export class InputHandler {
                 handbrake: false,
                 lookX: 0,
                 lookY: 0,
-                sprint: false
+                sprint: false,
+                yawLeft: false,
+                yawRight: false
             };
             console.log("Gamepad connected:", gp.id);
         }
@@ -313,7 +322,11 @@ export class InputHandler {
         this.gamepad.lookY = camY;
 
         // Shifting (L1/R1 - Buttons 4, 5)
-        // We need single-press detection
+        // We need single-press detection for gear shifts
+        // Also expose as continuous inputs for plane yaw
+        this.gamepad.yawLeft = gp.buttons[4].pressed;  // L1 - Yaw Left (plane mode)
+        this.gamepad.yawRight = gp.buttons[5].pressed; // R1 - Yaw Right (plane mode)
+        
         if (gp.buttons[4].pressed) { // L1 - Down
             if (!this._l1Pressed) {
                 this._l1Pressed = true;

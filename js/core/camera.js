@@ -9,7 +9,7 @@ export class CameraController {
         this.domElement = domElement || document.body;
 
         // Camera modes
-        this.modes = ['chase', 'far', 'hood', 'cockpit'];
+        this.modes = ['chase', 'far', 'hood', 'cockpit', 'flight'];
         this.currentModeIndex = 0;
 
         // Mode configurations
@@ -37,6 +37,13 @@ export class CameraController {
                 height: 4.5,        // Driver eye level (scaled for the large car model)
                 lookAtHeight: 4.5,  // Look straight ahead
                 fov: 85             // Wide FOV for immersive cockpit view
+            },
+            flight: {
+                distance: 1,       // Farther back
+                height: 2,
+                lookAtHeight: 2,
+                fov: 75,
+                rollLock: false      // Custom flag for plane behavior
             }
         };
 
@@ -221,7 +228,7 @@ export class CameraController {
         const targetDir = new THREE.Vector3(0, 0, 1);
         targetDir.applyQuaternion(target.quaternion);
 
-        // Handle cockpit (first-person) mode specially
+        // ==================== COCKPIT MODE ====================
         if (this.isCockpitMode) {
             // Position camera inside the car at driver's head position
             const cockpitOffset = new THREE.Vector3(0, config.height, 2); // Slightly forward of center
@@ -261,7 +268,52 @@ export class CameraController {
             return;
         }
 
-        // Standard third-person camera modes (chase, far, hood)
+        // ==================== FLIGHT MODE ====================
+        if (config.rollLock) {
+            // Get Plane orientation vectors
+            const planeRotation = new THREE.Matrix4().makeRotationFromQuaternion(target.quaternion);
+            const planeUp = new THREE.Vector3(0, 1, 0).applyMatrix4(planeRotation);
+
+            // Calculate offset relative to plane orientation
+            // We want to be behind (-Z) and up (+Y) in LOCAL space
+            const offset = new THREE.Vector3(0, config.height, -config.distance);
+            offset.applyMatrix4(planeRotation); // Rotate offset by plane rotation
+
+            // Target Position
+            const desiredPos = targetPos.clone().add(offset);
+
+            // Smoothly move there
+            this.currentPosition.lerp(desiredPos, this.positionSmoothing * deltaTime);
+
+            // Look target (ahead of plane)
+            const lookOffset = new THREE.Vector3(0, config.lookAtHeight, 50).applyMatrix4(planeRotation);
+            const lookTarget = targetPos.clone().add(lookOffset);
+            this.currentLookAt.lerp(lookTarget, this.lookAtSmoothing * deltaTime);
+
+            // Apply to Camera
+            this.camera.position.copy(this.currentPosition);
+            this.camera.lookAt(this.currentLookAt);
+
+            // Force camera up vector to match plane up (Roll Lock)
+            // We smoothly blend the up vector to avoid snapping
+            const currentUp = this.camera.up.clone();
+            currentUp.lerp(planeUp, 5.0 * deltaTime);
+            this.camera.up.copy(currentUp);
+
+            // Dynamic FOV
+            const speedRatio = Math.min(speed / 150, 1); // 150 m/s max for FOV effect
+            const targetFov = config.fov + speedRatio * 20;
+            this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, this.fovSmoothing * deltaTime);
+            this.camera.fov = this.currentFov;
+            this.camera.updateProjectionMatrix();
+            return;
+        }
+
+        // Reset Up vector for standard modes (Y-up)
+        this.camera.up.set(0, 1, 0);
+
+        // ==================== STANDARD MODES (Chase, Far, Hood) ====================
+
         // Smooth orbit angle interpolation
         this.orbitAngleX = THREE.MathUtils.lerp(this.orbitAngleX, this.targetOrbitX, 8 * deltaTime);
         this.orbitAngleY = THREE.MathUtils.lerp(this.orbitAngleY, this.targetOrbitY, 8 * deltaTime);

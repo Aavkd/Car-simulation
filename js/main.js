@@ -14,6 +14,7 @@ import { SkyVaporwave } from './environment/sky-vaporwave.js';
 import { LevelManager } from './levels/level-manager.js';
 import { LevelData, getAllLevels } from './levels/level-data.js';
 import { ToyotaAE86 } from './core/vehicle-specs/ToyotaAE86.js';
+import { PlanePhysics } from './core/plane.js';
 
 /**
  * Game State enum
@@ -101,6 +102,10 @@ class Game {
         this.carMesh = null;
         this.player = null;  // On-foot player controller
         this.sky = null;
+        this.plane = null;
+        this.planeMesh = null;
+        this.selectedVehicleType = 'car'; // Default selection from menu
+        this.activeVehicle = 'car'; // 'car' or 'plane'
 
         // Player mode state
         this.isOnFoot = false;
@@ -188,6 +193,73 @@ class Game {
             card.addEventListener('click', () => this._selectLevel(level));
             levelGrid.appendChild(card);
         });
+
+        // Add Vehicle Selector to header or top of menu
+        const container = document.querySelector('.menu-container') || document.getElementById('main-menu');
+        if (container) {
+            let selectorContainer = document.getElementById('vehicle-selector');
+            if (!selectorContainer) {
+                selectorContainer = document.createElement('div');
+                selectorContainer.id = 'vehicle-selector';
+                selectorContainer.className = 'vehicle-selector';
+                selectorContainer.style.cssText = `
+                    display: flex;
+                    justify-content: center;
+                    gap: 20px;
+                    margin-bottom: 30px;
+                `;
+
+                // Insert before level grid
+                const grid = document.getElementById('level-grid');
+                if (grid && grid.parentNode) {
+                    grid.parentNode.insertBefore(selectorContainer, grid);
+                } else {
+                    container.appendChild(selectorContainer);
+                }
+            }
+
+            selectorContainer.innerHTML = `
+                <div class="vehicle-option ${this.selectedVehicleType === 'car' ? 'selected' : ''}" data-type="car" style="
+                    padding: 15px 30px;
+                    background: rgba(0, 0, 0, 0.5);
+                    border: 2px solid ${this.selectedVehicleType === 'car' ? '#e74c3c' : '#444'};
+                    border-radius: 8px;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    text-align: center;
+                ">
+                    <div style="font-size: 24px; margin-bottom: 5px;">🚗</div>
+                    <div style="font-weight: bold; color: white;">TOYOTA AE86</div>
+                </div>
+                <div class="vehicle-option ${this.selectedVehicleType === 'plane' ? 'selected' : ''}" data-type="plane" style="
+                    padding: 15px 30px;
+                    background: rgba(0, 0, 0, 0.5);
+                    border: 2px solid ${this.selectedVehicleType === 'plane' ? '#3498db' : '#444'};
+                    border-radius: 8px;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    text-align: center;
+                ">
+                    <div style="font-size: 24px; margin-bottom: 5px;">✈️</div>
+                    <div style="font-weight: bold; color: white;">F-16 JET</div>
+                </div>
+            `;
+
+            // Bind events
+            selectorContainer.querySelectorAll('.vehicle-option').forEach(opt => {
+                opt.addEventListener('click', (e) => {
+                    const type = opt.dataset.type;
+                    this.selectedVehicleType = type;
+
+                    // Update visual selection
+                    selectorContainer.querySelectorAll('.vehicle-option').forEach(o => {
+                        const isSelected = o.dataset.type === type;
+                        o.classList.toggle('selected', isSelected);
+                        o.style.borderColor = isSelected ? (type === 'car' ? '#e74c3c' : '#3498db') : '#444';
+                    });
+                });
+            });
+        }
     }
 
     /**
@@ -249,6 +321,11 @@ class Game {
         this.terrain = this.levelManager.loadLevel(levelConfig);
         const terrainMesh = this.terrain.generate();
         this.scene.add(terrainMesh);
+
+        // Update physics providers with new terrain
+        if (this.plane) {
+            this.plane.setPhysicsProvider(this.terrain);
+        }
 
         // Apply visual presets and Skybox based on level type
         if (levelConfig.type === 'vaporwave') {
@@ -321,6 +398,16 @@ class Game {
         // Load car model
         await this._loadCarModel();
 
+        // Load jet model
+        await this._loadJetModel();
+
+        // Initialize car and plane logic if needed (models are loaded above)
+        // Set active vehicle
+        this.activeVehicle = this.selectedVehicleType;
+        this.isOnFoot = false;
+
+        console.log(`[Game] Starting level with vehicle: ${this.activeVehicle}`);
+
         // Setup input callbacks
         this.input.onCameraChange = () => this._handleCameraChange();
 
@@ -333,6 +420,17 @@ class Game {
             this.car.setWheelMeshes(this.wheelMeshes);
         }
 
+        // Initialize plane physics if not already
+        // Note: plane initialized in _loadJetModel, but let's ensure it's ready
+        if (this.planeMesh && !this.plane) {
+            this.plane = new PlanePhysics(this.planeMesh, this.scene);
+        }
+
+        // Connect terrain physics provider to plane for ground collision
+        if (this.plane && this.terrain) {
+            this.plane.setPhysicsProvider(this.terrain);
+        }
+
         // Initialize player controller (on-foot mode)
         this.player = new PlayerController(this.terrain);
 
@@ -342,7 +440,7 @@ class Game {
         this.input.onTimePreset = (preset) => this._setTimePreset(preset);
         this.input.onHeadlightsToggle = () => this._toggleHeadlights();
 
-        // Start position - check for custom spawn from terrain
+        // Set Spawn Position
         let startX = 0;
         let startZ = 0;
         if (this.terrain.getSpawnPosition) {
@@ -350,8 +448,37 @@ class Game {
             startX = spawn.x;
             startZ = spawn.z;
         }
-        const startHeight = this.terrain.getHeightAt(startX, startZ) + 2;
-        this.car.position.set(startX, startHeight, startZ);
+
+        // Apply Spawn to Selected Vehicle
+        if (this.activeVehicle === 'car') {
+            const startHeight = this.terrain.getHeightAt(startX, startZ) + 2;
+            this.car.position.set(startX, startHeight, startZ);
+            this.car.velocity.set(0, 0, 0); // Reset velocity
+
+            // Park the plane somewhere else if it exists
+            if (this.plane) {
+                this.plane.setPosition(startX + 30, this.terrain.getHeightAt(startX + 30, startZ + 30) + 5, startZ + 30);
+            }
+
+            // Setup camera for car
+            this.cameraController.currentModeIndex = 0; // Chase
+        } else {
+            // Plane Spawn
+            // Spawn plane in air or on ground? Airstrip usually preferred but let's do air for fun or ground if flat.
+            // Let's spawn on ground + small offset
+            const startHeight = this.terrain.getHeightAt(startX, startZ) + 5;
+            if (this.plane) {
+                this.plane.setPosition(startX, startHeight, startZ);
+                this.plane.velocity.set(0, 0, 0);
+            }
+
+            // Park car away
+            this.car.position.set(startX - 30, startHeight, startZ - 30);
+
+            // Setup camera for plane
+            const flightIndex = this.cameraController.modes.indexOf('flight');
+            if (flightIndex >= 0) this.cameraController.currentModeIndex = flightIndex;
+        }
 
         // Setup pointer lock for first-person mouse look
         this._setupPointerLock();
@@ -603,13 +730,24 @@ class Game {
 
         // ==================== PLAY STATE ONLY ====================
         if (this.gameState === GameState.PLAY) {
-            // Update car physics (only when in vehicle)
-            if (this.car && !this.isOnFoot) {
+            // Update car physics (only when in vehicle and active)
+            if (this.car && !this.isOnFoot && this.activeVehicle === 'car') {
                 this.car.update(deltaTime, this.input);
 
                 // Update sun shadow to follow car
                 if (this.sun) {
                     this.sun.target.position.copy(this.car.position);
+                    this.sun.target.updateMatrixWorld();
+                }
+            }
+
+            // Update Plane physics
+            if (this.plane && !this.isOnFoot && this.activeVehicle === 'plane') {
+                this.plane.update(deltaTime, this.input);
+
+                // Sun shadow follows plane
+                if (this.sun) {
+                    this.sun.target.position.copy(this.plane.mesh.position);
                     this.sun.target.updateMatrixWorld();
                 }
             }
@@ -638,19 +776,25 @@ class Game {
             if (this.cameraController) {
                 if (this.isOnFoot && this.player) {
                     this.cameraController.updatePlayerCamera(this.player, deltaTime);
-                } else if (this.carMesh) {
-                    if (this.input.gamepad) {
-                        this.cameraController.handleAnalogInput(
-                            this.input.gamepad.lookX,
-                            this.input.gamepad.lookY,
-                            20.0
+                } else if (!this.isOnFoot) {
+                    // Update camera for vehicle
+                    const targetMesh = this.activeVehicle === 'car' ? this.carMesh : this.planeMesh;
+                    const speed = this.activeVehicle === 'car' ? (this.car ? Math.abs(this.car.speed) : 0) : (this.plane ? this.plane.speed : 0);
+
+                    if (targetMesh) {
+                        if (this.input.gamepad) {
+                            this.cameraController.handleAnalogInput(
+                                this.input.gamepad.lookX,
+                                this.input.gamepad.lookY,
+                                20.0
+                            );
+                        }
+                        this.cameraController.update(
+                            targetMesh,
+                            speed,
+                            deltaTime
                         );
                     }
-                    this.cameraController.update(
-                        this.carMesh,
-                        this.car ? Math.abs(this.car.speed) : 0,
-                        deltaTime
-                    );
                 }
             }
 
@@ -704,17 +848,26 @@ class Game {
     }
 
     _updateHUD() {
-        if (!this.car) return;
+        if (this.activeVehicle === 'car' && this.car) {
+            // Speed
+            this.hudElements.speedValue.textContent = Math.round(this.car.speedKmh);
+            // Gear
+            this.hudElements.gearValue.textContent = this.car.getGearDisplay();
+            // RPM bar
+            const rpmPercent = this.car.getRPMPercentage() * 100;
+            this.hudElements.rpmFill.style.width = `${Math.min(rpmPercent, 100)}%`;
+            this.hudElements.rpmFill.style.backgroundColor = '#e74c3c'; // Red for car
 
-        // Speed
-        this.hudElements.speedValue.textContent = Math.round(this.car.speedKmh);
-
-        // Gear
-        this.hudElements.gearValue.textContent = this.car.getGearDisplay();
-
-        // RPM bar
-        const rpmPercent = this.car.getRPMPercentage() * 100;
-        this.hudElements.rpmFill.style.width = `${Math.min(rpmPercent, 100)}%`;
+        } else if (this.activeVehicle === 'plane' && this.plane) {
+            // Speed (Knots or Kmh)
+            this.hudElements.speedValue.textContent = Math.round(this.plane.speedKmh);
+            // Altitude instead of Gear
+            this.hudElements.gearValue.textContent = `ALT ${Math.round(this.plane.altitude)}`;
+            // Throttle as bar
+            const thrPercent = this.plane.throttle * 100;
+            this.hudElements.rpmFill.style.width = `${Math.min(thrPercent, 100)}%`;
+            this.hudElements.rpmFill.style.backgroundColor = '#3498db'; // Blue for plane
+        }
 
         // Time display
         if (this.sky && this.hudElements.timeValue) {
@@ -806,53 +959,121 @@ class Game {
         }
     }
 
+    async _loadJetModel() {
+        const loader = new GLTFLoader();
+        return new Promise((resolve) => {
+            loader.load('assets/models/silver_surfer.glb', (gltf) => {
+                this.planeMesh = gltf.scene;
+                this.planeMesh.scale.setScalar(2.0); // Approx match car
+
+                // Shadows
+                this.planeMesh.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+
+                // Set initial position (Parked somewhere - e.g., near start but offset)
+                this.planeMesh.position.set(30, 0, 30);
+
+                this.scene.add(this.planeMesh);
+
+                // Initialize physics
+                this.plane = new PlanePhysics(this.planeMesh, this.scene);
+
+                // Connect terrain physics provider if terrain is already loaded
+                if (this.terrain) {
+                    this.plane.setPhysicsProvider(this.terrain);
+                }
+
+                console.log('Jet model loaded');
+                resolve();
+            }, undefined, (e) => {
+                console.error('Failed to load Jet', e);
+                resolve(); // resolve anyway
+            });
+        });
+    }
+
     /**
      * Toggle between vehicle and on-foot modes
      */
     _toggleVehicleMode() {
-        this.isOnFoot = !this.isOnFoot;
+        if (!this.player) return;
 
         if (this.isOnFoot) {
-            // Exiting vehicle
-            console.log('[Player] Exiting vehicle');
+            // Try to enter a vehicle
+            const playerPos = this.player.position;
 
-            // Position player at driver's door (left side of car)
-            const exitOffset = new THREE.Vector3(-5, 0, 0); // Left of car
-            exitOffset.applyQuaternion(this.carMesh.quaternion);
+            // Check Car Distance
+            const carDist = this.car ? playerPos.distanceTo(this.car.position) : Infinity;
 
-            const exitPos = this.car.position.clone().add(exitOffset);
-            exitPos.y = this.terrain.getHeightAt(exitPos.x, exitPos.z) + this.player.specs.height;
+            // Check Plane Distance
+            const planeDist = this.plane ? playerPos.distanceTo(this.plane.mesh.position) : Infinity;
 
-            // Set player position and face away from car
-            this.player.setPosition(exitPos, this.car.rotation.y + Math.PI / 2);
+            const INTERACTION_RADIUS = 5.0; // Meters
 
-            // Update camera controller
+            if (carDist < INTERACTION_RADIUS && carDist <= planeDist) {
+                // Enter Car
+                console.log('Entering Car');
+                this.isOnFoot = false;
+                this.activeVehicle = 'car';
+
+                this.cameraController.setPlayerMode(false);
+                this.cameraController.currentModeIndex = 0; // Chase
+
+                // Restore car visibility in case it was hidden
+                if (this.carMesh) {
+                    this.carMesh.visible = !this.cameraController.isCockpitMode;
+                }
+
+            } else if (planeDist < INTERACTION_RADIUS) {
+                // Enter Plane
+                console.log('Entering Plane');
+                this.isOnFoot = false;
+                this.activeVehicle = 'plane';
+
+                this.cameraController.setPlayerMode(false);
+                // Switch to flight cam
+                const flightIndex = this.cameraController.modes.indexOf('flight');
+                if (flightIndex >= 0) this.cameraController.currentModeIndex = flightIndex;
+
+            } else {
+                console.log('No vehicle nearby');
+            }
+        } else {
+            // Exit Vehicle
+            console.log('Exiting Vehicle');
+            this.isOnFoot = true;
             this.cameraController.setPlayerMode(true);
+
+            // Teleport player to vehicle position
+            const vehiclePos = this.activeVehicle === 'car' ? this.car.position : this.plane.mesh.position;
+            // Offset slightly so we don't spawn inside
+            const offset = new THREE.Vector3(3, 0, 0); // Side
+            if (this.activeVehicle === 'car') {
+                offset.set(-3, 0, 0); // Left of car
+                offset.applyQuaternion(this.carMesh.quaternion);
+            } else {
+                offset.set(5, 0, 0); // Side of plane
+                offset.applyQuaternion(this.planeMesh.quaternion);
+            }
+
+            const exitPos = vehiclePos.clone().add(offset);
+
+            // Ensure on ground
+            const groundH = this.terrain.getHeightAt(exitPos.x, exitPos.z);
+            exitPos.y = groundH + this.player.specs.height;
+
+            this.player.setPosition(exitPos, 0);
 
             // Hide cockpit overlay if visible
             if (this.cockpitOverlay) {
                 this.cockpitOverlay.classList.add('hidden');
             }
 
-            // Request pointer lock for mouse look
-            this.canvas.requestPointerLock();
-
-        } else {
-            // Entering vehicle
-            console.log('[Player] Entering vehicle');
-
-            // Release pointer lock
-            if (document.pointerLockElement) {
-                document.exitPointerLock();
-            }
-
-            // Update camera controller
-            this.cameraController.setPlayerMode(false);
-
-            // Restore car visibility in case it was hidden
-            if (this.carMesh) {
-                this.carMesh.visible = !this.cameraController.isCockpitMode;
-            }
+            this.activeVehicle = null;
         }
     }
 }
