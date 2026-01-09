@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Starfield } from './starfield.js';
+import { NorthernLights } from './northern-lights.js';
 
 /**
  * Dynamic Sky System
@@ -28,6 +29,9 @@ export class SkySystem {
         
         // Starfield
         this.starfield = new Starfield(scene);
+        
+        // Northern Lights
+        this.northernLights = new NorthernLights(scene);
         
         // Internal time tracking
         this.elapsedTime = 0;
@@ -283,6 +287,10 @@ export class SkySystem {
         const starVisibility = Math.max(0, nightFactor - 0.3) / 0.7;
         this.starfield.setVisible(starVisibility > 0.05);
         this.starfield.update(this.elapsedTime, starVisibility);
+        
+        // Update northern lights - visible during deep night
+        const auroraVisibility = Math.max(0, nightFactor - 0.5) / 0.5;
+        this.northernLights.update(this.elapsedTime * 0.001, auroraVisibility);
 
         // Sun/Moon visibility
         this.sun.visible = sunHeight > -0.3;
@@ -411,6 +419,7 @@ export class SkySystem {
         // Keep sky dome centered on camera
         if (cameraPosition) {
             this.skyDome.position.copy(cameraPosition);
+            this.northernLights.setPosition(cameraPosition);
         }
 
         this._updateSky();

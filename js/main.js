@@ -11,6 +11,7 @@ import { CarPhysics } from './core/car.js';
 import { PlayerController } from './core/player.js';
 import { SkySystem } from './environment/sky.js';
 import { SkyVaporwave } from './environment/sky-vaporwave.js';
+import { WindEffect } from './environment/wind.js';
 import { LevelManager } from './levels/level-manager.js';
 import { LevelData, getAllLevels } from './levels/level-data.js';
 import { ToyotaAE86 } from './core/vehicle-specs/ToyotaAE86.js';
@@ -102,6 +103,7 @@ class Game {
         this.carMesh = null;
         this.player = null;  // On-foot player controller
         this.sky = null;
+        this.wind = null;  // Atmospheric wind/fog effect
         this.plane = null;
         this.planeMesh = null;
         this.selectedVehicleType = 'car'; // Default selection from menu
@@ -327,6 +329,56 @@ class Game {
             this.plane.setPhysicsProvider(this.terrain);
         }
 
+        // Apply wind/fog settings based on level type
+        if (this.wind) {
+            switch (levelConfig.type) {
+                case 'vaporwave':
+                    // Neon purple fog for vaporwave
+                    this.wind.configure({
+                        windSpeed: 80,
+                        fogColor: 0xff44ff,
+                        fogOpacity: 0.5,
+                        enabled: true
+                    });
+                    break;
+                case 'everest':
+                    // HEAVY blizzard on Everest
+                    this.wind.configure({
+                        windSpeed: 120,
+                        fogColor: 0xffffff,
+                        fogOpacity: 0.8,
+                        enabled: true
+                    });
+                    break;
+                case 'dunes':
+                    // Thick sandstorm
+                    this.wind.configure({
+                        windSpeed: 90,
+                        fogColor: 0xccaa66,
+                        fogOpacity: 0.6,
+                        enabled: true
+                    });
+                    break;
+                case 'city':
+                    // Heavy smog
+                    this.wind.configure({
+                        windSpeed: 30,
+                        fogColor: 0x888888,
+                        fogOpacity: 0.4,
+                        enabled: true
+                    });
+                    break;
+                default:
+                    // Strong atmospheric fog
+                    this.wind.configure({
+                        windSpeed: 60,
+                        fogColor: 0xcccccc,
+                        fogOpacity: 0.5,
+                        enabled: true
+                    });
+            }
+        }
+
         // Apply visual presets and Skybox based on level type
         if (levelConfig.type === 'vaporwave') {
             console.log('Applying Vaporwave Visuals...');
@@ -517,6 +569,10 @@ class Game {
         this.sky = new SkySystem(this.scene);
         this.sky.setTime(0.35); // Start at morning
         this.sky.setDayDuration(300); // 5 minute day cycle
+
+        // Initialize atmospheric wind/fog effect
+        this.wind = new WindEffect(this.scene);
+        this.wind.setIntensity(0.5); // Medium intensity by default
 
         // Camera
         this.camera = new THREE.PerspectiveCamera(
@@ -841,6 +897,18 @@ class Game {
             }
 
             this.sky.update(deltaTime, this.camera.position);
+
+            // Update wind fog color based on time of day
+            if (this.wind) {
+                this.wind.setTimeOfDay(this.sky.getTime());
+            }
+        }
+
+        // Update wind/fog effect (always, for menu backdrop too)
+        if (this.wind) {
+            const groundHeight = this.terrain ? 
+                this.terrain.getHeightAt(this.camera.position.x, this.camera.position.z) : 0;
+            this.wind.update(deltaTime, this.camera.position, groundHeight);
         }
 
         // Render with post-processing
