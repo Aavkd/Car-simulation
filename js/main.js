@@ -15,6 +15,27 @@ import { WindEffect } from './environment/wind.js';
 import { LevelManager } from './levels/level-manager.js';
 import { LevelData, getAllLevels } from './levels/level-data.js';
 import { ToyotaAE86 } from './core/vehicle-specs/ToyotaAE86.js';
+import { MazdaRX7 } from './core/vehicle-specs/MazdaRX7.js';
+
+/**
+ * Available car specifications registry
+ */
+const CAR_REGISTRY = {
+    'ae86': {
+        spec: ToyotaAE86,
+        model: 'assets/models/Toyota AE86.glb',
+        name: 'Toyota AE86',
+        icon: '🚗',
+        color: '#e74c3c'
+    },
+    'rx7': {
+        spec: MazdaRX7,
+        model: 'assets/models/Mazda RX-7.glb',
+        name: 'Mazda RX-7',
+        icon: '🏎️',
+        color: '#f39c12'
+    }
+};
 import { PlanePhysics } from './core/plane.js';
 
 /**
@@ -107,6 +128,7 @@ class Game {
         this.plane = null;
         this.planeMesh = null;
         this.selectedVehicleType = 'car'; // Default selection from menu
+        this.selectedCarId = 'ae86'; // Default car selection
         this.activeVehicle = 'car'; // 'car' or 'plane'
 
         // Player mode state
@@ -220,48 +242,87 @@ class Game {
                 }
             }
 
-            selectorContainer.innerHTML = `
-                <div class="vehicle-option ${this.selectedVehicleType === 'car' ? 'selected' : ''}" data-type="car" style="
-                    padding: 15px 30px;
-                    background: rgba(0, 0, 0, 0.5);
-                    border: 2px solid ${this.selectedVehicleType === 'car' ? '#e74c3c' : '#444'};
-                    border-radius: 8px;
-                    cursor: pointer;
-                    transition: all 0.3s ease;
-                    text-align: center;
-                ">
-                    <div style="font-size: 24px; margin-bottom: 5px;">🚗</div>
-                    <div style="font-weight: bold; color: white;">TOYOTA AE86</div>
-                </div>
-                <div class="vehicle-option ${this.selectedVehicleType === 'plane' ? 'selected' : ''}" data-type="plane" style="
-                    padding: 15px 30px;
-                    background: rgba(0, 0, 0, 0.5);
-                    border: 2px solid ${this.selectedVehicleType === 'plane' ? '#3498db' : '#444'};
-                    border-radius: 8px;
-                    cursor: pointer;
-                    transition: all 0.3s ease;
-                    text-align: center;
-                ">
-                    <div style="font-size: 24px; margin-bottom: 5px;">✈️</div>
-                    <div style="font-weight: bold; color: white;">F-16 JET</div>
-                </div>
-            `;
-
-            // Bind events
-            selectorContainer.querySelectorAll('.vehicle-option').forEach(opt => {
-                opt.addEventListener('click', (e) => {
-                    const type = opt.dataset.type;
-                    this.selectedVehicleType = type;
-
-                    // Update visual selection
-                    selectorContainer.querySelectorAll('.vehicle-option').forEach(o => {
-                        const isSelected = o.dataset.type === type;
-                        o.classList.toggle('selected', isSelected);
-                        o.style.borderColor = isSelected ? (type === 'car' ? '#e74c3c' : '#3498db') : '#444';
-                    });
-                });
-            });
+            this._renderVehicleSelector(selectorContainer);
         }
+    }
+
+    /**
+     * Render vehicle selector UI with car sub-selection
+     */
+    _renderVehicleSelector(container) {
+        const carOptions = Object.entries(CAR_REGISTRY).map(([id, car]) => `
+            <div class="car-option ${this.selectedCarId === id ? 'selected' : ''}" data-car-id="${id}" style="
+                padding: 10px 20px;
+                background: rgba(0, 0, 0, 0.4);
+                border: 2px solid ${this.selectedCarId === id ? car.color : '#333'};
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                text-align: center;
+                min-width: 120px;
+            ">
+                <div style="font-size: 20px; margin-bottom: 3px;">${car.icon}</div>
+                <div style="font-weight: bold; color: white; font-size: 12px;">${car.name}</div>
+            </div>
+        `).join('');
+
+        container.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 15px;">
+                <!-- Vehicle Type Row -->
+                <div style="display: flex; gap: 20px;">
+                    <div class="vehicle-option ${this.selectedVehicleType === 'car' ? 'selected' : ''}" data-type="car" style="
+                        padding: 15px 30px;
+                        background: rgba(0, 0, 0, 0.5);
+                        border: 2px solid ${this.selectedVehicleType === 'car' ? '#e74c3c' : '#444'};
+                        border-radius: 8px;
+                        cursor: pointer;
+                        transition: all 0.3s ease;
+                        text-align: center;
+                    ">
+                        <div style="font-size: 24px; margin-bottom: 5px;">🚗</div>
+                        <div style="font-weight: bold; color: white;">CAR</div>
+                    </div>
+                    <div class="vehicle-option ${this.selectedVehicleType === 'plane' ? 'selected' : ''}" data-type="plane" style="
+                        padding: 15px 30px;
+                        background: rgba(0, 0, 0, 0.5);
+                        border: 2px solid ${this.selectedVehicleType === 'plane' ? '#3498db' : '#444'};
+                        border-radius: 8px;
+                        cursor: pointer;
+                        transition: all 0.3s ease;
+                        text-align: center;
+                    ">
+                        <div style="font-size: 24px; margin-bottom: 5px;">✈️</div>
+                        <div style="font-weight: bold; color: white;">F-16 JET</div>
+                    </div>
+                </div>
+                <!-- Car Selection Row (only shown when car is selected) -->
+                <div id="car-selector" style="
+                    display: ${this.selectedVehicleType === 'car' ? 'flex' : 'none'};
+                    gap: 15px;
+                    padding: 10px;
+                    background: rgba(0, 0, 0, 0.3);
+                    border-radius: 8px;
+                ">
+                    ${carOptions}
+                </div>
+            </div>
+        `;
+
+        // Bind vehicle type events
+        container.querySelectorAll('.vehicle-option').forEach(opt => {
+            opt.addEventListener('click', () => {
+                this.selectedVehicleType = opt.dataset.type;
+                this._renderVehicleSelector(container);
+            });
+        });
+
+        // Bind car selection events
+        container.querySelectorAll('.car-option').forEach(opt => {
+            opt.addEventListener('click', () => {
+                this.selectedCarId = opt.dataset.carId;
+                this._renderVehicleSelector(container);
+            });
+        });
     }
 
     /**
@@ -463,8 +524,9 @@ class Game {
         // Setup input callbacks
         this.input.onCameraChange = () => this._handleCameraChange();
 
-        // Initialize car physics with ToyotaAE86 spec
-        this.car = new CarPhysics(this.carMesh, this.terrain, this.scene, ToyotaAE86);
+        // Initialize car physics with selected car spec
+        const selectedCar = CAR_REGISTRY[this.selectedCarId];
+        this.car = new CarPhysics(this.carMesh, this.terrain, this.scene, selectedCar.spec);
         this.input.onDebugToggle = () => this.car.toggleDebug();
 
         // Pass wheel meshes to car physics for suspension animation
@@ -503,7 +565,7 @@ class Game {
 
         // Apply Spawn to Selected Vehicle
         if (this.activeVehicle === 'car') {
-            const startHeight = this.terrain.getHeightAt(startX, startZ) + 2;
+            const startHeight = this.terrain.getHeightAt(startX, startZ) + 10;
             this.car.position.set(startX, startHeight, startZ);
             this.car.velocity.set(0, 0, 0); // Reset velocity
 
@@ -644,15 +706,20 @@ class Game {
 
     async _loadCarModel() {
         const loader = new GLTFLoader();
+        const selectedCar = CAR_REGISTRY[this.selectedCarId];
+        const modelPath = selectedCar.model;
+        console.log(`[Game] Loading car model: ${selectedCar.name} from ${modelPath}`);
 
         return new Promise((resolve, reject) => {
             loader.load(
-                'assets/models/Toyota AE86.glb',
+                modelPath,
                 (gltf) => {
                     this.carMesh = gltf.scene;
 
-                    // Scale and position adjustments
-                    this.carMesh.scale.setScalar(1);
+                    // Scale and position adjustments - use spec modelScale or default to 1
+                    const modelScale = selectedCar.spec.modelScale || 1;
+                    this.carMesh.scale.setScalar(modelScale);
+                    console.log(`[Car] Applied model scale: ${modelScale}`);
 
                     // Find wheel meshes by name pattern
                     // Common naming: FL_Wheel, FR_Wheel, RL_Wheel, RR_Wheel or similar
@@ -664,6 +731,27 @@ class Game {
                             child.castShadow = true;
                             child.receiveShadow = true;
                             allMeshNames.push(child.name);
+
+                            // MATERIAL FIXES:
+                            // 1. Ensure car paint reflects light
+                            if (child.material) {
+                                child.material.needsUpdate = true;
+                                // If material looks like car paint (not glass/rubber), make it reflective
+                                if (!child.name.toLowerCase().includes('glass') && !child.name.toLowerCase().includes('tire') && !child.name.toLowerCase().includes('rubber')) {
+                                    child.material.roughness = 0.4; // Shiny
+                                    child.material.metalness = 0.6; // Metallic
+                                    child.material.envMapIntensity = 1.0;
+                                }
+                            }
+
+                            // 2. Fix lighting occlusion
+                            // Disable shadow casting for glass/lights so they don't block the point lights inside them
+                            const lowerName = child.name.toLowerCase();
+                            if (lowerName.includes('glass') || lowerName.includes('light') || lowerName.includes('lamp') || lowerName.includes('lens') || lowerName.includes('window')) {
+                                child.castShadow = false; // Don't block light
+                                child.receiveShadow = false;
+                                console.log(`[Car] Disabled shadow casting for: ${child.name}`);
+                            }
                         }
 
                         // Try to find wheel objects by name (case insensitive)
@@ -906,7 +994,7 @@ class Game {
 
         // Update wind/fog effect (always, for menu backdrop too)
         if (this.wind) {
-            const groundHeight = this.terrain ? 
+            const groundHeight = this.terrain ?
                 this.terrain.getHeightAt(this.camera.position.x, this.camera.position.z) : 0;
             this.wind.update(deltaTime, this.camera.position, groundHeight);
         }

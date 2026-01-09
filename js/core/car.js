@@ -17,6 +17,9 @@ export class CarPhysics {
         this.SCALE = 4.5;
 
         // ==================== VEHICLE SPECS ====================
+        // Store the raw car spec for accessing additional properties like lights
+        this.carSpec = carSpec;
+
         // Use injected spec or build from defaults
         if (carSpec) {
             this.specs = this._buildGameSpecs(carSpec);
@@ -168,12 +171,16 @@ export class CarPhysics {
     _createHeadlights() {
         this.headlights = [];
 
-        // Headlight positions (front left and front right) - at front of car hitbox
-        const frontZ = this.specs.length / 2;  // Front edge of car
-        const headlightPositions = [
-            { x: -2.2, y: 1.5, z: frontZ },  // Left headlight
-            { x: 2.2, y: 1.5, z: frontZ }    // Right headlight
+        // Use light positions from car spec, or fall back to defaults
+        const frontZ = this.specs.length / 2;  // Default front edge of car
+        const defaultPositions = [
+            { x: -2.2, y: 1.5, z: frontZ },
+            { x: 2.2, y: 1.5, z: frontZ }
         ];
+
+        const headlightPositions = (this.carSpec && this.carSpec.lights && this.carSpec.lights.headlightPos)
+            ? this.carSpec.lights.headlightPos
+            : defaultPositions;
 
         headlightPositions.forEach((pos, index) => {
             // Main spotlight (low beam) - wider angle, medium range
@@ -225,13 +232,18 @@ export class CarPhysics {
         this.headlights.push({ light: floodLight, target: floodTarget, type: 'flood' });
 
         // Add headlight glow meshes (visible light sources)
+        // Compensate for model scale so glow spheres stay consistent size
+        const modelScale = (this.carSpec && this.carSpec.modelScale) ? this.carSpec.modelScale : 1;
+        const glowRadius = 0.5 / modelScale;
+
         this.headlightGlows = [];
         headlightPositions.forEach((pos) => {
-            const glowGeom = new THREE.SphereGeometry(0.5, 8, 8);
+            const glowGeom = new THREE.SphereGeometry(glowRadius, 8, 8);
             const glowMat = new THREE.MeshBasicMaterial({
                 color: 0xffffcc,
                 transparent: true,
-                opacity: 0
+                opacity: 0,
+                visible: false
             });
             const glow = new THREE.Mesh(glowGeom, glowMat);
             glow.position.set(pos.x, pos.y, pos.z + 0.3);
@@ -247,12 +259,16 @@ export class CarPhysics {
         this.taillights = [];
         this.taillightGlows = [];
 
-        // Taillight positions (rear left and rear right) - at back of car
-        const rearZ = -this.specs.length / 2;  // Rear edge of car
-        const taillightPositions = [
-            { x: -2., y: 3, z: rearZ },  // Left taillight
-            { x: 2, y: 3, z: rearZ }    // Right taillight
+        // Use taillight positions from car spec, or fall back to defaults
+        const rearZ = -this.specs.length / 2;  // Default rear edge of car
+        const defaultPositions = [
+            { x: -2.0, y: 3, z: rearZ },
+            { x: 2.0, y: 3, z: rearZ }
         ];
+
+        const taillightPositions = (this.carSpec && this.carSpec.lights && this.carSpec.lights.taillightPos)
+            ? this.carSpec.lights.taillightPos
+            : defaultPositions;
 
         taillightPositions.forEach((pos) => {
             // Main rear light (always dim red at night, bright when braking)
@@ -275,8 +291,12 @@ export class CarPhysics {
         });
 
         // Add taillight glow meshes (invisible - only the light effect is visible)
+        // Compensate for model scale so glow spheres stay consistent size
+        const modelScale = (this.carSpec && this.carSpec.modelScale) ? this.carSpec.modelScale : 1;
+        const glowRadius = 0.4 / modelScale;
+
         taillightPositions.forEach((pos) => {
-            const glowGeom = new THREE.SphereGeometry(0.4, 8, 8);
+            const glowGeom = new THREE.SphereGeometry(glowRadius, 8, 8);
             const glowMat = new THREE.MeshBasicMaterial({
                 color: 0xff0000,
                 transparent: true,
