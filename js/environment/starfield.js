@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 /**
  * Starfield Generator
@@ -10,12 +11,83 @@ export class Starfield {
         this.starsGroup = new THREE.Group();
         this.starsGroup.name = 'starfield';
         
+        // Milky Way GLB model
+        this.milkyWayModel = null;
+        
         this._createStars();
         this._createMilkyWay();
         this._createBrightStars();
+        this._loadMilkyWayModel();
         
         this.scene.add(this.starsGroup);
         this.starsGroup.visible = false; // Hidden by default (daytime)
+    }
+    
+    /**
+     * Load the Milky Way GLB model
+     */
+    _loadMilkyWayModel() {
+        const loader = new GLTFLoader();
+        
+        loader.load(
+            'assets/models/milky_way.glb',
+            (gltf) => {
+                this.milkyWayModel = gltf.scene;
+                
+                // Position and scale the galaxy model to fit in the skybox
+                // Keep it within the sky dome radius (~4000) but visible
+                this.milkyWayModel.scale.setScalar(1000);
+                this.milkyWayModel.position.set(0, -100, 0);
+                
+                // Rotate to align with the sky - tilt it to arc across the sky
+                this.milkyWayModel.rotation.x = Math.PI * 0.3;
+                this.milkyWayModel.rotation.z = Math.PI * 0.2;
+                
+                // Make the model emissive/glowing for night sky effect
+                this.milkyWayModel.traverse((child) => {
+                    if (child.isMesh) {
+                        // Enable transparency and additive blending for glow effect
+                        child.material = child.material.clone();
+                        child.material.transparent = true;
+                        child.material.opacity = 1.0;
+                        child.material.blending = THREE.AdditiveBlending;
+                        child.material.depthWrite = false;
+                        child.material.side = THREE.DoubleSide;
+                        
+                        // Disable fog so the glow is visible at any distance
+                        child.material.fog = false;
+                        
+                        // Disable distance-based attenuation
+                        child.material.toneMapped = false;
+                        
+                        // Boost base color for more vibrancy
+                        if (child.material.color) {
+                            child.material.color.multiplyScalar(5.0);
+                        }
+                        
+                        // Add strong emissive glow with colorful tint - high intensity for distance visibility
+                        if (child.material.emissive) {
+                            child.material.emissive = new THREE.Color(0xcc88ff); // Brighter purple-blue glow
+                            child.material.emissiveIntensity = 24;
+                        }
+                        
+                        // Increase material brightness for emissive maps
+                        if (child.material.emissiveMap) {
+                            child.material.emissiveIntensity = 10.0;
+                        }
+                    }
+                });
+                
+                this.starsGroup.add(this.milkyWayModel);
+                console.log('Milky Way GLB model loaded successfully');
+            },
+            (progress) => {
+                // Loading progress
+            },
+            (error) => {
+                console.warn('Could not load Milky Way GLB model:', error);
+            }
+        );
     }
 
     _createStars() {
@@ -353,6 +425,17 @@ export class Starfield {
         }
         if (this.milkyWay && this.milkyWay.material.uniforms) {
             this.milkyWay.material.uniforms.opacity.value = visibility * 0.6;
+        }
+        
+        // Update Milky Way GLB model opacity based on visibility
+        if (this.milkyWayModel) {
+            this.milkyWayModel.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    child.material.opacity = visibility * 0.8;
+                }
+            });
+            // Slow rotation for subtle animation
+            this.milkyWayModel.rotation.y += 0.00005;
         }
 
         // Slowly rotate the starfield for subtle movement
