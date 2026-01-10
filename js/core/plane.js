@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SparkSystem } from './spark-system.js';
 
 /**
  * Flight Physics System
@@ -69,6 +70,10 @@ export class PlanePhysics {
 
         // ==================== SPEED EFFECT SYSTEM ====================
         this._initSpeedEffect();
+
+
+        // ==================== SPARK SYSTEM ====================
+        this.sparkSystem = new SparkSystem(scene);
     }
 
     /**
@@ -92,6 +97,7 @@ export class PlanePhysics {
         // 3. Update Visuals
         this._updateVisuals(dt);
         this._updateSpeedEffect(dt);
+        if (this.sparkSystem) this.sparkSystem.update(dt);
 
         // Debug
         if (this.debug) {
@@ -296,6 +302,17 @@ export class PlanePhysics {
                 const surfaceFriction = surface.friction || 1.0;
                 this.velocity.multiplyScalar(0.995 + 0.005 * surfaceFriction);
             }
+
+            // Emit sparks if sliding fast enough
+            if (this.speedKmh > 10.0) {
+                // Determine contact point (bottom of mesh?)
+                const contactPos = pos.clone();
+                contactPos.y -= 0.5; // Approximate bottom of fuselage/skids
+
+                // Intensity based on speed
+                const intensity = Math.min(1.0, (this.speedKmh - 10) / 100.0);
+                this.sparkSystem.emit(contactPos, this.velocity, intensity);
+            }
         } else {
             // Airborne
             this.isGrounded = false;
@@ -349,12 +366,19 @@ export class PlanePhysics {
             baseWidth: 0.3,           // Base trail width
             maxWidth: 1.5,            // Maximum trail width at high speed
             fadeTime: 2.0,            // Time for trail to fade (seconds)
+            trailStartOffset: 2.5,    // Distance behind surfer where trail starts
+            startFadeSpeed: 2.0,      // How fast new points fade in (lower = more gradual)
             colors: {
                 slow: new THREE.Color(0x00ffff),    // Cyan at low speed
                 medium: new THREE.Color(0xff00ff),  // Magenta at medium speed
                 fast: new THREE.Color(0xffff00)     // Yellow at high speed
             }
         };
+
+        // Ground illumination light - follows the trail and lights up the ground
+        this.trailLight = new THREE.PointLight(0xff00ff, 0, 15, 2);
+        this.trailLight.castShadow = false;
+        this.scene.add(this.trailLight);
 
         // Trail points storage
         this.trailPoints = [];
@@ -367,9 +391,11 @@ export class PlanePhysics {
         const maxVerts = this.trailConfig.maxPoints * 2;
         const positions = new Float32Array(maxVerts * 3);
         const colors = new Float32Array(maxVerts * 4);  // RGBA
+        const uvs = new Float32Array(maxVerts * 2);
 
         this.trailGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         this.trailGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+        this.trailGeometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
 
         // Custom shader material for glowing trail
         this.trailMaterial = new THREE.ShaderMaterial({
@@ -395,16 +421,30 @@ export class PlanePhysics {
                 varying vec2 vUv;
                 
                 void main() {
-                    // Pulsing glow effect
-                    float pulse = 0.8 + 0.2 * sin(time * 5.0);
+                    // Soft edges calculation (Cylindrical look)
+                    // UV.x goes from 0 to 1 across the width. Center is 0.5
+                    float distFromCenter = abs(vUv.x - 0.5) * 2.0; // 0 at center, 1 at edges
                     
-                    // Core glow
-                    vec3 glow = vColor.rgb * glowIntensity * pulse;
+                    // Soft falloff at edges
+                    float alphaShape = 1.0 - smoothstep(0.4, 1.0, distFromCenter);
                     
-                    // Add bloom-like effect
-                    glow += vColor.rgb * 0.3;
+                    // Hot core effect
+                    float core = 1.0 - smoothstep(0.0, 0.4, distFromCenter);
+                    vec3 coreColor = vec3(1.0); // White core
                     
-                    gl_FragColor = vec4(glow, vColor.a);
+                    // Mix core with base color
+                    vec3 finalColor = mix(vColor.rgb, coreColor, core * 0.5);
+                    
+                    // Add pulse
+                    float pulse = 0.9 + 0.1 * sin(time * 8.0 - vUv.y * 10.0);
+                    
+                    // Final alpha composition
+                    float finalAlpha = vColor.a * alphaShape * pulse;
+                    
+                    // Boost glow
+                    finalColor *= glowIntensity * 1.5;
+                    
+                    gl_FragColor = vec4(finalColor, finalAlpha);
                 }
             `,
             transparent: true,
@@ -417,44 +457,7 @@ export class PlanePhysics {
         this.trailMesh.frustumCulled = false;
         this.scene.add(this.trailMesh);
 
-        // Secondary glow layer for extra luminosity
-        this.glowMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                time: { value: 0 },
-                glowIntensity: { value: 0.5 }
-            },
-            vertexShader: `
-                attribute vec4 color;
-                varying vec4 vColor;
-                
-                void main() {
-                    vColor = color;
-                    // Expand vertices slightly for glow effect
-                    vec3 expanded = position + normal * 0.2;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `,
-            fragmentShader: `
-                uniform float time;
-                uniform float glowIntensity;
-                varying vec4 vColor;
-                
-                void main() {
-                    float pulse = 0.7 + 0.3 * sin(time * 3.0 + 1.5);
-                    vec3 glow = vColor.rgb * glowIntensity * pulse * 0.5;
-                    gl_FragColor = vec4(glow, vColor.a * 0.3);
-                }
-            `,
-            transparent: true,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            side: THREE.DoubleSide
-        });
-
-        this.glowMesh = new THREE.Mesh(this.trailGeometry, this.glowMaterial);
-        this.glowMesh.frustumCulled = false;
-        this.glowMesh.scale.setScalar(1.5);  // Slightly larger for outer glow
-        this.scene.add(this.glowMesh);
+        // Removed secondary glowMesh for cleaner look and better performance
 
         this.trailTimer = 0;
     }
@@ -467,7 +470,6 @@ export class PlanePhysics {
 
         // Update shader time
         this.trailMaterial.uniforms.time.value = this.trailTimer;
-        this.glowMaterial.uniforms.time.value = this.trailTimer;
 
         const cfg = this.trailConfig;
 
@@ -476,7 +478,7 @@ export class PlanePhysics {
         const showTrail = this.speedKmh > cfg.minSpeed;
 
         // Get trail spawn position (behind the board)
-        const trailOffset = new THREE.Vector3(0, 0, -1.5);  // Behind the surfer
+        const trailOffset = new THREE.Vector3(0, 0, -cfg.trailStartOffset);  // Further from board for better blending
         trailOffset.applyQuaternion(this.mesh.quaternion);
         const trailPos = this.mesh.position.clone().add(trailOffset);
 
@@ -494,14 +496,16 @@ export class PlanePhysics {
             trailColor.lerpColors(cfg.colors.medium, cfg.colors.fast, (speedRatio - 0.5) * 2);
         }
 
-        // Add new point if moving fast enough
+        // Add new point if moving fast enough or to maintain continuity while stopping
+        // Always add point but control alpha? No, limit checks are safer for performace.
         if (showTrail) {
             this.trailPoints.unshift({
                 pos: trailPos.clone(),
                 right: right.clone(),
                 width: currentWidth,
                 color: trailColor.clone(),
-                alpha: 1.0
+                alpha: 1.0,
+                initialTime: this.trailTimer
             });
             this.trailTimes.unshift(this.trailTimer);
         }
@@ -515,15 +519,22 @@ export class PlanePhysics {
         // Update geometry
         const positions = this.trailGeometry.attributes.position.array;
         const colors = this.trailGeometry.attributes.color.array;
+        const uvs = this.trailGeometry.attributes.uv.array;
 
         for (let i = 0; i < cfg.maxPoints; i++) {
             const idx = i * 6;  // 2 verts per point, 3 components per vert
             const colorIdx = i * 8;  // 2 verts per point, 4 components per vert (RGBA)
+            const uvIdx = i * 4;     // 2 verts per point, 2 components per vert
 
             if (i < this.trailPoints.length) {
                 const point = this.trailPoints[i];
                 const age = this.trailTimer - this.trailTimes[i];
                 const fadeAlpha = Math.max(0, 1 - (age / cfg.fadeTime));
+
+                // Start fade (near the plane)
+                // Fade in over the first few segments/time to blend with surfer
+                // "Age" is small for new points - use cfg.startFadeSpeed for more gradual blending
+                const startFade = Math.min(1.0, age * cfg.startFadeSpeed); // Gradual fade-in for smoother blending
 
                 // Taper width towards the end
                 const taperRatio = 1 - (i / this.trailPoints.length);
@@ -535,14 +546,23 @@ export class PlanePhysics {
                 positions[idx + 1] = left.y;
                 positions[idx + 2] = left.z;
 
+                // UVs for Left (x=0)
+                uvs[uvIdx] = 0.0;     // U
+                uvs[uvIdx + 1] = i / cfg.maxPoints; // V (along length)
+
                 // Right vertex
                 const rightPos = point.pos.clone().add(point.right.clone().multiplyScalar(width));
                 positions[idx + 3] = rightPos.x;
                 positions[idx + 4] = rightPos.y;
                 positions[idx + 5] = rightPos.z;
 
+                // UVs for Right (x=1)
+                uvs[uvIdx + 2] = 1.0; // U
+                uvs[uvIdx + 3] = i / cfg.maxPoints; // V
+
                 // Colors with fade
-                const alpha = fadeAlpha * taperRatio * (showTrail ? 1.0 : 0.0);
+                const alpha = fadeAlpha * taperRatio * startFade * (showTrail ? 1.0 : 0.0);
+
                 colors[colorIdx] = point.color.r;
                 colors[colorIdx + 1] = point.color.g;
                 colors[colorIdx + 2] = point.color.b;
@@ -566,7 +586,16 @@ export class PlanePhysics {
             }
         }
 
-        // Build index array for triangle strip
+        // Build index array for triangle strip (only do this once if constant, but points change)
+        // Actually indices are constant if maxPoints is constant.
+        // But we initialized them in init? No, we rebuilt them.
+        // Optimally we should just build indices once in init unless we change point count dynamically.
+        // Assuming maxPoints is constant, we can move this to init, but for now let's leave it or optimize.
+
+        // OPTIMIZATION: Move index generation to init if it was there? 
+        // Logic check: previous code rebuilt indices every frame. That's inefficient but safe. 
+        // I will keep it for now but note it's not strictly necessary to rebuild if count is static.
+
         const indices = [];
         for (let i = 0; i < Math.min(this.trailPoints.length - 1, cfg.maxPoints - 1); i++) {
             const base = i * 2;
@@ -577,11 +606,40 @@ export class PlanePhysics {
 
         this.trailGeometry.attributes.position.needsUpdate = true;
         this.trailGeometry.attributes.color.needsUpdate = true;
+        this.trailGeometry.attributes.uv.needsUpdate = true;
 
         // Update glow intensity based on speed
-        const glowIntensity = 0.5 + speedRatio * 1.5;
+        const glowIntensity = 1.0 + speedRatio * 2.0;
         this.trailMaterial.uniforms.glowIntensity.value = glowIntensity;
-        this.glowMaterial.uniforms.glowIntensity.value = glowIntensity * 0.5;
+
+        // Update ground illumination light
+        if (this.trailLight && this.trailPoints.length > 3) {
+            // Position light at a recent trail point, slightly above ground
+            const lightPoint = this.trailPoints[3]; // Use 3rd point for slight offset
+            this.trailLight.position.copy(lightPoint.pos);
+            this.trailLight.position.y -= 0.3; // Position closer to ground for better illumination
+
+            // Set light color to match trail color
+            this.trailLight.color.copy(lightPoint.color);
+
+            // Intensity based on speed and trail visibility
+            const lightIntensity = showTrail ? (2.0 + speedRatio * 4.0) : 0;
+            this.trailLight.intensity = THREE.MathUtils.lerp(
+                this.trailLight.intensity,
+                lightIntensity,
+                dt * 5.0
+            );
+
+            // Distance (range) based on speed
+            this.trailLight.distance = 10 + speedRatio * 15;
+        } else if (this.trailLight) {
+            // Fade out when no trail
+            this.trailLight.intensity = THREE.MathUtils.lerp(
+                this.trailLight.intensity,
+                0,
+                dt * 5.0
+            );
+        }
     }
 
     /**
@@ -593,9 +651,9 @@ export class PlanePhysics {
             this.trailGeometry.dispose();
             this.trailMaterial.dispose();
         }
-        if (this.glowMesh) {
-            this.scene.remove(this.glowMesh);
-            this.glowMaterial.dispose();
+        if (this.trailLight) {
+            this.scene.remove(this.trailLight);
+            this.trailLight.dispose();
         }
     }
 
