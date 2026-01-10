@@ -17,6 +17,8 @@ import { LevelManager } from './levels/level-manager.js';
 import { LevelData, getAllLevels } from './levels/level-data.js';
 import { ToyotaAE86 } from './core/vehicle-specs/ToyotaAE86.js';
 import { MazdaRX7 } from './core/vehicle-specs/MazdaRX7.js';
+import { ShelbyCobra427 } from './core/vehicle-specs/ShelbyCobra427.js';
+import { EditorController } from './editor/EditorController.js';
 
 /**
  * Available car specifications registry
@@ -35,6 +37,13 @@ const CAR_REGISTRY = {
         name: 'Mazda RX-7',
         icon: '🏎️',
         color: '#f39c12'
+    },
+    'cobra': {
+        spec: ShelbyCobra427,
+        model: 'assets/models/1966_shelby_cobra_427.glb',
+        name: 'Shelby Cobra 427',
+        icon: '🐍',
+        color: '#3498db'
     }
 };
 import { PlanePhysics } from './core/plane.js';
@@ -219,6 +228,23 @@ class Game {
             levelGrid.appendChild(card);
         });
 
+        // Add Editor Button after level cards
+        const editorCard = document.createElement('div');
+        editorCard.className = 'level-card editor-card';
+        editorCard.style.setProperty('--accent-color', '#9b59b6');
+        editorCard.innerHTML = `
+            <div class="level-card-preview" style="background: linear-gradient(135deg, #9b59b622, #9b59b644);">
+                <div class="level-icon">🛠️</div>
+            </div>
+            <div class="level-card-info">
+                <h3 class="level-card-title">Level Editor</h3>
+                <p class="level-card-desc">Create and edit custom levels</p>
+                <div class="level-card-difficulty">✨✨✨✨✨</div>
+            </div>
+        `;
+        editorCard.addEventListener('click', () => this._openEditorSelector());
+        levelGrid.appendChild(editorCard);
+
         // Add Vehicle Selector to header or top of menu
         const container = document.querySelector('.menu-container') || document.getElementById('main-menu');
         if (container) {
@@ -363,7 +389,91 @@ class Game {
         const timeDisplay = document.getElementById('time-display');
         if (timeDisplay) timeDisplay.classList.add('hidden');
 
+        // Disable editor if active
+        if (this.editor) {
+            this.editor.disable();
+        }
+
         console.log('[Game] Entered MENU state');
+    }
+
+    /**
+     * Open editor level selector dialog
+     */
+    _openEditorSelector() {
+        const levels = getAllLevels();
+
+        // Create dialog
+        const dialog = document.createElement('div');
+        dialog.className = 'editor-select-dialog';
+        dialog.innerHTML = `
+            <div class="dialog-backdrop"></div>
+            <div class="dialog-box">
+                <h2>🛠️ Select Base Level for Editor</h2>
+                <p>Choose a terrain template to start editing:</p>
+                <div class="level-select-grid">
+                    ${levels.map(level => `
+                        <div class="level-select-item" data-level-id="${level.id}" style="border-color: ${level.color}">
+                            <span class="level-select-icon">${this._getLevelIcon(level.type)}</span>
+                            <span class="level-select-name">${level.name}</span>
+                        </div>
+                    `).join('')}
+                </div>
+                <button class="dialog-close-btn">Cancel</button>
+            </div>
+        `;
+
+        document.body.appendChild(dialog);
+
+        // Bind events
+        dialog.querySelectorAll('.level-select-item').forEach(item => {
+            item.onclick = () => {
+                const levelId = item.dataset.levelId;
+                const level = levels.find(l => l.id === levelId);
+                dialog.remove();
+                if (level) {
+                    this._enterEditorState(level);
+                }
+            };
+        });
+
+        dialog.querySelector('.dialog-close-btn').onclick = () => dialog.remove();
+        dialog.querySelector('.dialog-backdrop').onclick = () => dialog.remove();
+    }
+
+    /**
+     * Enter EDITOR state
+     * @param {Object} levelConfig - Base level configuration
+     */
+    async _enterEditorState(levelConfig) {
+        this.gameState = GameState.EDITOR;
+
+        // Hide menu and HUD
+        if (this.mainMenu) this.mainMenu.classList.add('hidden');
+        const hud = document.getElementById('hud');
+        if (hud) hud.classList.add('hidden');
+        const controlsHelp = document.getElementById('controls-help');
+        if (controlsHelp) controlsHelp.classList.add('hidden');
+        const timeDisplay = document.getElementById('time-display');
+        if (timeDisplay) timeDisplay.classList.add('hidden');
+
+        // Load terrain if not already loaded
+        if (!this.terrain) {
+            this.terrain = this.levelManager.loadLevel(levelConfig);
+            const terrainMesh = this.terrain.generate();
+            this.scene.add(terrainMesh);
+        }
+
+        // Initialize editor if not exists
+        if (!this.editor) {
+            this.editor = new EditorController(this);
+            await this.editor.initialize(levelConfig);
+        }
+
+        // Enable editor
+        this.editor.enable();
+
+        console.log(`[Game] Entered EDITOR state with base level: ${levelConfig.name}`);
     }
 
     /**
@@ -987,6 +1097,13 @@ class Game {
             this._updateHUD();
         }
 
+        // ==================== EDITOR STATE ONLY ====================
+        if (this.gameState === GameState.EDITOR) {
+            if (this.editor) {
+                this.editor.update(deltaTime);
+            }
+        }
+
         // ==================== ALWAYS UPDATE (MENU & PLAY) ====================
 
         // Update sky system (needed for menu backdrop too)
@@ -1134,9 +1251,11 @@ class Game {
         // Check if in cockpit (first-person) mode
         const isCockpit = this.cameraController.isCockpitMode;
 
-        // Toggle car 3D model visibility (hide in cockpit mode)
+        // Toggle car 3D model visibility (hide in cockpit mode, except for open-top cars like Cobra)
         if (this.carMesh) {
-            this.carMesh.visible = !isCockpit;
+            // Shelby Cobra is a roadster - keep model visible in cockpit to see the body
+            const keepVisible = this.selectedCarId === 'cobra';
+            this.carMesh.visible = keepVisible || !isCockpit;
         }
 
         // Toggle cockpit overlay visibility (show in cockpit mode ONLY for cars)

@@ -469,3 +469,530 @@ kbd {
         display: none;
     }
 }
+
+/* ==================== EDITOR STYLES ==================== */
+
+/* Editor Panel */
+.editor-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 250;
+}
+
+.editor-panel.hidden {
+    display: none;
+}
+
+.editor-panel>* {
+    pointer-events: auto;
+}
+
+/* Editor Toolbar */
+.editor-toolbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: rgba(10, 10, 20, 0.95);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(155, 89, 182, 0.3);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.toolbar-section {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.level-name {
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    padding: 8px 16px;
+    background: rgba(155, 89, 182, 0.2);
+    border-radius: 8px;
+    border: 1px solid rgba(155, 89, 182, 0.3);
+}
+
+/* Editor Buttons */
+.editor-btn {
+    padding: 10px 18px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.editor-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
+}
+
+.editor-btn.primary {
+    background: linear-gradient(135deg, #9b59b6, #8e44ad);
+}
+
+.editor-btn.primary:hover {
+    background: linear-gradient(135deg, #a569c0, #9b4dba);
+}
+
+.editor-btn.warning {
+    background: rgba(243, 156, 18, 0.3);
+    border: 1px solid rgba(243, 156, 18, 0.5);
+}
+
+.editor-btn.warning:hover {
+    background: rgba(243, 156, 18, 0.5);
+}
+
+.editor-btn.danger {
+    background: rgba(231, 76, 60, 0.3);
+    border: 1px solid rgba(231, 76, 60, 0.5);
+}
+
+.editor-btn.danger:hover {
+    background: rgba(231, 76, 60, 0.5);
+}
+
+/* Editor Sidebar */
+.editor-sidebar {
+    position: absolute;
+    top: 70px;
+    left: 10px;
+    width: 220px;
+    max-height: calc(100vh - 100px);
+    background: rgba(10, 10, 20, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(155, 89, 182, 0.3);
+    border-radius: 12px;
+    overflow-y: auto;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.sidebar-header {
+    padding: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-header h3 {
+    color: #fff;
+    font-size: 16px;
+    margin: 0;
+}
+
+.asset-list {
+    padding: 10px;
+}
+
+.asset-category {
+    margin-bottom: 15px;
+}
+
+.category-title {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    letter-spacing: 1px;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 8px;
+}
+
+.category-items {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.asset-item {
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.asset-item:hover {
+    background: rgba(155, 89, 182, 0.3);
+}
+
+.asset-item.selected {
+    background: rgba(155, 89, 182, 0.5);
+    border: 1px solid rgba(155, 89, 182, 0.8);
+}
+
+.asset-icon {
+    font-size: 18px;
+}
+
+.asset-name {
+    font-size: 13px;
+    color: #fff;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Editor Help Panel */
+.editor-help {
+    position: absolute;
+    bottom: 20px;
+    left: 10px;
+    background: rgba(10, 10, 20, 0.9);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.help-item {
+    padding: 3px 0;
+}
+
+/* Editor Select Dialog */
+.editor-select-dialog {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 500;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.dialog-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+}
+
+.dialog-box {
+    position: relative;
+    background: rgba(15, 15, 25, 0.98);
+    border: 1px solid rgba(155, 89, 182, 0.5);
+    border-radius: 16px;
+    padding: 30px;
+    max-width: 600px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+.dialog-box h2 {
+    color: #fff;
+    font-size: 24px;
+    margin: 0 0 10px 0;
+}
+
+.dialog-box p {
+    color: rgba(255, 255, 255, 0.6);
+    margin: 0 0 20px 0;
+}
+
+.level-select-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.level-select-item {
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid transparent;
+    border-radius: 10px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.level-select-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateY(-2px);
+}
+
+.level-select-icon {
+    font-size: 28px;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.level-select-name {
+    font-size: 13px;
+    color: #fff;
+}
+
+.dialog-close-btn {
+    width: 100%;
+    padding: 14px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.dialog-close-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Editor Dialog (Load Dialog) */
+.editor-dialog {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 500;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+}
+
+.editor-dialog .dialog-content {
+    background: rgba(15, 15, 25, 0.98);
+    border: 1px solid rgba(155, 89, 182, 0.5);
+    border-radius: 16px;
+    padding: 25px;
+    min-width: 300px;
+}
+
+.editor-dialog h3 {
+    color: #fff;
+    margin: 0 0 15px 0;
+}
+
+.level-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.level-item {
+    padding: 12px 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    transition: all 0.2s ease;
+}
+
+.level-item:hover {
+    background: rgba(155, 89, 182, 0.3);
+}
+
+.level-title {
+    color: #fff;
+}
+
+.level-date {
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 12px;
+}
+
+.dialog-buttons {
+    margin-top: 15px;
+}
+
+/* Editor Notifications */
+.editor-notification {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    z-index: 600;
+    animation: slideDown 0.3s ease;
+}
+
+.editor-notification.success {
+    background: linear-gradient(135deg, #27ae60, #2ecc71);
+    color: #fff;
+}
+
+.editor-notification.error {
+    background: linear-gradient(135deg, #c0392b, #e74c3c);
+    color: #fff;
+}
+
+.editor-notification.info {
+    background: linear-gradient(135deg, #2980b9, #3498db);
+    color: #fff;
+}
+
+.editor-notification.fade-out {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+/* lil-gui container positioning */
+.lil-gui {
+    --background-color: rgba(10, 10, 20, 0.95) !important;
+    --title-background-color: rgba(155, 89, 182, 0.5) !important;
+    --widget-color: rgba(155, 89, 182, 0.3) !important;
+}
+
+/* Transform Tools */
+.transform-tools {
+    gap: 5px !important;
+}
+
+.toolbar-label {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 12px;
+    margin-right: 5px;
+}
+
+.transform-btn {
+    padding: 8px 12px !important;
+    font-size: 12px !important;
+}
+
+.transform-btn.active {
+    background: linear-gradient(135deg, #9b59b6, #8e44ad) !important;
+    border: 1px solid rgba(155, 89, 182, 0.8);
+}
+
+/* Object Properties Panel */
+.object-properties {
+    position: absolute;
+    top: 70px;
+    right: 250px;
+    width: 240px;
+    background: rgba(10, 10, 20, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(155, 89, 182, 0.3);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.object-properties.hidden {
+    display: none;
+}
+
+.properties-header {
+    padding: 12px 15px;
+    background: rgba(155, 89, 182, 0.2);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.properties-header h4 {
+    color: #fff;
+    font-size: 14px;
+    margin: 0;
+}
+
+.properties-content {
+    padding: 15px;
+}
+
+.property-group {
+    margin-bottom: 15px;
+}
+
+.property-group label {
+    display: block;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 12px;
+    margin-bottom: 6px;
+}
+
+.scale-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.scale-controls input[type="range"] {
+    flex: 1;
+    height: 6px;
+    appearance: none;
+    -webkit-appearance: none;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+.scale-controls input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #9b59b6;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.scale-controls input[type="number"],
+.property-group input[type="number"] {
+    width: 60px;
+    padding: 6px 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    color: #fff;
+    font-size: 12px;
+}
+
+.property-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.property-actions .editor-btn {
+    width: 100%;
+    justify-content: center;
+    padding: 8px 12px;
+    font-size: 12px;
+}

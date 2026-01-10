@@ -36,8 +36,9 @@ export class CameraController {
                 fov: 75
             },
             cockpit: {
-                distance: 0,        // Inside the car
-                height: 4.5,        // Driver eye level (scaled for the large car model)
+                distance: -3,       // Z offset (negative = back, positive = forward)
+                height: 4.5,        // Y offset - Driver eye level (scaled)
+                seatOffsetX: 1.5,     // X offset - left/right to align with seat (negative = left, positive = right)
                 lookAtHeight: 4.5,  // Look straight ahead
                 fov: 85             // Wide FOV for immersive cockpit view
             },
@@ -312,39 +313,51 @@ export class CameraController {
                 return;
             }
 
-            // ==================== CAR COCKPIT (Original) ====================
-            // Position camera inside the car at driver's head position
-            const cockpitOffset = new THREE.Vector3(0, config.height, 2); // Slightly forward of center
-            cockpitOffset.applyQuaternion(target.quaternion);
+            // ==================== CAR COCKPIT (Rigid - Same as Plane) ====================
+            // Smooth orbit angle interpolation (Mouse Look)
+            this.orbitAngleX = THREE.MathUtils.lerp(this.orbitAngleX, this.targetOrbitX, 15 * deltaTime);
+            this.orbitAngleY = THREE.MathUtils.lerp(this.orbitAngleY, this.targetOrbitY, 15 * deltaTime);
 
-            const desiredPosition = new THREE.Vector3();
-            desiredPosition.copy(targetPos).add(cockpitOffset);
+            // Rigidly attach to car for 1:1 movement (no smoothing)
+            const carRotation = new THREE.Matrix4().makeRotationFromQuaternion(target.quaternion);
+            const carUp = new THREE.Vector3(0, 1, 0).applyMatrix4(carRotation);
 
-            // Look forward in the car's direction
-            const lookAtPoint = new THREE.Vector3();
-            lookAtPoint.copy(targetPos);
-            lookAtPoint.add(targetDir.clone().multiplyScalar(50)); // Look 50 units ahead
-            lookAtPoint.y = targetPos.y + config.lookAtHeight;
+            // Offset relative to car (driver's head position)
+            const seatX = config.seatOffsetX || 0; // Side offset for seat alignment
+            const offset = new THREE.Vector3(seatX, config.height, config.distance);
+            offset.applyMatrix4(carRotation);
 
-            // Faster smoothing for responsive first-person feel
-            this.currentPosition.lerp(desiredPosition, 15 * deltaTime);
-            this.currentLookAt.lerp(lookAtPoint, 15 * deltaTime);
+            const desiredPosition = targetPos.clone().add(offset);
 
-            // Apply position with reduced shake for cockpit
-            const shakeOffset = new THREE.Vector3();
-            if (this.shakeIntensity > 0.01) {
-                shakeOffset.x = (Math.random() - 0.5) * this.shakeIntensity * 0.03;
-                shakeOffset.y = (Math.random() - 0.5) * this.shakeIntensity * 0.03;
-                shakeOffset.z = (Math.random() - 0.5) * this.shakeIntensity * 0.03;
-                this.shakeIntensity -= this.shakeDecay * deltaTime;
-            }
+            // Set position directly (no smoothing - rigid attachment)
+            this.currentPosition.copy(desiredPosition);
+            this.camera.position.copy(this.currentPosition);
 
-            this.camera.position.copy(this.currentPosition).add(shakeOffset);
+            // Local look direction (forward is +Z)
+            const localLookDir = new THREE.Vector3(0, 0, 1);
+
+            // Apply Mouse Look (Orbit) - head turn inside cockpit
+            // Pitch (X-axis rotation)
+            localLookDir.applyAxisAngle(new THREE.Vector3(1, 0, 0), this.orbitAngleY);
+            // Yaw (Y-axis rotation)
+            localLookDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), -this.orbitAngleX);
+
+            // Transform local look direction to World space relative to car
+            localLookDir.applyMatrix4(carRotation);
+
+            // Look target
+            const lookTarget = desiredPosition.clone().add(localLookDir.multiplyScalar(100));
+
+            // Set lookAt directly (no smoothing)
+            this.currentLookAt.copy(lookTarget);
             this.camera.lookAt(this.currentLookAt);
+
+            // Match car's up vector for proper orientation during rolls/tilts
+            this.camera.up.copy(carUp);
 
             // Speed-based FOV for cockpit
             const speedRatio = Math.min(speed / this.maxSpeedForFov, 1);
-            const targetFov = config.fov + speedRatio * this.maxFovIncrease * 0.7; // Reduced FOV increase
+            const targetFov = config.fov + speedRatio * this.maxFovIncrease * 0.7;
             this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, this.fovSmoothing * deltaTime);
             this.camera.fov = this.currentFov;
             this.camera.updateProjectionMatrix();
