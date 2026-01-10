@@ -120,6 +120,13 @@ export class NewCarPhysicsEngine {
         // Wheel spin velocities (for realistic wheel-spin)
         this.wheelSpinVelocities = [0, 0, 0, 0]; // rad/s for each wheel
 
+        // ==================== AIRBORNE STATE ====================
+        this.isAirborne = false;              // True when no wheels are touching ground
+        this.airborneTime = 0;                // Time spent in the air (seconds)
+        this.airControlStrength = carSpec.airborne?.controlStrength || 0.3; // How much player can adjust rotation in air
+        this.airAngularDamping = carSpec.airborne?.angularDamping || 0.9999; // Very low damping in air (preserves spin)
+        this.groundAngularDamping = carSpec.airborne?.groundDamping || 0.98; // Normal damping on ground
+
         // ==================== HELPER OBJECTS (reused) ====================
         this._tempVec3 = new THREE.Vector3();
         this._tempVec3b = new THREE.Vector3();
@@ -232,8 +239,57 @@ export class NewCarPhysicsEngine {
         const worldAngularAccel = localAngularAccel.applyQuaternion(this.quaternion);
         this.angularVelocity.add(worldAngularAccel.multiplyScalar(dt));
 
-        // Angular damping to prevent infinite spinning
-        this.angularVelocity.multiplyScalar(0.98);
+        // ==================== UPDATE AIRBORNE STATE ====================
+        this.isAirborne = (groundedCount === 0);
+        if (this.isAirborne) {
+            this.airborneTime += dt;
+        } else {
+            this.airborneTime = 0;
+        }
+
+        // Angular damping - much lower in air to preserve rotation momentum
+        if (this.isAirborne) {
+            // ==================== PURE AIRBORNE PHYSICS ====================
+            // In the air, angular momentum is preserved with almost no damping.
+            // The car will continue rotating with whatever spin it had when leaving ground.
+            // This is 0.9999 - essentially no damping per frame.
+            this.angularVelocity.multiplyScalar(1.0); // No damping at all in air
+
+            // Optional: Subtle weight distribution effect
+            // Real cars have weight distribution that causes slight nose-down tendency
+            // This is VERY subtle and doesn't fight existing rotation
+            const weightBias = 2.0; // 0 = no effect, higher = stronger nose-down
+            if (weightBias > 0) {
+                // Only apply if car is relatively level (not mid-tumble)
+                const upDotWorld = this._upDir.dot(new THREE.Vector3(0, 1, 0));
+                if (upDotWorld > 0.2) { // Car is somewhat upright (lowered threshold)
+                    // Gentle nose-down torque based on how tilted the nose is
+                    const nosePitch = this._forwardDir.y; // How much nose points up (+) or down (-)
+                    // If nose is up (positive), apply forward pitch to bring it down
+                    const pitchCorrection = nosePitch * weightBias * 1.5;
+                    this.angularVelocity.x += this._rightDir.x * pitchCorrection * dt;
+                    this.angularVelocity.z += this._rightDir.z * pitchCorrection * dt;
+                }
+            }
+
+            // Air control: player can adjust rotation while airborne
+            if (this.airControlStrength > 0) {
+                const steer = input.steer || 0;
+                const pitch = (input.throttle || 0) - (input.brake || 0);
+
+                // Direct angular velocity modification for responsive air control
+                const yawRate = steer * this.airControlStrength * 3.0;
+                const pitchRate = -pitch * this.airControlStrength * 2.0;
+                const rollRate = steer * this.airControlStrength * 1.5;
+
+                // Apply in local space then convert to world
+                const localAngVelDelta = new THREE.Vector3(pitchRate, yawRate, rollRate);
+                localAngVelDelta.applyQuaternion(this.quaternion);
+                this.angularVelocity.add(localAngVelDelta.multiplyScalar(dt));
+            }
+        } else {
+            this.angularVelocity.multiplyScalar(this.groundAngularDamping);
+        }
 
         // ==================== 7. INTEGRATE POSITION ====================
         this.position.add(this.velocity.clone().multiplyScalar(dt));
@@ -271,6 +327,19 @@ export class NewCarPhysicsEngine {
         // Get ground height at wheel XZ position
         const groundHeight = this.physicsProvider.getHeightAt(wheelMountWorld.x, wheelMountWorld.z);
         const groundNormal = this.physicsProvider.getNormalAt(wheelMountWorld.x, wheelMountWorld.z);
+
+        // ==================== FLIP DETECTION ====================
+        // Check if the car is flipped by comparing car's up vector with ground normal.
+        // If the car's up direction is pointing away from the ground (dot product < threshold),
+        // the suspension should not apply forces - only body collision should affect the car.
+        const upDotGround = this._upDir.dot(groundNormal);
+        if (upDotGround < 0.1) {
+            // Car is flipped or nearly flipped - wheels cannot contact ground properly
+            this.wheelGrounded[wheelIndex] = false;
+            this.wheelCompressions[wheelIndex] = 0;
+            this.wheelSuspensionForces[wheelIndex] = 0;
+            return result;
+        }
 
         // The wheel hub should be at groundHeight + wheelRadius when on ground
         // The suspension mount (wheelMountWorld) is at car body level
@@ -683,6 +752,20 @@ export class NewCarPhysicsEngine {
 
     getWheelCompressions() {
         return this.wheelCompressions;
+    }
+
+    /**
+     * Check if car is fully airborne (no wheels touching ground)
+     */
+    getIsAirborne() {
+        return this.isAirborne;
+    }
+
+    /**
+     * Get time spent airborne (useful for jump effects, landing audio, etc.)
+     */
+    getAirborneTime() {
+        return this.airborneTime;
     }
 
     // ==================== DRIFT STATE ====================
