@@ -12,6 +12,9 @@ export class CameraController {
         this.modes = ['chase', 'far', 'hood', 'cockpit', 'flight'];
         this.currentModeIndex = 0;
 
+        // Active vehicle context ('car' or 'plane')
+        this.activeVehicle = 'car';
+
         // Mode configurations
         this.modeConfigs = {
             chase: {
@@ -43,7 +46,15 @@ export class CameraController {
                 height: 2,
                 lookAtHeight: 2,
                 fov: 75,
-                rollLock: false      // Custom flag for plane behavior
+                rollLock: false,      // Custom flag for plane behavior
+                positionSmoothing: 25.0,
+                lookAtSmoothing: 25.0
+            },
+            flight_cockpit: {
+                distance: 2.5,     // Forward of center
+                height: 3,       // Pilot eye level
+                lookAtHeight: 1.2, // Level with eyes
+                fov: 120            // Wide FOV for flight
             }
         };
 
@@ -176,8 +187,20 @@ export class CameraController {
         return this.modes[this.currentModeIndex];
     }
 
+    /**
+     * Set the current active vehicle type
+     * @param {string} type - 'car' or 'plane'
+     */
+    setVehicleType(type) {
+        this.activeVehicle = type;
+    }
+
     get config() {
-        return this.modeConfigs[this.currentMode];
+        const mode = this.currentMode;
+        if (mode === 'cockpit' && this.activeVehicle === 'plane') {
+            return this.modeConfigs['flight_cockpit'];
+        }
+        return this.modeConfigs[mode];
     }
 
     get isCockpitMode() {
@@ -218,7 +241,10 @@ export class CameraController {
     update(target, speed, deltaTime) {
         if (!target) return;
 
+
         const config = this.config;
+        const positionSmoothing = config.positionSmoothing || this.positionSmoothing;
+        const lookAtSmoothing = config.lookAtSmoothing || this.lookAtSmoothing;
 
         // Get target's world position and direction
         const targetPos = new THREE.Vector3();
@@ -230,6 +256,63 @@ export class CameraController {
 
         // ==================== COCKPIT MODE ====================
         if (this.isCockpitMode) {
+            // ==================== PLANE COCKPIT (RIGID) ====================
+            if (this.activeVehicle === 'plane') {
+                // Smooth orbit angle interpolation (Mouse Look)
+                this.orbitAngleX = THREE.MathUtils.lerp(this.orbitAngleX, this.targetOrbitX, 15 * deltaTime);
+                this.orbitAngleY = THREE.MathUtils.lerp(this.orbitAngleY, this.targetOrbitY, 15 * deltaTime);
+
+                // Rigidly attach to plane for 1:1 movement (no smoothing)
+                const planeRotation = new THREE.Matrix4().makeRotationFromQuaternion(target.quaternion);
+                const planeUp = new THREE.Vector3(0, 1, 0).applyMatrix4(planeRotation);
+                // const planeForward = new THREE.Vector3(0, 0, 1).applyMatrix4(planeRotation); // Not needed if we use local vector
+
+                // Offset relative to plane
+                const offset = new THREE.Vector3(0, config.height, config.distance);
+                offset.applyMatrix4(planeRotation);
+
+                const desiredPosition = targetPos.clone().add(offset);
+
+                // Set position directly
+                this.currentPosition.copy(desiredPosition);
+                this.camera.position.copy(this.currentPosition);
+
+                // Local look direction (Forward -Z in Three.js, but our code seems to use +Z as forward for cars?)
+                // Previous code used: const targetDir = new THREE.Vector3(0, 0, 1).applyQuaternion(target.quaternion);
+                // So local forward is (0, 0, 1).
+                const localLookDir = new THREE.Vector3(0, 0, 1);
+
+                // Apply Mouse Look (Orbit)
+                // Rotate around Local Y (Yaw) and Local X (Pitch)
+                // We typically orbit around Y globally, but here we want "Head Turn" inside cockpit.
+                // Pitch (X-axis rotation)
+                localLookDir.applyAxisAngle(new THREE.Vector3(1, 0, 0), this.orbitAngleY);
+                // Yaw (Y-axis rotation)
+                localLookDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), -this.orbitAngleX);
+
+                // Now transform local look direction to World space relative to Plane
+                localLookDir.applyMatrix4(planeRotation);
+
+                // Look target
+                const lookTarget = desiredPosition.clone().add(localLookDir.multiplyScalar(100));
+
+                // Set lookAt directly
+                this.currentLookAt.copy(lookTarget);
+                this.camera.lookAt(this.currentLookAt);
+
+                // Match plane's roll (Up vector)
+                this.camera.up.copy(planeUp);
+
+                // Dynamic FOV
+                const speedRatio = Math.min(speed / 150, 1);
+                const targetFov = config.fov + speedRatio * 10;
+                this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, this.fovSmoothing * deltaTime);
+                this.camera.fov = this.currentFov;
+                this.camera.updateProjectionMatrix();
+                return;
+            }
+
+            // ==================== CAR COCKPIT (Original) ====================
             // Position camera inside the car at driver's head position
             const cockpitOffset = new THREE.Vector3(0, config.height, 2); // Slightly forward of center
             cockpitOffset.applyQuaternion(target.quaternion);
@@ -283,12 +366,12 @@ export class CameraController {
             const desiredPos = targetPos.clone().add(offset);
 
             // Smoothly move there
-            this.currentPosition.lerp(desiredPos, this.positionSmoothing * deltaTime);
+            this.currentPosition.lerp(desiredPos, positionSmoothing * deltaTime);
 
             // Look target (ahead of plane)
             const lookOffset = new THREE.Vector3(0, config.lookAtHeight, 50).applyMatrix4(planeRotation);
             const lookTarget = targetPos.clone().add(lookOffset);
-            this.currentLookAt.lerp(lookTarget, this.lookAtSmoothing * deltaTime);
+            this.currentLookAt.lerp(lookTarget, lookAtSmoothing * deltaTime);
 
             // Apply to Camera
             this.camera.position.copy(this.currentPosition);
@@ -354,7 +437,7 @@ export class CameraController {
         desiredPosition.y = targetPos.y + offsetY;
 
         // Smooth camera position
-        this.currentPosition.lerp(desiredPosition, this.positionSmoothing * deltaTime);
+        this.currentPosition.lerp(desiredPosition, positionSmoothing * deltaTime);
 
         // Calculate look-at point (the car)
         const lookAtPoint = new THREE.Vector3();
@@ -362,7 +445,7 @@ export class CameraController {
         lookAtPoint.y += config.lookAtHeight;
 
         // Smooth look-at
-        this.currentLookAt.lerp(lookAtPoint, this.lookAtSmoothing * deltaTime);
+        this.currentLookAt.lerp(lookAtPoint, lookAtSmoothing * deltaTime);
 
         // Apply position with shake
         const shakeOffset = new THREE.Vector3();

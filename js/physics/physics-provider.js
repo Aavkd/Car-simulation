@@ -88,4 +88,12 @@ export class BasePhysicsProvider {
     getSurfaceType(worldX, worldZ) {
         return SurfaceTypes.GRASS; // Default to grass
     }
+
+    /**
+     * Get gravity acceleration for this terrain
+     * @returns {number} Gravity (m/s^2)
+     */
+    getGravity() {
+        return 9.81;
+    }
 }

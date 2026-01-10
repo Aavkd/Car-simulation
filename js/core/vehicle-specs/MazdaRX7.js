@@ -89,6 +89,14 @@ export const MazdaRX7 = {
         ]
     },
 
+    exhaust: {
+        // Local positions relative to car center (RX7 often dual)
+        positions: [
+            { x: -2.5, y: -1.8, z: -9.4 }, // Left
+            { x: 2.5, y: -1.8, z: -9.4 }   // Right
+        ]
+    },
+
     // Visual offset (mesh origin to physics center)
     // NOTE: These values may need adjustment once the 3D model is imported
     visualOffset: {

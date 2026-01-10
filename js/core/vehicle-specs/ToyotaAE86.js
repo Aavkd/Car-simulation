@@ -85,6 +85,14 @@ export const ToyotaAE86 = {
         ]
     },
 
+    exhaust: {
+        // Local positions relative to car center
+        positions: [
+            // { x: -2.2, y: -0.8, z: -9.4 }, // Single left exit
+            { x: 1.6, y: -1.7, z: -9.4 }  // Right exit (optional)
+        ]
+    },
+
     // Visual offset (mesh origin to physics center)
     visualOffset: {
         x: -0.3,                 // Mesh shifted left to center with physics hitbox

@@ -177,7 +177,12 @@ export class NewCarPhysicsEngine {
         this._updateDirections();
 
         // ==================== 1. GRAVITY ====================
-        const gravityForce = new THREE.Vector3(0, this.gravity * this.mass, 0);
+        const baseGravity = (this.physicsProvider && this.physicsProvider.getGravity) ?
+            this.physicsProvider.getGravity() : 9.81;
+
+        // Apply scale factor (gravity is negative Y)
+        const currentGravity = -baseGravity * this.scaleFactor;
+        const gravityForce = new THREE.Vector3(0, currentGravity * this.mass, 0);
 
         // ==================== 2. SUSPENSION & WHEEL FORCES ====================
         let totalForce = gravityForce.clone();

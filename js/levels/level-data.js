@@ -71,6 +71,34 @@ export const LevelData = {
             curveIntensity: 150,
             slopeIntensity: 40
         }
+    },
+    cosmic: {
+        id: 'cosmic',
+        name: 'Cosmic Infinite',
+        description: 'Infinite chaotic road through the galaxy',
+        type: 'cosmic',
+        difficulty: 4,
+        color: '#8b5cf6', // Violet accent
+        params: {
+            roadWidth: 30,
+            segmentLength: 100000,
+            curveIntensity: 200,
+            slopeIntensity: 80
+        }
+    },
+    deepspace: {
+        id: 'deepspace',
+        name: 'Deep Space',
+        description: 'Infinite cosmic void with galaxies and nebulae. Best for flight.',
+        type: 'deepspace',
+        difficulty: 5,
+        color: '#4c1d95', // Deep purple
+        params: {
+            universeSize: 50000,
+            starCount: 30000,
+            galaxyCount: 500,
+            nebulaCount: 400
+        }
     }
 };
 

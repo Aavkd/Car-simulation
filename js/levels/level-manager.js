@@ -4,6 +4,8 @@ import { HighwayGenerator } from '../terrain/highway.js';
 import { CityGenerator } from '../terrain/city.js';
 import { EverestGenerator } from '../terrain/everest.js';
 import { VaporwaveGenerator } from '../terrain/vaporwave.js';
+import { CosmicGenerator } from '../terrain/cosmic.js';
+import { DeepSpaceGenerator } from '../terrain/deep-space.js';
 
 /**
  * Level Manager
@@ -48,6 +50,14 @@ export class LevelManager {
 
             case 'vaporwave':
                 this.currentTerrain = new VaporwaveGenerator(config.params);
+                break;
+
+            case 'cosmic':
+                this.currentTerrain = new CosmicGenerator(config.params);
+                break;
+
+            case 'deepspace':
+                this.currentTerrain = new DeepSpaceGenerator(config.params);
                 break;
         }
 

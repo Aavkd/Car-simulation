@@ -288,7 +288,7 @@ export class InputHandler {
         // Buttons: 6:L2, 7:R2, 4:L1, 5:R1, 0:X/A, 1:O/B, 2:Sq/X, 3:Tri/Y
 
         // Normalize axes with deadzone
-        const deadzone = 0.1;
+        const deadzone = 0.4;
 
         // Steering (Left Stick X - Axis 0)
         let steerRaw = gp.axes[0];

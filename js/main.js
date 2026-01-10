@@ -11,6 +11,7 @@ import { CarPhysics } from './core/car.js';
 import { PlayerController } from './core/player.js';
 import { SkySystem } from './environment/sky.js';
 import { SkyVaporwave } from './environment/sky-vaporwave.js';
+import { SkyDeepSpace } from './environment/sky-deepspace.js';
 import { WindEffect } from './environment/wind.js';
 import { LevelManager } from './levels/level-manager.js';
 import { LevelData, getAllLevels } from './levels/level-data.js';
@@ -209,7 +210,7 @@ class Game {
                     <h3 class="level-card-title">${level.name}</h3>
                     <p class="level-card-desc">${level.description}</p>
                     <div class="level-card-difficulty">
-                        ${'★'.repeat(level.difficulty)}${'☆'.repeat(3 - level.difficulty)}
+                        ${'★'.repeat(level.difficulty)}${'☆'.repeat(Math.max(0, 5 - level.difficulty))}
                     </div>
                 </div>
             `;
@@ -402,6 +403,25 @@ class Game {
                         enabled: true
                     });
                     break;
+                case 'cosmic':
+                    // Deep space fog
+                    this.wind.configure({
+                        windSpeed: 50,
+                        fogColor: 0x1a0b2e, // Deep violet
+                        fogOpacity: 0.3,
+                        enabled: true
+                    });
+                    break;
+                case 'deepspace':
+                    // No wind/fog in deep space -> but maybe some ether?
+                    // Let's keep it clear mostly
+                    this.wind.configure({
+                        windSpeed: 0,
+                        fogColor: 0x000000,
+                        fogOpacity: 0.0,
+                        enabled: false
+                    });
+                    break;
                 case 'everest':
                     // HEAVY blizzard on Everest
                     this.wind.configure({
@@ -441,11 +461,11 @@ class Game {
         }
 
         // Apply visual presets and Skybox based on level type
-        if (levelConfig.type === 'vaporwave') {
-            console.log('Applying Vaporwave Visuals...');
-            // Switch to Vaporwave Skybox
+        if (levelConfig.type === 'vaporwave' || levelConfig.type === 'cosmic' || levelConfig.type === 'deepspace') {
+            console.log('Applying Vaporwave/Space Visuals...');
+            // Switch to Vaporwave Skybox or Deep Space Skybox
             if (this.sky instanceof SkySystem) {
-                console.log('Swapping SkySystem -> SkyVaporwave');
+                console.log('Swapping SkySystem -> Custom Sky');
                 // Remove standard sky objects
                 if (this.sky.skyDome) this.scene.remove(this.sky.skyDome);
                 if (this.sky.sun) this.scene.remove(this.sky.sun);
@@ -461,8 +481,12 @@ class Game {
                     this.scene.remove(this.sky.starfield.starsGroup);
                 }
 
-                // Create Vaporwave sky
-                this.sky = new SkyVaporwave(this.scene);
+                // Create Custom Sky
+                if (levelConfig.type === 'deepspace') {
+                    this.sky = new SkyDeepSpace(this.scene);
+                } else {
+                    this.sky = new SkyVaporwave(this.scene);
+                }
             }
 
             // Neon Vibe Configuration
@@ -473,20 +497,31 @@ class Game {
             }
 
             // Override fog
-            this.scene.fog.color.setHex(0x2a0a3b);
+            if (levelConfig.type === 'cosmic') {
+                this.scene.fog.color.setHex(0x050011); // Almost black
+                this.bloomPass.strength = 0.8; // More bloom for cosmic
+            } else if (levelConfig.type === 'deepspace') {
+                this.scene.fog.color.setHex(0x000005); // Pure black
+                this.scene.fog.density = 0.0002; // Very clear
+                this.bloomPass.strength = 1.2; // Massive bloom for stars
+                this.bloomPass.radius = 0.8;
+                this.bloomPass.threshold = 0.1;
+            } else {
+                this.scene.fog.color.setHex(0x2a0a3b);
+            }
             this.scene.fog.near = 100;
             this.scene.fog.far = 2000;
 
         } else {
             // Standard Level
-            if (this.sky instanceof SkyVaporwave) {
-                console.log('Swapping SkyVaporwave -> SkySystem');
-                // Remove Vaporwave sky objects
+            if (this.sky instanceof SkyVaporwave || this.sky instanceof SkyDeepSpace) {
+                console.log('Swapping Custom Sky -> SkySystem');
+                // Remove sky objects (generic clean up)
                 if (this.sky.skyDome) this.scene.remove(this.sky.skyDome);
-                if (this.sky.sun) this.scene.remove(this.sky.sun);
+                if (this.sky.sun) this.scene.remove(this.sky.sun); // Vaporwave only
                 if (this.sky.sunLight) this.scene.remove(this.sky.sunLight);
                 if (this.sky.ambientLight) this.scene.remove(this.sky.ambientLight);
-                if (this.sky.hemiLight) this.scene.remove(this.sky.hemiLight);
+                if (this.sky.hemiLight) this.scene.remove(this.sky.hemiLight); // Vaporwave only
                 if (this.sky.starfield && this.sky.starfield.starsGroup) {
                     this.scene.remove(this.sky.starfield.starsGroup);
                 }
@@ -557,15 +592,20 @@ class Game {
         // Set Spawn Position
         let startX = 0;
         let startZ = 0;
+        let startY = null; // New: explicit spawn height
+
         if (this.terrain.getSpawnPosition) {
             const spawn = this.terrain.getSpawnPosition();
             startX = spawn.x;
             startZ = spawn.z;
+            if (spawn.y !== undefined) {
+                startY = spawn.y;
+            }
         }
 
         // Apply Spawn to Selected Vehicle
         if (this.activeVehicle === 'car') {
-            const startHeight = this.terrain.getHeightAt(startX, startZ) + 10;
+            const startHeight = startY !== null ? startY : (this.terrain.getHeightAt(startX, startZ) + 10);
             this.car.position.set(startX, startHeight, startZ);
             this.car.velocity.set(0, 0, 0); // Reset velocity
 
@@ -575,12 +615,12 @@ class Game {
             }
 
             // Setup camera for car
+            this.cameraController.setVehicleType('car');
             this.cameraController.currentModeIndex = 0; // Chase
         } else {
             // Plane Spawn
-            // Spawn plane in air or on ground? Airstrip usually preferred but let's do air for fun or ground if flat.
-            // Let's spawn on ground + small offset
-            const startHeight = this.terrain.getHeightAt(startX, startZ) + 5;
+            const startHeight = startY !== null ? startY : (this.terrain.getHeightAt(startX, startZ) + 5);
+
             if (this.plane) {
                 this.plane.setPosition(startX, startHeight, startZ);
                 this.plane.velocity.set(0, 0, 0);
@@ -590,6 +630,7 @@ class Game {
             this.car.position.set(startX - 30, startHeight, startZ - 30);
 
             // Setup camera for plane
+            this.cameraController.setVehicleType('plane');
             const flightIndex = this.cameraController.modes.indexOf('flight');
             if (flightIndex >= 0) this.cameraController.currentModeIndex = flightIndex;
         }
@@ -1098,9 +1139,9 @@ class Game {
             this.carMesh.visible = !isCockpit;
         }
 
-        // Toggle cockpit overlay visibility (show in cockpit mode)
+        // Toggle cockpit overlay visibility (show in cockpit mode ONLY for cars)
         if (this.cockpitOverlay) {
-            if (isCockpit) {
+            if (isCockpit && this.activeVehicle === 'car') {
                 this.cockpitOverlay.classList.remove('hidden');
             } else {
                 this.cockpitOverlay.classList.add('hidden');
@@ -1176,6 +1217,7 @@ class Game {
                 this.isOnFoot = false;
                 this.activeVehicle = 'car';
 
+                this.cameraController.setVehicleType('car');
                 this.cameraController.setPlayerMode(false);
                 this.cameraController.currentModeIndex = 0; // Chase
 
@@ -1190,6 +1232,7 @@ class Game {
                 this.isOnFoot = false;
                 this.activeVehicle = 'plane';
 
+                this.cameraController.setVehicleType('plane');
                 this.cameraController.setPlayerMode(false);
                 // Switch to flight cam
                 const flightIndex = this.cameraController.modes.indexOf('flight');

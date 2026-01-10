@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { NewCarPhysicsEngine } from '../physics/new_car_physics.js';
 import { TireSmokeSystem } from './tire-smoke.js';
+import { ExhaustSystem } from './exhaust-system.js';
 
 /**
  * Car Physics System (Controller)
@@ -65,6 +66,18 @@ export class CarPhysics {
 
         // Tire Smoke System
         this.smokeSystem = new TireSmokeSystem(scene);
+
+        // Exhaust System
+        const exhaustPositions = (this.carSpec && this.carSpec.exhaust && this.carSpec.exhaust.positions)
+            ? this.carSpec.exhaust.positions.map(p => new THREE.Vector3(p.x, p.y, p.z))
+            : [];
+        this.exhaustSystem = new ExhaustSystem(scene, this, exhaustPositions);
+
+        // ==================== SPEED EFFECT SYSTEM ====================
+        this._initSpeedEffect();
+
+        // ==================== TRAIL SYSTEM ====================
+        this._initTrails();
     }
 
     /**
@@ -219,6 +232,8 @@ export class CarPhysics {
         const taillightPositions = (this.carSpec && this.carSpec.lights && this.carSpec.lights.taillightPos)
             ? this.carSpec.lights.taillightPos
             : defaultPositions;
+
+        this.taillightLocalPositions = taillightPositions.map(p => new THREE.Vector3(p.x, p.y, p.z));
 
         taillightPositions.forEach((pos) => {
             const rearLight = new THREE.PointLight(0xff0000, 0, 50, 1.5);
@@ -387,6 +402,17 @@ export class CarPhysics {
             }
         }
 
+        // Update Exhaust System
+        if (this.exhaustSystem) {
+            this.exhaustSystem.update(deltaTime);
+        }
+
+        // Update Speed Speed Effect
+        this._updateSpeedEffect(deltaTime);
+
+        // Update Trails
+        this._updateTrails(deltaTime);
+
         // Update debug visuals
         this._updateDebug();
 
@@ -553,5 +579,436 @@ export class CarPhysics {
     setWheelMeshes(wheelMeshes) {
         this.wheelMeshes = wheelMeshes;
         console.log('[CarPhysics] Wheel meshes set:', wheelMeshes.map(w => w ? w.name : 'null'));
+    }
+
+    /**
+     * Initialize the "Star Wars" style speed lines effect
+     * (Ported from plane.js)
+     */
+    _initSpeedEffect() {
+        this.speedEffectConfig = {
+            count: 200,             // Number of lines
+            boxSize: new THREE.Vector3(20, 10, 40), // Volume size around car
+            minSpeed: 50,           // Speed (km/h) where effect starts
+            maxSpeed: 350,          // Speed where effect is maxed
+            maxStretch: 20.0,       // Maximum line length stretch
+            color: new THREE.Color(0xaaccff), // Light blueish white
+            lineWidth: 0.05         // Thickness of the lines
+        };
+
+        // We use a Mesh (Quads) to allow for line thickness
+        // Each particle consists of 4 vertices (Head-Left, Head-Right, Tail-Left, Tail-Right)
+        const geometry = new THREE.BufferGeometry();
+        const count = this.speedEffectConfig.count;
+
+        const positions = new Float32Array(count * 4 * 3); // 4 verts per line, 3 coords
+        const offsets = new Float32Array(count * 4);       // Random offset per line
+        const ends = new Float32Array(count * 4);          // 0 for head, 1 for tail
+        const sides = new Float32Array(count * 4);         // -1 for left, 1 for right
+        const indices = [];
+
+        const box = this.speedEffectConfig.boxSize;
+
+        for (let i = 0; i < count; i++) {
+            // Random start position within box
+            const x = (Math.random() - 0.5) * box.x;
+            const y = (Math.random() - 0.5) * box.y;
+            const z = (Math.random() - 0.5) * box.z; // Initial Z distribution
+
+            const offset = Math.random() * 100.0; // Random phase
+            const baseIdx = i * 4;
+
+            // Vertex 0 (Head, Left)
+            positions[baseIdx * 3 + 0] = x;
+            positions[baseIdx * 3 + 1] = y;
+            positions[baseIdx * 3 + 2] = z;
+            offsets[baseIdx + 0] = offset;
+            ends[baseIdx + 0] = 0.0;
+            sides[baseIdx + 0] = -1.0;
+
+            // Vertex 1 (Head, Right)
+            positions[baseIdx * 3 + 3] = x;
+            positions[baseIdx * 3 + 4] = y;
+            positions[baseIdx * 3 + 5] = z;
+            offsets[baseIdx + 1] = offset;
+            ends[baseIdx + 1] = 0.0;
+            sides[baseIdx + 1] = 1.0;
+
+            // Vertex 2 (Tail, Left)
+            positions[baseIdx * 3 + 6] = x;
+            positions[baseIdx * 3 + 7] = y;
+            positions[baseIdx * 3 + 8] = z;
+            offsets[baseIdx + 2] = offset;
+            ends[baseIdx + 2] = 1.0;
+            sides[baseIdx + 2] = -1.0;
+
+            // Vertex 3 (Tail, Right)
+            positions[baseIdx * 3 + 9] = x;
+            positions[baseIdx * 3 + 10] = y;
+            positions[baseIdx * 3 + 11] = z;
+            offsets[baseIdx + 3] = offset;
+            ends[baseIdx + 3] = 1.0;
+            sides[baseIdx + 3] = 1.0;
+
+            // Indices for 2 triangles
+            // 0-2-1, 1-2-3 (Standard quad winding)
+            indices.push(
+                baseIdx + 0, baseIdx + 2, baseIdx + 1,
+                baseIdx + 1, baseIdx + 2, baseIdx + 3
+            );
+        }
+
+        geometry.setIndex(indices);
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('aOffset', new THREE.BufferAttribute(offsets, 1));
+        geometry.setAttribute('aEnd', new THREE.BufferAttribute(ends, 1));
+        geometry.setAttribute('aSide', new THREE.BufferAttribute(sides, 1));
+
+        this.speedEffectMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                speedFactor: { value: 0 }, // 0 to 1 based on car speed
+                color: { value: this.speedEffectConfig.color },
+                boxLength: { value: box.z },
+                opacity: { value: 0 },
+                lineWidth: { value: this.speedEffectConfig.lineWidth }
+            },
+            vertexShader: `
+                uniform float time;
+                uniform float speedFactor;
+                uniform float boxLength;
+                uniform float lineWidth;
+                
+                attribute float aOffset;
+                attribute float aEnd; // 0 = head, 1 = tail
+                attribute float aSide; // -1 or 1
+                
+                varying float vAlpha;
+
+                void main() {
+                    vec3 pos = position;
+                    
+                    // Animate Z movement: push everything back based on time
+                    // "Speed" of particles is illusionary, we just cycle them
+                    // Higher speedFactor = faster cycling
+                    float flightSpeed = 100.0 * (1.0 + speedFactor * 5.0); 
+                    float zOffset = -mod(time * flightSpeed + aOffset, boxLength);
+                    
+                    // Wrap around centered at 0
+                    pos.z = pos.z + zOffset;
+                    if (pos.z < -boxLength/2.0) pos.z += boxLength;
+                    
+                    // Stretch logic
+                    // If this is the tail (aEnd == 1.0), stretch it forward (or backward?)
+                    if (aEnd > 0.5) {
+                        pos.z -= speedFactor * 20.0; // Max stretch
+                    }
+                    
+                    // Billboard expansion
+                    // Calculate view position for the center of the line
+                    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+
+                    // Direction of the line in View Space (it moves along Z axis)
+                    vec3 lineDirView = (modelViewMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xyz;
+                    lineDirView = normalize(lineDirView);
+
+                    // Vector to camera (in view space, from vertex to origin)
+                    // mvPosition is the point in view space. Camera is at (0,0,0).
+                    // So vector TO camera is -mvPosition.
+                    vec3 viewDir = normalize(-mvPosition.xyz);
+
+                    // Side vector perpendicular to both line direction and view direction
+                    vec3 sideDir = normalize(cross(lineDirView, viewDir));
+
+                    // Expand perpendicular to the line
+                    mvPosition.xyz += sideDir * aSide * lineWidth;
+                    
+                    // Calculate alpha fade based on Z position relative to box
+                    float zNorm = 2.0 * pos.z / boxLength; // -1 to 1 aprox
+                    vAlpha = 1.0 - smoothstep(0.8, 1.0, abs(zNorm)); 
+                    
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 color;
+                uniform float opacity;
+                varying float vAlpha;
+                
+                void main() {
+                    if (opacity <= 0.01) discard;
+                    gl_FragColor = vec4(color, opacity * vAlpha);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+
+        this.speedLinesMesh = new THREE.Mesh(geometry, this.speedEffectMaterial);
+        this.speedLinesMesh.frustumCulled = false; // Always render
+
+        // Add to mesh so it rotates with car
+        this.mesh.add(this.speedLinesMesh);
+    }
+
+    _updateSpeedEffect(dt) {
+        if (!this.speedLinesMesh) return;
+
+        // Calculate speed factor (0 to 1)
+        const cfg = this.speedEffectConfig;
+        const speed = this.speedKmh ? this.speedKmh : 0;
+
+        let factor = 0;
+        if (speed > cfg.minSpeed) {
+            factor = (speed - cfg.minSpeed) / (cfg.maxSpeed - cfg.minSpeed);
+            factor = Math.min(1, Math.max(0, factor));
+        }
+
+        // Smooth opacity transition
+        const targetOpacity = factor;
+        const currentOpacity = this.speedEffectMaterial.uniforms.opacity.value;
+        this.speedEffectMaterial.uniforms.opacity.value = THREE.MathUtils.lerp(currentOpacity, targetOpacity, dt * 2.0);
+
+        // Pass uniforms
+        this.speedEffectMaterial.uniforms.time.value += dt;
+        this.speedEffectMaterial.uniforms.speedFactor.value = factor;
+    }
+
+    disposeSpeedEffect() {
+        if (this.speedLinesMesh) {
+            this.mesh.remove(this.speedLinesMesh);
+            this.speedLinesMesh.geometry.dispose();
+            this.speedEffectMaterial.dispose();
+            this.speedLinesMesh = null;
+        }
+    }
+
+    // ==================== TRAIL SYSTEM ====================
+
+    _initTrails() {
+        this.trails = [];
+
+        const modelScale = (this.carSpec && this.carSpec.modelScale) ? this.carSpec.modelScale : 1;
+
+        // Defaults if not set (though _createTaillights should have run)
+        const positions = this.taillightLocalPositions || [
+            new THREE.Vector3(-2.0, 3, -this.specs.length / 2),
+            new THREE.Vector3(2.0, 3, -this.specs.length / 2)
+        ];
+
+        positions.forEach(pos => {
+            // Apply model scale to position because we are calculating world positions manually
+            // and the mesh scale affects the visual position of the lights
+            const scaledPos = pos.clone().multiplyScalar(modelScale);
+            this.trails.push(this._createTrailRenderer(scaledPos));
+        });
+    }
+
+    _createTrailRenderer(localPos) {
+        // Trail configuration
+        const config = {
+            maxPoints: 30,            // Shorter than plane
+            minSpeed: 15,             // Start showing earlier
+            maxSpeed: 250,            // Max intensity speed
+            baseWidth: 0.2,
+            maxWidth: 0.8,
+            fadeTime: 1.0,            // Fade faster
+            localOffset: localPos,
+            colors: {
+                slow: new THREE.Color(0xaa0000),    // Dark Red
+                medium: new THREE.Color(0xff0000),  // Bright Red
+                fast: new THREE.Color(0xff6600)     // Red-Orange
+            }
+        };
+
+        const trailData = {
+            config: config,
+            points: [],
+            times: [],
+            timer: 0
+        };
+
+        // Geometry & Material
+        trailData.geometry = new THREE.BufferGeometry();
+        const maxVerts = config.maxPoints * 2;
+        const positions = new Float32Array(maxVerts * 3);
+        const colors = new Float32Array(maxVerts * 4); // RGBA
+
+        trailData.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        trailData.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+
+        trailData.material = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                glowIntensity: { value: 1.0 }
+            },
+            vertexShader: `
+                attribute vec4 color;
+                varying vec4 vColor;
+                void main() {
+                    vColor = color;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform float glowIntensity;
+                varying vec4 vColor;
+                void main() {
+                    float pulse = 0.9 + 0.1 * sin(time * 10.0);
+                    vec3 glow = vColor.rgb * glowIntensity * pulse;
+                    gl_FragColor = vec4(glow, vColor.a);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+
+        trailData.mesh = new THREE.Mesh(trailData.geometry, trailData.material);
+        trailData.mesh.frustumCulled = false;
+        this.scene.add(trailData.mesh);
+
+        return trailData;
+    }
+
+    _updateTrails(dt) {
+        if (!this.trails) return;
+
+        // Check conditions: Night time AND Speed > min
+        // We use this.taillightsOn as proxy for Night
+        const isNight = this.taillightsOn;
+
+        this.trails.forEach(trail => {
+            this._updateSingleTrail(trail, dt, isNight);
+        });
+    }
+
+    _updateSingleTrail(trail, dt, isActive) {
+        trail.timer += dt;
+        trail.material.uniforms.time.value = trail.timer;
+
+        const cfg = trail.config;
+
+        // Calculate speed ratio
+        const speedRatio = Math.min(1, Math.max(0, (this.speedKmh - cfg.minSpeed) / (cfg.maxSpeed - cfg.minSpeed)));
+
+        // Determine if we should spawn new points
+        const shouldSpawn = isActive && (this.speedKmh > cfg.minSpeed);
+
+        // Calculate world position for emission
+        const emissionOffset = cfg.localOffset.clone();
+        emissionOffset.applyQuaternion(this.mesh.quaternion);
+        const emissionPos = this.mesh.position.clone().add(emissionOffset);
+
+        // Calculate "right" vector for ribbon width
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.mesh.quaternion);
+
+        // Width & Color
+        const currentWidth = cfg.baseWidth + (cfg.maxWidth - cfg.baseWidth) * speedRatio;
+
+        const trailColor = new THREE.Color();
+        if (speedRatio < 0.5) {
+            trailColor.lerpColors(cfg.colors.slow, cfg.colors.medium, speedRatio * 2);
+        } else {
+            trailColor.lerpColors(cfg.colors.medium, cfg.colors.fast, (speedRatio - 0.5) * 2);
+        }
+
+        // Add point
+        if (shouldSpawn) {
+            trail.points.unshift({
+                pos: emissionPos.clone(),
+                right: right.clone(),
+                width: currentWidth,
+                color: trailColor.clone(),
+                alpha: 1.0
+            });
+            trail.times.unshift(trail.timer);
+        }
+
+        // Prune old points
+        while (trail.points.length > cfg.maxPoints) {
+            trail.points.pop();
+            trail.times.pop();
+        }
+
+        // Update Geometry
+        const positions = trail.geometry.attributes.position.array;
+        const colors = trail.geometry.attributes.color.array;
+
+        let vertIdx = 0;
+        let colorIdx = 0;
+
+        for (let i = 0; i < cfg.maxPoints; i++) {
+            if (i < trail.points.length) {
+                const point = trail.points[i];
+                const age = trail.timer - trail.times[i];
+                const lifeParams = age / cfg.fadeTime;
+                const fadeAlpha = Math.max(0, 1.0 - lifeParams);
+
+                if (fadeAlpha <= 0) continue;
+
+                // Taper logic
+                const taperRatio = 1 - (i / trail.points.length);
+                const width = point.width * taperRatio * fadeAlpha;
+
+                // Left Vertex
+                const left = point.pos.clone().sub(point.right.clone().multiplyScalar(width));
+                positions[vertIdx++] = left.x;
+                positions[vertIdx++] = left.y;
+                positions[vertIdx++] = left.z;
+
+                // Right Vertex
+                const rightPos = point.pos.clone().add(point.right.clone().multiplyScalar(width));
+                positions[vertIdx++] = rightPos.x;
+                positions[vertIdx++] = rightPos.y;
+                positions[vertIdx++] = rightPos.z;
+
+                // Colors
+                colors[colorIdx++] = point.color.r;
+                colors[colorIdx++] = point.color.g;
+                colors[colorIdx++] = point.color.b;
+                colors[colorIdx++] = fadeAlpha;
+
+                colors[colorIdx++] = point.color.r;
+                colors[colorIdx++] = point.color.g;
+                colors[colorIdx++] = point.color.b;
+                colors[colorIdx++] = fadeAlpha;
+
+            } else {
+                // Zero out
+                positions[vertIdx++] = 0; positions[vertIdx++] = 0; positions[vertIdx++] = 0;
+                positions[vertIdx++] = 0; positions[vertIdx++] = 0; positions[vertIdx++] = 0;
+                colors[colorIdx++] = 0; colors[colorIdx++] = 0; colors[colorIdx++] = 0; colors[colorIdx++] = 0;
+                colors[colorIdx++] = 0; colors[colorIdx++] = 0; colors[colorIdx++] = 0; colors[colorIdx++] = 0;
+            }
+        }
+
+        // Update Indices (Triangle Strip)
+        const validPoints = Math.min(trail.points.length, cfg.maxPoints);
+        const indices = [];
+        for (let i = 0; i < validPoints - 1; i++) {
+            const base = i * 2;
+            indices.push(base, base + 1, base + 2);
+            indices.push(base + 1, base + 3, base + 2);
+        }
+        trail.geometry.setIndex(indices);
+
+        trail.geometry.attributes.position.needsUpdate = true;
+        trail.geometry.attributes.color.needsUpdate = true;
+    }
+
+    disposeTrails() {
+        if (this.trails) {
+            this.trails.forEach(trail => {
+                this.scene.remove(trail.mesh);
+                trail.geometry.dispose();
+                trail.material.dispose();
+            });
+            this.trails = [];
+        }
     }
 }
