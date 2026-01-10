@@ -25,7 +25,13 @@ export class PlanePhysics {
         // Handling Characteristics
         this.PITCH_SPEED = 1.5;
         this.ROLL_SPEED = 2.5;
+
         this.YAW_SPEED = 1.2;
+
+        // Smoothing / Inertia
+        this.INPUT_ATTACK_SMOOTHING = 8.0;  // Normal acceleration
+        this.INPUT_DECAY_SMOOTHING = 1.0;   // Coasting to stop
+        this.INPUT_COUNTER_SMOOTHING = 2.0; // Quick direction change
 
         // ==================== STATE ====================
         this.velocity = new THREE.Vector3();
@@ -33,6 +39,11 @@ export class PlanePhysics {
         this.speed = 0;                 // m/s
         this.speedKmh = 0;
         this.altitude = 0;
+
+        // Rotational State (for inertia)
+        this.currentPitchSpeed = 0;
+        this.currentRollSpeed = 0;
+        this.currentYawSpeed = 0;
 
         // Control Inputs
         this.input = {
@@ -130,15 +141,32 @@ export class PlanePhysics {
         // Apply smoothed inputs
         this.throttle = THREE.MathUtils.lerp(this.throttle, targetThrottle, 2.0 * dt);
 
-        // Rotate mesh based on control input (Simple kinematic rotation for responsiveness)
-        // Real aerodynamic rotation comes from torque, but hybrid approach feels better
-        const pitchRate = targetPitch * this.PITCH_SPEED * dt;
-        const rollRate = targetRoll * this.ROLL_SPEED * dt;
-        const yawRate = targetYaw * this.YAW_SPEED * dt;
+        // Helper for smoothing logic
+        const getSmoothing = (target, current, attack, decay, counter) => {
+            if (Math.abs(target) < 0.001) return decay; // Input released
+            if (target * current < 0) return counter;   // Counter-steering (signs opposite)
+            return attack;                              // Normal acceleration
+        };
 
-        this.mesh.rotateX(pitchRate);
-        this.mesh.rotateZ(rollRate);
-        this.mesh.rotateY(yawRate);
+        // Pitch
+        const targetPitchRate = targetPitch * this.PITCH_SPEED;
+        const pitchSmoothing = getSmoothing(targetPitch, this.currentPitchSpeed, this.INPUT_ATTACK_SMOOTHING, this.INPUT_DECAY_SMOOTHING, this.INPUT_COUNTER_SMOOTHING);
+        this.currentPitchSpeed = THREE.MathUtils.lerp(this.currentPitchSpeed, targetPitchRate, 1.0 - Math.exp(-pitchSmoothing * dt));
+
+        // Roll
+        const targetRollRate = targetRoll * this.ROLL_SPEED;
+        const rollSmoothing = getSmoothing(targetRoll, this.currentRollSpeed, this.INPUT_ATTACK_SMOOTHING, this.INPUT_DECAY_SMOOTHING, this.INPUT_COUNTER_SMOOTHING);
+        this.currentRollSpeed = THREE.MathUtils.lerp(this.currentRollSpeed, targetRollRate, 1.0 - Math.exp(-rollSmoothing * dt));
+
+        // Yaw
+        const targetYawRate = targetYaw * this.YAW_SPEED;
+        const yawSmoothing = getSmoothing(targetYaw, this.currentYawSpeed, this.INPUT_ATTACK_SMOOTHING, this.INPUT_DECAY_SMOOTHING, this.INPUT_COUNTER_SMOOTHING);
+        this.currentYawSpeed = THREE.MathUtils.lerp(this.currentYawSpeed, targetYawRate, 1.0 - Math.exp(-yawSmoothing * dt));
+
+        // Apply rotation
+        this.mesh.rotateX(this.currentPitchSpeed * dt);
+        this.mesh.rotateZ(this.currentRollSpeed * dt);
+        this.mesh.rotateY(this.currentYawSpeed * dt);
     }
 
     _applyPhysics(dt) {
