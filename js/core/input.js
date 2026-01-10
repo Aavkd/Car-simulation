@@ -27,7 +27,8 @@ export class InputHandler {
             yawLeft: false,
             yawRight: false,
             pitchUp: false,
-            pitchDown: false
+            pitchDown: false,
+            hover: false  // Vertical lift force (X key)
         };
 
         // Smoothed input values (0-1 range)
@@ -140,6 +141,9 @@ export class InputHandler {
                     this.onTimePreset?.(parseInt(e.code.replace('Digit', '')));
                 }
                 break;
+            case 'KeyX':
+                this.keys.hover = true;
+                break;
         }
     }
 
@@ -203,6 +207,9 @@ export class InputHandler {
             case 'Digit3':
             case 'Digit4':
                 this.keys.timePreset = false;
+                break;
+            case 'KeyX':
+                this.keys.hover = false;
                 break;
         }
     }
@@ -278,7 +285,8 @@ export class InputHandler {
                 lookY: 0,
                 sprint: false,
                 yawLeft: false,
-                yawRight: false
+                yawRight: false,
+                hover: false  // Hover toggle (Cross/A button) for plane
             };
             console.log("Gamepad connected:", gp.id);
         }
@@ -313,6 +321,9 @@ export class InputHandler {
         // Let's use Button 1 (Circle/B) for Handbrake as it's common in racing (or R1, but R1 is Gear Up requested)
         this.gamepad.handbrake = gp.buttons[5].pressed; // Circle
 
+        // Hover (Cross/A - Button 0) for plane vertical lift
+        this.gamepad.hover = gp.buttons[0].pressed;
+
         // Sprint (L3 - Left Stick Press - Button 10) for on-foot mode
         this.gamepad.sprint = gp.buttons[10].pressed; // L3
 
@@ -329,7 +340,7 @@ export class InputHandler {
         // Also expose as continuous inputs for plane yaw
         this.gamepad.yawLeft = gp.buttons[4].pressed;  // L1 - Yaw Left (plane mode)
         this.gamepad.yawRight = gp.buttons[5].pressed; // R1 - Yaw Right (plane mode)
-        
+
         if (gp.buttons[4].pressed) { // L1 - Down
             if (!this._l1Pressed) {
                 this._l1Pressed = true;

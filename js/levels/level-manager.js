@@ -6,6 +6,8 @@ import { EverestGenerator } from '../terrain/everest.js';
 import { VaporwaveGenerator } from '../terrain/vaporwave.js';
 import { CosmicGenerator } from '../terrain/cosmic.js';
 import { DeepSpaceGenerator } from '../terrain/deep-space.js';
+import { IceMountainGenerator } from '../terrain/ice-mountain.js';
+import { LongDriveGenerator } from '../terrain/long-drive.js';
 
 /**
  * Level Manager
@@ -58,6 +60,14 @@ export class LevelManager {
 
             case 'deepspace':
                 this.currentTerrain = new DeepSpaceGenerator(config.params);
+                break;
+
+            case 'icemountain':
+                this.currentTerrain = new IceMountainGenerator(config.params);
+                break;
+
+            case 'longdrive':
+                this.currentTerrain = new LongDriveGenerator(config.params);
                 break;
         }
 

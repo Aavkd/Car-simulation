@@ -559,12 +559,22 @@ class Game {
                         enabled: true
                     });
                     break;
+                case 'icemountain':
+                case 'longdrive': // [NEW] Use light icy atmosphere for Long Drive too
+                    // Light icy atmosphere
+                    this.wind.configure({
+                        windSpeed: 40,
+                        fogColor: 0xaaddff,
+                        fogOpacity: 0.4,
+                        enabled: true
+                    });
+                    break;
                 default:
                     // Strong atmospheric fog
                     this.wind.configure({
-                        windSpeed: 60,
-                        fogColor: 0xcccccc,
-                        fogOpacity: 0.5,
+                        windSpeed: 40,
+                        fogColor: 0xaaddff,
+                        fogOpacity: 0.4,
                         enabled: true
                     });
             }
@@ -616,11 +626,22 @@ class Game {
                 this.bloomPass.strength = 1.2; // Massive bloom for stars
                 this.bloomPass.radius = 0.8;
                 this.bloomPass.threshold = 0.1;
+
+                this.scene.fog.near = 1000;
+                this.scene.fog.far = 200000;
+                this.camera.far = 200000;
+                this.camera.updateProjectionMatrix();
             } else {
                 this.scene.fog.color.setHex(0x2a0a3b);
+                this.scene.fog.near = 100;
+                this.scene.fog.far = 2000;
+
+                // Reset camera for standard vaporwave
+                if (this.camera.far !== 6000) {
+                    this.camera.far = 6000;
+                    this.camera.updateProjectionMatrix();
+                }
             }
-            this.scene.fog.near = 100;
-            this.scene.fog.far = 2000;
 
         } else {
             // Standard Level
@@ -650,6 +671,12 @@ class Game {
 
             this.scene.fog.near = 300;
             this.scene.fog.far = 2000;
+
+            // Reset camera for standard levels
+            if (this.camera.far !== 6000) {
+                this.camera.far = 6000;
+                this.camera.updateProjectionMatrix();
+            }
         }
 
 
@@ -658,6 +685,17 @@ class Game {
 
         // Load jet model
         await this._loadJetModel();
+
+        // Configure Plane Speed Effect based on Level
+        if (this.plane) {
+            if (levelConfig.type === 'deepspace') {
+                // Higher threshold for deep space (trigger at 400km/h, max at 3000km/h)
+                this.plane.setSpeedThresholds(200, 3000);
+            } else {
+                // Default (trigger at 100km/h, max at 800km/h)
+                this.plane.setSpeedThresholds(100, 800);
+            }
+        }
 
         // Initialize car and plane logic if needed (models are loaded above)
         // Set active vehicle
@@ -755,11 +793,11 @@ class Game {
         this.renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
             antialias: true,
-            powerPreference: 'high-performance'
+            powerPreference: 'high-performance'  
         });
 
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -808,7 +846,7 @@ class Game {
         // Add 16-bit retro shader pass
         this.retroPass = new ShaderPass(Retro16BitShader);
         this.retroPass.uniforms['resolution'].value.set(window.innerWidth, window.innerHeight);
-        this.retroPass.uniforms['pixelSize'].value = 9.0;  // Adjust for more/less pixelation
+        this.retroPass.uniforms['pixelSize'].value = 4.0;  // Adjust for more/less pixelation
         this.retroPass.uniforms['colorDepth'].value = 16.0;  // 16-bit color depth
         this.retroPass.enabled = this.retroEnabled;
         // Bloom Pass for pure neon vibes - defaults to low/off, enabled per level
@@ -1090,6 +1128,18 @@ class Game {
                             deltaTime
                         );
                     }
+                }
+            }
+
+            // Update terrain for infinite generation (if supported)
+            if (this.terrain && this.terrain.update) {
+                const playerPos = this.isOnFoot
+                    ? (this.player ? this.player.position : null)
+                    : (this.activeVehicle === 'car'
+                        ? (this.car ? this.car.position : null)
+                        : (this.plane ? this.plane.mesh.position : null));
+                if (playerPos) {
+                    this.terrain.update(playerPos, this.sky);
                 }
             }
 

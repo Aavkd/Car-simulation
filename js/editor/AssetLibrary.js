@@ -87,6 +87,41 @@ export class AssetLibrary {
                 path: 'assets/objects/venus_de_milo.glb',
                 category: 'statue',
                 icon: '🗿'
+            },
+            // === Cosmic / Procedural Assets ===
+            {
+                id: 'blackhole',
+                name: 'Black Hole',
+                path: null,  // Procedural - no GLB path
+                category: 'cosmic',
+                icon: '🕳️',
+                procedural: true,
+                generator: 'BlackHole',
+                options: {
+                    colorInner: '#ffc880',
+                    colorOuter: '#ff5050',
+                    rotationSpeed: 1.0,
+                    distortion: 0.1,
+                    diskRadius: 4.0,
+                    isPulsar: false
+                }
+            },
+            {
+                id: 'pulsar',
+                name: 'Pulsar',
+                path: null,
+                category: 'cosmic',
+                icon: '✴️',
+                procedural: true,
+                generator: 'BlackHole',
+                options: {
+                    colorInner: '#88ccff',
+                    colorOuter: '#ff44ff',
+                    rotationSpeed: 2.0,
+                    distortion: 0.15,
+                    diskRadius: 3.5,
+                    isPulsar: true
+                }
             }
         ];
 
@@ -169,6 +204,10 @@ export class AssetLibrary {
         let loaded = 0;
 
         for (const asset of this.assets) {
+            // Skip procedural assets - they don't have a path to load
+            if (asset.procedural || !asset.path) {
+                continue;
+            }
             try {
                 await this.loadModel(asset.path);
                 loaded++;

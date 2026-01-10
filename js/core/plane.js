@@ -23,6 +23,10 @@ export class PlanePhysics {
         this.AIR_DENSITY = 1.225;       // kg/m^3 (sea level)
         this.GRAVITY = 9.81;
 
+        // NEW: Special Flight Controls
+        this.HOVER_FORCE = 35000.0;      // Vertical lift force (Newtons) when hovering
+        this.REVERSE_THRUST = 50000.0;   // Reverse/brake thrust (Newtons)
+
         // Handling Characteristics
         this.PITCH_SPEED = 1.5;
         this.ROLL_SPEED = 2.5;
@@ -52,7 +56,9 @@ export class PlanePhysics {
             roll: 0,
             yaw: 0,
             throttle: 0,
-            airbrake: false
+            airbrake: false,
+            hover: false,       // X button - vertical lift
+            reverseThrust: 0    // L2 - brake/reverse
         };
 
         // Engine Sound / Visuals (Placeholder)
@@ -82,6 +88,13 @@ export class PlanePhysics {
      */
     setPhysicsProvider(provider) {
         this.physicsProvider = provider;
+
+        // Update gravity if provided
+        if (this.physicsProvider && this.physicsProvider.getGravity) {
+            this.GRAVITY = this.physicsProvider.getGravity();
+        } else {
+            this.GRAVITY = 9.81;
+        }
     }
 
     /**
@@ -146,6 +159,17 @@ export class PlanePhysics {
 
         // Apply smoothed inputs
         this.throttle = THREE.MathUtils.lerp(this.throttle, targetThrottle, 2.0 * dt);
+
+        // Hover: X key or Cross/A gamepad button
+        // Binary input - either hovering or not
+        this.input.hover = input.keys.hover || (input.gamepad && input.gamepad.hover);
+
+        // Reverse Thrust: L2/Left Trigger (analog 0-1)
+        // Keyboard: backward key can be used for reverse when not in forward motion
+        let targetReverse = 0;
+        if (input.keys.backward) targetReverse = 1.0;
+        if (input.gamepad) targetReverse = Math.max(targetReverse, input.gamepad.brake);
+        this.input.reverseThrust = THREE.MathUtils.lerp(this.input.reverseThrust, targetReverse, 3.0 * dt);
 
         // Helper for smoothing logic
         const getSmoothing = (target, current, attack, decay, counter) => {
@@ -218,13 +242,26 @@ export class PlanePhysics {
             // We need Angle of Attack (AoA) for realistic lift.
             // Simplified for game: Lift scales with speed and alignment with horizon
 
-            // "Arcade" Lift: Always lift along Local Up based on forward Speed
+            // \"Arcade\" Lift: Always lift along Local Up based on forward Speed
             // This allows banking to turn (Lift vector tilts)
             const forwardSpeed = this.velocity.dot(forward);
             if (forwardSpeed > 0) {
                 const liftMag = 0.5 * this.AIR_DENSITY * (forwardSpeed * forwardSpeed) * this.LIFT_COEFFICIENT * this.WING_AREA;
                 forces.add(up.clone().multiplyScalar(liftMag));
             }
+        }
+
+        // 4. Hover Force (X button) - Vertical force relative to plane's up vector
+        // This allows the plane to add vertical lift at any orientation
+        if (this.input.hover) {
+            forces.add(up.clone().multiplyScalar(this.HOVER_FORCE));
+        }
+
+        // 5. Reverse Thrust (L2) - Horizontal force opposite to forward direction
+        // This acts like air brakes and can push the plane backwards
+        if (this.input.reverseThrust > 0.01) {
+            const reverseForce = this.input.reverseThrust * this.REVERSE_THRUST;
+            forces.add(forward.clone().multiplyScalar(-reverseForce));
         }
 
         // F = ma -> a = F/m
@@ -272,6 +309,13 @@ export class PlanePhysics {
             // Snap to surface
             pos.y = targetHeight;
 
+            // Get surface properties first
+            let surfaceFriction = 1.0;
+            if (this.physicsProvider && this.physicsProvider.getSurfaceType) {
+                const surface = this.physicsProvider.getSurfaceType(pos.x, pos.z);
+                surfaceFriction = surface.friction || 1.0;
+            }
+
             // Calculate velocity relative to terrain surface
             // Project velocity onto the terrain plane for sliding
             const normalVelocity = terrainNormal.clone().multiplyScalar(this.velocity.dot(terrainNormal));
@@ -280,38 +324,76 @@ export class PlanePhysics {
             // If moving into the terrain, cancel that component with bounce
             if (this.velocity.dot(terrainNormal) < 0) {
                 // Bounce/dampen the normal component
-                this.velocity.sub(normalVelocity.multiplyScalar(1 + this.GROUND_BOUNCE));
+                // On ice (low friction), we want NEGATIVE bounce (stickiness) to stay glued
+                // factor -0.5 means we keep 50% of our downward velocity into the track
+                const bounceFactor = surfaceFriction < 0.1 ? -0.5 : this.GROUND_BOUNCE;
+                this.velocity.sub(normalVelocity.multiplyScalar(1 + bounceFactor));
             }
 
             // Apply ground friction to sliding velocity
-            this.velocity.multiplyScalar(this.GROUND_FRICTION);
+
+            // Apply friction - for frictionless surfaces (surfaceFriction ~0), nearly no slowdown
+            // effectiveFriction approaches 1.0 (no slowdown) as surfaceFriction approaches 0
+            const effectiveFriction = surfaceFriction < 0.1
+                ? 0.9995  // Nearly no friction on ice - velocity retained each frame
+                : this.GROUND_FRICTION * (0.5 + 0.5 * surfaceFriction);
+            this.velocity.multiplyScalar(effectiveFriction);
+
+            // Add gravity-induced acceleration along slope
+            // Slope direction: terrainNormal points "up" from terrain surface
+            // For a downhill slope (+Z), the normal has a positive Z component
+            // So we use the normal projected on XZ as the downhill direction
+            const slopeDirXZ = new THREE.Vector3(terrainNormal.x, 0, terrainNormal.z);
+            if (slopeDirXZ.lengthSq() > 0.0001) {
+                slopeDirXZ.normalize();
+
+                // Slope angle from horizontal (0 = flat, PI/2 = vertical wall)
+                const slopeAngle = Math.acos(Math.min(1, Math.abs(terrainNormal.y)));
+
+                // Gravity component along slope = g * sin(angle)
+                // On frictionless ice, we get the full gravity component
+                const gravityAlongSlope = this.GRAVITY * Math.sin(slopeAngle);
+                const frictionForce = gravityAlongSlope * surfaceFriction;
+                const netAcceleration = Math.max(0, gravityAlongSlope - frictionForce);
+
+                // Scale up for game feel - gravity should be very noticeable
+                const accelerationScale = 5.0;
+
+                // Apply acceleration in downhill direction
+                this.velocity.add(slopeDirXZ.multiplyScalar(netAcceleration * accelerationScale * dt));
+            }
+
+            // Artificial Downforce for ice (magnetic track effect)
+            // Keeps the plane glued to the surface even on convex slopes
+            if (surfaceFriction < 0.1) {
+                const downforce = 100.0 + this.speed * 1.0;
+                this.velocity.add(terrainNormal.clone().multiplyScalar(-downforce * dt));
+            }
 
             // Add slight upward push to follow terrain slope
             // This helps the surfer ride up hills naturally
-            const slopeInfluence = tangentVelocity.length() * 0.1;
-            const upwardPush = Math.max(0, -terrainNormal.dot(new THREE.Vector3(0, -1, 0))) * slopeInfluence;
-            this.velocity.y += upwardPush * dt * 10;
+            // DISABLE on ice - we want to slide down, not be pushed up
+            if (surfaceFriction > 0.1) {
+                const slopeInfluence = tangentVelocity.length() * 0.1;
+                const upwardPush = Math.max(0, -terrainNormal.dot(new THREE.Vector3(0, -1, 0))) * slopeInfluence;
+                this.velocity.y += upwardPush * dt * 10;
+            }
 
             // Align surfer rotation slightly with terrain normal
             this._alignToTerrain(terrainNormal, dt);
 
-            // Get surface properties for friction variation (subtle effect)
-            if (this.physicsProvider && this.physicsProvider.getSurfaceType) {
-                const surface = this.physicsProvider.getSurfaceType(pos.x, pos.z);
-                // Very subtle friction variation based on surface type
-                const surfaceFriction = surface.friction || 1.0;
-                this.velocity.multiplyScalar(0.995 + 0.005 * surfaceFriction);
-            }
-
-            // Emit sparks if sliding fast enough
-            if (this.speedKmh > 10.0) {
+            // Emit sparks if sliding fast enough (less sparks on ice)
+            const sparkThreshold = surfaceFriction < 0.1 ? 50.0 : 10.0; // Higher threshold on frictionless ice
+            if (this.speedKmh > sparkThreshold) {
                 // Determine contact point (bottom of mesh?)
                 const contactPos = pos.clone();
                 contactPos.y -= 0.5; // Approximate bottom of fuselage/skids
 
                 // Intensity based on speed
-                const intensity = Math.min(1.0, (this.speedKmh - 10) / 100.0);
-                this.sparkSystem.emit(contactPos, this.velocity, intensity);
+                const intensity = Math.min(1.0, (this.speedKmh - sparkThreshold) / 100.0) * surfaceFriction;
+                if (intensity > 0.01) {
+                    this.sparkSystem.emit(contactPos, this.velocity, intensity);
+                }
             }
         } else {
             // Airborne
@@ -865,6 +947,18 @@ export class PlanePhysics {
             this.speedLinesMesh.geometry.dispose();
             this.speedEffectMaterial.dispose();
             this.speedLinesMesh = null;
+        }
+    }
+
+    /**
+     * Set min/max speed for speed lines effect
+     * @param {number} min - Speed in km/h where effect starts
+     * @param {number} max - Speed in km/h where effect is maxed
+     */
+    setSpeedThresholds(min, max) {
+        if (this.speedEffectConfig) {
+            this.speedEffectConfig.minSpeed = min;
+            this.speedEffectConfig.maxSpeed = max;
         }
     }
 }

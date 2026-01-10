@@ -51,6 +51,11 @@ export const SurfaceTypes = {
         type: 'gravel',
         friction: 0.65,
         drag: 1.6
+    },
+    ICE_FRICTIONLESS: {
+        type: 'ice_frictionless',
+        friction: 0.01,  // Near-zero friction for sliding
+        drag: 0.1        // Minimal air drag
     }
 };
 

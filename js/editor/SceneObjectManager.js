@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { BlackHole } from '../environment/BlackHole.js';
 
 /**
  * SceneObjectManager - Manages object placement, selection, and manipulation in editor
@@ -102,7 +103,25 @@ export class SceneObjectManager {
         this.placementMode = true;
         this.placementAsset = assetConfig;
 
-        // Load preview model
+        // Handle procedural assets differently
+        if (assetConfig.procedural) {
+            // Create a simple preview sphere for procedural objects
+            const previewGeom = new THREE.SphereGeometry(5, 16, 16);
+            const previewMat = new THREE.MeshBasicMaterial({
+                color: 0x00ff00,
+                transparent: true,
+                opacity: 0.3,
+                wireframe: true
+            });
+            this.placementPreview = new THREE.Mesh(previewGeom, previewMat);
+            this.placementPreview.userData.procedural = true;
+            this.scene.add(this.placementPreview);
+            this.renderer.domElement.style.cursor = 'crosshair';
+            console.log(`[SceneObjectManager] Placement mode (procedural): ${assetConfig.name}`);
+            return;
+        }
+
+        // Load preview model for regular assets
         try {
             const gltf = await this._loadModel(assetConfig.path);
             this.placementPreview = gltf.scene.clone();
@@ -185,6 +204,59 @@ export class SceneObjectManager {
             console.error('[SceneObjectManager] Failed to add object:', error);
             return null;
         }
+    }
+
+    /**
+     * Add a procedural object to the scene
+     * @param {Object} assetConfig - Asset configuration with generator and options
+     * @param {THREE.Vector3} position - World position
+     * @param {Object} metadata - Additional metadata (for restoring saved objects)
+     * @returns {THREE.Object3D}
+     */
+    addProceduralObject(assetConfig, position, metadata = {}) {
+        let object;
+        let proceduralInstance;
+
+        // Create the appropriate procedural object based on generator type
+        switch (assetConfig.generator) {
+            case 'BlackHole':
+                const options = { ...assetConfig.options, ...metadata.proceduralOptions };
+                proceduralInstance = new BlackHole(options);
+                object = proceduralInstance.mesh;
+                break;
+            default:
+                console.error(`[SceneObjectManager] Unknown procedural generator: ${assetConfig.generator}`);
+                return null;
+        }
+
+        // Apply position
+        object.position.copy(position);
+
+        // Store metadata
+        object.userData = {
+            id: metadata.id || this._generateId(),
+            assetId: assetConfig.id,
+            procedural: true,
+            generator: assetConfig.generator,
+            type: 'procedural',
+            name: metadata.name || assetConfig.name,
+            proceduralInstance: proceduralInstance,
+            proceduralOptions: proceduralInstance.getConfig(),
+            modified: false
+        };
+
+        this.scene.add(object);
+        this.objects.push(object);
+
+        // Record for undo
+        this._recordAction({
+            type: 'add',
+            objectId: object.userData.id,
+            data: this._serializeObject(object)
+        });
+
+        console.log(`[SceneObjectManager] Added procedural object: ${object.userData.name}`);
+        return object;
     }
 
     /**
@@ -407,23 +479,57 @@ export class SceneObjectManager {
     }
 
     _serializeObject(object) {
-        return {
+        const data = {
             id: object.userData.id,
-            assetPath: object.userData.assetPath,
             name: object.userData.name,
             type: object.userData.type,
             position: { x: object.position.x, y: object.position.y, z: object.position.z },
             rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
             scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z }
         };
+
+        // Handle procedural objects
+        if (object.userData.procedural) {
+            data.procedural = true;
+            data.assetId = object.userData.assetId;
+            data.generator = object.userData.generator;
+            // Get current config from the procedural instance
+            if (object.userData.proceduralInstance) {
+                data.proceduralOptions = object.userData.proceduralInstance.getConfig();
+            } else {
+                data.proceduralOptions = object.userData.proceduralOptions;
+            }
+        } else {
+            data.assetPath = object.userData.assetPath;
+        }
+
+        return data;
     }
 
     async _restoreObject(data) {
-        const object = await this.addObject(data.assetPath, new THREE.Vector3(), {
-            id: data.id,
-            name: data.name,
-            type: data.type
-        });
+        let object;
+
+        if (data.procedural) {
+            // Find the asset config from library (we need the generator info)
+            const assetConfig = {
+                id: data.assetId,
+                generator: data.generator,
+                name: data.name,
+                options: data.proceduralOptions,
+                procedural: true
+            };
+            object = this.addProceduralObject(assetConfig, new THREE.Vector3(), {
+                id: data.id,
+                name: data.name,
+                proceduralOptions: data.proceduralOptions
+            });
+        } else {
+            object = await this.addObject(data.assetPath, new THREE.Vector3(), {
+                id: data.id,
+                name: data.name,
+                type: data.type
+            });
+        }
 
         if (object) {
             object.position.set(data.position.x, data.position.y, data.position.z);
@@ -452,10 +558,16 @@ export class SceneObjectManager {
         // Handle placement mode
         if (this.placementMode && this.placementPreview) {
             const position = this.placementPreview.position.clone();
-            this.addObject(this.placementAsset.path, position, {
-                name: this.placementAsset.name,
-                type: this.placementAsset.type || 'object'
-            });
+
+            // Handle procedural vs regular assets
+            if (this.placementAsset.procedural) {
+                this.addProceduralObject(this.placementAsset, position);
+            } else {
+                this.addObject(this.placementAsset.path, position, {
+                    name: this.placementAsset.name,
+                    type: this.placementAsset.type || 'object'
+                });
+            }
             // Stay in placement mode for multiple placements (hold ESC to cancel)
             return;
         }
@@ -565,6 +677,18 @@ export class SceneObjectManager {
                 this.cancelPlacement();
                 this.deselectObject();
                 break;
+        }
+    }
+
+    /**
+     * Update all procedural objects (call each frame)
+     * @param {number} deltaTime - Time since last frame in seconds
+     */
+    update(deltaTime) {
+        for (const object of this.objects) {
+            if (object.userData.procedural && object.userData.proceduralInstance) {
+                object.userData.proceduralInstance.update(deltaTime);
+            }
         }
     }
 

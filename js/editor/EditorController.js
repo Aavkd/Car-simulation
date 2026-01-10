@@ -157,6 +157,9 @@ export class EditorController {
     update(deltaTime) {
         if (!this.enabled) return;
         this.flyControls.update(deltaTime);
+
+        // Update procedural objects (e.g., black holes)
+        this.objectManager.update(deltaTime);
     }
 
     /**
@@ -336,6 +339,35 @@ export class EditorController {
                         <button id="duplicate-btn" class="editor-btn">📋 Duplicate</button>
                         <button id="delete-btn" class="editor-btn danger">🗑️ Delete</button>
                     </div>
+                    <div class="procedural-properties hidden" id="procedural-properties">
+                        <div class="property-group">
+                            <label>🕳️ Black Hole Properties</label>
+                        </div>
+                        <div class="property-group">
+                            <label>Inner Color</label>
+                            <input type="color" id="bh-color-inner" value="#ffc880">
+                        </div>
+                        <div class="property-group">
+                            <label>Outer Color</label>
+                            <input type="color" id="bh-color-outer" value="#ff5050">
+                        </div>
+                        <div class="property-group">
+                            <label>Rotation Speed</label>
+                            <input type="range" id="bh-rotation-speed" min="0.1" max="5" step="0.1" value="1">
+                        </div>
+                        <div class="property-group">
+                            <label>Distortion</label>
+                            <input type="range" id="bh-distortion" min="0" max="1" step="0.01" value="0.1">
+                        </div>
+                        <div class="property-group">
+                            <label>Disk Radius</label>
+                            <input type="range" id="bh-disk-radius" min="2" max="10" step="0.1" value="4">
+                        </div>
+                        <div class="property-group">
+                            <label>Pulsar Jets</label>
+                            <input type="checkbox" id="bh-pulsar">
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="editor-help">
@@ -380,6 +412,14 @@ export class EditorController {
             }
         };
 
+        // Procedural (Black Hole) properties event bindings
+        document.getElementById('bh-color-inner').oninput = (e) => this._updateBlackHoleProperty('colorInner', e.target.value);
+        document.getElementById('bh-color-outer').oninput = (e) => this._updateBlackHoleProperty('colorOuter', e.target.value);
+        document.getElementById('bh-rotation-speed').oninput = (e) => this._updateBlackHoleProperty('rotationSpeed', parseFloat(e.target.value));
+        document.getElementById('bh-distortion').oninput = (e) => this._updateBlackHoleProperty('distortion', parseFloat(e.target.value));
+        document.getElementById('bh-disk-radius').oninput = (e) => this._updateBlackHoleProperty('diskRadius', parseFloat(e.target.value));
+        document.getElementById('bh-pulsar').onchange = (e) => this._updateBlackHoleProperty('isPulsar', e.target.checked);
+
         // Listen for selection changes to show/hide properties panel
         this.objectManager.onSelectionChanged = (object) => this._onSelectionChanged(object);
     }
@@ -394,6 +434,7 @@ export class EditorController {
 
     _onSelectionChanged(object) {
         const propsPanel = document.getElementById('object-properties');
+        const proceduralProps = document.getElementById('procedural-properties');
         if (!propsPanel) return;
 
         if (object) {
@@ -406,9 +447,69 @@ export class EditorController {
 
             // Update position Y
             document.getElementById('position-y-input').value = object.position.y.toFixed(1);
+
+            // Handle procedural object properties
+            if (object.userData.procedural && object.userData.proceduralInstance && proceduralProps) {
+                proceduralProps.classList.remove('hidden');
+                const instance = object.userData.proceduralInstance;
+                const config = instance.getConfig();
+
+                // Populate black hole controls with current values
+                document.getElementById('bh-color-inner').value = this._colorToHex(config.colorInner);
+                document.getElementById('bh-color-outer').value = this._colorToHex(config.colorOuter);
+                document.getElementById('bh-rotation-speed').value = config.rotationSpeed;
+                document.getElementById('bh-distortion').value = config.distortion;
+                document.getElementById('bh-disk-radius').value = config.diskRadius;
+                document.getElementById('bh-pulsar').checked = config.isPulsar;
+            } else if (proceduralProps) {
+                proceduralProps.classList.add('hidden');
+            }
         } else {
             propsPanel.classList.add('hidden');
+            if (proceduralProps) proceduralProps.classList.add('hidden');
         }
+    }
+
+    _updateBlackHoleProperty(property, value) {
+        const object = this.objectManager.selectedObject;
+        if (!object || !object.userData.proceduralInstance) return;
+
+        const instance = object.userData.proceduralInstance;
+        switch (property) {
+            case 'colorInner':
+                instance.setColorInner(value);
+                break;
+            case 'colorOuter':
+                instance.setColorOuter(value);
+                break;
+            case 'rotationSpeed':
+                instance.setRotationSpeed(value);
+                break;
+            case 'distortion':
+                instance.setDistortion(value);
+                break;
+            case 'diskRadius':
+                instance.setDiskRadius(value);
+                break;
+            case 'isPulsar':
+                instance.setPulsar(value);
+                break;
+        }
+
+        // Mark object as modified
+        object.userData.modified = true;
+    }
+
+    _colorToHex(color) {
+        // Convert color to hex string for input[type=color]
+        if (typeof color === 'string' && color.startsWith('#')) {
+            return color;
+        }
+        if (typeof color === 'number') {
+            return '#' + color.toString(16).padStart(6, '0');
+        }
+        // Default fallback
+        return '#ffffff';
     }
 
     _updateSelectedScale(scale) {

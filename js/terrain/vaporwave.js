@@ -5,7 +5,7 @@ export class VaporwaveGenerator extends BasePhysicsProvider {
     constructor(params = {}) {
         super();
         this.params = Object.assign({
-            roadWidth: 20,
+            roadWidth: 100,
             segmentLength: 50000, // 50km
             curveIntensity: 150,
             slopeIntensity: 40

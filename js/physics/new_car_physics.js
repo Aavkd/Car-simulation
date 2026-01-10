@@ -475,8 +475,16 @@ export class NewCarPhysicsEngine {
         const normalLoad = this.wheelSuspensionForces[wheelIndex];
         if (normalLoad <= 0) return result;
 
-        // Maximum friction force
-        const maxFriction = this.gripCoefficient * normalLoad;
+        // Get surface friction from physics provider
+        let surfaceFriction = 1.0;
+        if (this.physicsProvider && this.physicsProvider.getSurfaceType) {
+            const surface = this.physicsProvider.getSurfaceType(contactPoint.x, contactPoint.z);
+            surfaceFriction = surface.friction || 1.0;
+        }
+
+        // Maximum friction force (scaled by surface friction)
+        const effectiveGrip = this.gripCoefficient * surfaceFriction;
+        const maxFriction = effectiveGrip * normalLoad;
 
         // ==================== LONGITUDINAL (DRIVE/BRAKE) ====================
         let longitudinalForce = 0;

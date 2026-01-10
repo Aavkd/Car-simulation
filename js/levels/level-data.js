@@ -66,7 +66,7 @@ export const LevelData = {
         difficulty: 3,
         color: '#ff00ff', // Magenta accent
         params: {
-            roadWidth: 80,
+            roadWidth: 160,
             segmentLength: 50000, // 50km track
             curveIntensity: 150,
             slopeIntensity: 40
@@ -96,8 +96,35 @@ export const LevelData = {
         params: {
             universeSize: 50000,
             starCount: 30000,
-            galaxyCount: 500,
-            nebulaCount: 400
+            galaxyCount: 2000,
+            nebulaCount: 2000
+        }
+    },
+    icemountain: {
+        id: 'icemountain',
+        name: 'Infinite Descent',
+        description: 'Frictionless ice slide down infinite mountain chains. No brakes!',
+        type: 'icemountain',
+        difficulty: 4,
+        color: '#88ccff', // Light ice blue
+        params: {
+            seed: 54321,
+            slopeAngle: 30,
+            chunkSize: 500,
+            visibleDistance: 3000
+        }
+    },
+    longdrive: {
+        id: 'longdrive',
+        name: 'Drift Plains',
+        description: 'Endless uneven plains designed for long drives and drifting.',
+        type: 'longdrive',
+        difficulty: 2,
+        color: '#8B4513', // Saddle Brown
+        params: {
+            seed: 12345,
+            chunkSize: 500,
+            visibleDistance: 3000
         }
     }
 };
