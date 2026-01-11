@@ -31,19 +31,23 @@ This document outlines the step-by-step plan to transform the Racing Simulator i
 
 **Goal**: Implement the logic managers for quests and dialogues.
 
-- [ ] **Dialogue System** (`js/rpg/systems/DialogueSystem.js`):
-    - [ ] Design Node-based structure (Node ID, Text, Responses, NextNodeID).
-    - [ ] Implement conditional options (requiring flag/item).
-    - [ ] Implement triggers (start quest, give item).
+- [x] **Dialogue System** (`js/rpg/systems/DialogueSystem.js`):
+    - [x] Design Node-based structure (Node ID, Text, Responses, NextNodeID).
+    - [x] Implement conditional options (requiring flag/item).
+    - [x] Implement triggers (start quest, give item).
 
-- [ ] **Quest System** (`js/rpg/systems/QuestManager.js`):
-    - [ ] Define Quest Structure (ID, Title, Description, Objectives, Rewards).
-    - [ ] Implement Status Tracking (`START`, `UPDATE_OBJECTIVE`, `COMPLETE`, `FAIL`).
-    - [ ] Create event bus for quest progression (e.g., `onAreaDiscover`, `onItemPickup`).
+- [x] **Quest System** (`js/rpg/systems/QuestManager.js`):
+    - [x] Define Quest Structure (ID, Title, Description, Objectives, Rewards).
+    - [x] Implement Status Tracking (`START`, `UPDATE_OBJECTIVE`, `COMPLETE`, `FAIL`).
+    - [x] Create event bus for quest progression (e.g., `onAreaDiscover`, `onItemPickup`). (Partially integrated via Profile flags/updates)
 
-- [ ] **Inventory System** (`js/rpg/systems/InventoryManager.js`):
-    - [ ] Define Item Types (Consumable, Key Item, Car Part).
-    - [ ] Implement add/remove/check logic.
+- [x] **Inventory System** (`js/rpg/systems/InventoryManager.js`):
+    - [x] Define Item Types (Consumable, Key Item, Car Part).
+    - [x] Implement add/remove/check logic.
+
+- [x] **Verification Script** (`tests/rpg_verify.mjs`):
+    - [x] Created Node.js script to mock `localStorage` and `RPGManager` context.
+    - [x] Verified all systems (Inventory, Quest, Dialogue) via terminal.
 
 ---
 

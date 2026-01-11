@@ -1,5 +1,7 @@
-
 import { RPGProfile } from '../RPGProfile.js';
+import { InventoryManager } from './InventoryManager.js';
+import { QuestManager } from './QuestManager.js';
+import { DialogueSystem } from './DialogueSystem.js';
 
 /**
  * RPGManager.js
@@ -16,11 +18,12 @@ export class RPGManager {
         this.profile = new RPGProfile();
         this.initialized = false;
 
-        // Subsystems will be initialized here in later phases
-        // this.questManager = new QuestManager(this.profile);
-        // this.dialogueSystem = new DialogueSystem();
+        // Subsystems
+        this.inventory = new InventoryManager(this.profile);
+        this.questManager = new QuestManager(this.profile);
+        this.dialogueSystem = new DialogueSystem(this);
 
-        console.log('[RPGManager] Constructed.');
+        console.log('[RPGManager] Constructed with all subsystems.');
     }
 
     init() {
