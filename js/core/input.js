@@ -28,7 +28,9 @@ export class InputHandler {
             yawRight: false,
             pitchUp: false,
             pitchDown: false,
-            hover: false  // Vertical lift force (X key)
+            pitchDown: false,
+            hover: false,  // Vertical lift force (X key)
+            exitPlayMode: false // Escape key
         };
 
         // Smoothed input values (0-1 range)
@@ -144,6 +146,12 @@ export class InputHandler {
             case 'KeyX':
                 this.keys.hover = true;
                 break;
+            case 'Escape':
+                if (!this.keys.exitPlayMode) {
+                    this.keys.exitPlayMode = true;
+                    this.onExitPlayMode?.();
+                }
+                break;
         }
     }
 
@@ -210,6 +218,9 @@ export class InputHandler {
                 break;
             case 'KeyX':
                 this.keys.hover = false;
+                break;
+            case 'Escape':
+                this.keys.exitPlayMode = false;
                 break;
         }
     }

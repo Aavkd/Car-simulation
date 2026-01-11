@@ -246,6 +246,40 @@ export class EditorController {
     }
 
     /**
+     * Enter play test mode
+     */
+    playTest() {
+        // Save camera state
+        this.savedCameraState = {
+            position: this.camera.position.clone(),
+            quaternion: this.camera.quaternion.clone()
+        };
+
+        // Notify game to switch state
+        if (this.game.enterPlayTestMode) {
+            this.game.enterPlayTestMode();
+        }
+    }
+
+    /**
+     * Return to editor from play test
+     */
+    returnToEditor() {
+        // Restore camera state
+        if (this.savedCameraState) {
+            this.camera.position.copy(this.savedCameraState.position);
+            this.camera.quaternion.copy(this.savedCameraState.quaternion);
+
+            // Sync FlyControls
+            // FlyControls uses the camera directly, so just restoring camera is enough
+            this.flyControls.setPosition(this.savedCameraState.position);
+            this.flyControls.lookAt(new THREE.Vector3(0, 0, -1).applyQuaternion(this.savedCameraState.quaternion).add(this.savedCameraState.position));
+        }
+
+        this.enable();
+    }
+
+    /**
      * Exit editor mode
      */
     exit() {
@@ -273,6 +307,9 @@ export class EditorController {
         this.editorPanel.innerHTML = `
             <div class="editor-toolbar">
                 <div class="toolbar-section">
+                    <button id="editor-play-btn" class="editor-btn success" title="Play Test">
+                        ▶️ Play
+                    </button>
                     <button id="editor-save-btn" class="editor-btn primary" title="Save Level">
                         💾 Save
                     </button>
@@ -388,6 +425,7 @@ export class EditorController {
         this._populateAssetList();
 
         // Bind toolbar events
+        document.getElementById('editor-play-btn').onclick = () => this.playTest();
         document.getElementById('editor-save-btn').onclick = () => this.saveLevel();
         document.getElementById('editor-load-btn').onclick = () => this._showLoadDialog();
         document.getElementById('editor-export-btn').onclick = () => this.exportLevel();
