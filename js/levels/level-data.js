@@ -13,7 +13,13 @@ export const LevelData = {
         color: '#4ade80', // Green accent
         params: {
             seed: 42,
-            heightScale: 50
+            heightScale: 1.2, // Slightly higher than default internal
+            noiseScale: 0.002, // Base rolling terrain
+            hillScale: 0.006,  // Medium hills
+            detailScale: 0.015, // Fine detail
+            microScale: 0.04,   // Texture
+            baseHeight: 0,
+            maxHeight: 60      // Higher peaks
         }
     },
     dunes: {
@@ -25,7 +31,13 @@ export const LevelData = {
         color: '#fbbf24', // Amber accent
         params: {
             seed: 123,
-            heightScale: 30
+            heightScale: 1.0,
+            noiseScale: 0.003, // More frequent dunes
+            hillScale: 0.01,   // Sharper dunes
+            detailScale: 0.02, // Ripples
+            microScale: 0.05,  // Sand grain
+            baseHeight: 0,
+            maxHeight: 40
         }
     },
     highway: {
@@ -54,8 +66,14 @@ export const LevelData = {
         difficulty: 3,
         color: '#e0f2fe', // Light blue/white accent
         params: {
-            seed: 8848,  // Mount Everest elevation in meters :)
-            peakHeight: 800
+            seed: 8848,
+            peakHeight: 800, // Kept for backward compatibility
+            maxHeight: 800,
+            baseHeight: 0,
+            noiseScale: 0.003, // Ridge scale
+            hillScale: 0.012,  // Detail scale
+            detailScale: 0.025, // Snow scale
+            heightScale: 1.0
         }
     },
     vaporwave: {

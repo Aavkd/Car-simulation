@@ -78,28 +78,66 @@ class PerlinNoise {
  * Creates a 5km x 5km island with sand dunes
  */
 export class DunesGenerator {
-    constructor(params = {}) {
-        this.noise = new PerlinNoise(params.seed || 123);
+    constructor(config = {}) {
+        this.config = config;
+        this.noise = new PerlinNoise(config.seed || 123);
 
         // Island/terrain parameters
-        this.size = 5000;           // 5km x 5km island
-        this.segments = 400;        // Mesh resolution
-        this.maxHeight = 35;        // Max dune height
-        this.baseHeight = 0;        // Sea level
+        this.size = config.size || 5000;           // 5km x 5km island
+        this.segments = config.segments || 400;        // Mesh resolution
+        this.maxHeight = config.maxHeight !== undefined ? config.maxHeight : 35;        // Max dune height
+        this.baseHeight = config.baseHeight !== undefined ? config.baseHeight : 0;        // Sea level
+        this.heightScale = config.heightScale || 1.0;
 
         // Island shape parameters
         this.islandRadius = 2200;   // Radius of the island (~4.4km diameter)
         this.beachWidth = 150;      // Width of beach transition
 
         // Dune noise parameters - smooth, flowing shapes
-        this.duneScale = 0.003;     // Large primary dunes
-        this.ridgeScale = 0.008;    // Ridge detail
-        this.rippleScale = 0.02;    // Small ripple detail
+        this.duneScale = config.noiseScale || 0.003;     // Large primary dunes
+        this.ridgeScale = config.hillScale || 0.008;    // Ridge detail
+        this.rippleScale = config.detailScale || 0.02;    // Small ripple detail
+        // microScale not used in dunes yet, but could be mapped or ignored
 
         // Ocean parameters
         this.waterLevel = -2;       // Ocean surface level
         this.oceanDepth = -15;      // Deep ocean floor
 
+        this.mesh = null;
+        this.heightData = [];
+    }
+
+    updateParams(params) {
+        if (params.seed !== undefined && params.seed !== this.config.seed) {
+            this.noise = new PerlinNoise(params.seed);
+            this.config.seed = params.seed;
+        }
+        if (params.maxHeight !== undefined) this.maxHeight = params.maxHeight;
+        if (params.baseHeight !== undefined) this.baseHeight = params.baseHeight;
+        if (params.heightScale !== undefined) this.heightScale = params.heightScale;
+
+        // Map generic params to specific dune params
+        if (params.noiseScale !== undefined) this.duneScale = params.noiseScale;
+        if (params.hillScale !== undefined) this.ridgeScale = params.hillScale;
+        if (params.detailScale !== undefined) this.rippleScale = params.detailScale;
+    }
+
+    dispose() {
+        if (this.mesh) {
+            if (this.mesh.geometry) this.mesh.geometry.dispose();
+            if (this.mesh.material) {
+                if (Array.isArray(this.mesh.material)) {
+                    this.mesh.material.forEach(m => m.dispose());
+                } else {
+                    this.mesh.material.dispose();
+                }
+            }
+            // Dispose water child
+            this.mesh.children.forEach(child => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) child.material.dispose();
+            });
+        }
         this.mesh = null;
         this.heightData = [];
     }
@@ -234,7 +272,7 @@ export class DunesGenerator {
             height = THREE.MathUtils.lerp(1, height, islandFactor / 0.3);
         }
 
-        return height + this.baseHeight;
+        return (height + this.baseHeight) * this.heightScale;
     }
 
     /**

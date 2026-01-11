@@ -78,27 +78,64 @@ class PerlinNoise {
  * Creates a 5km x 5km terrain with a central mountain peak
  */
 export class EverestGenerator {
-    constructor(params = {}) {
-        this.noise = new PerlinNoise(params.seed || 8848);
+    constructor(config = {}) {
+        this.config = config;
+        this.noise = new PerlinNoise(config.seed || 8848);
 
         // Terrain parameters - 10km x 10km map (100km²)
-        this.size = 10000;          // 10km x 10km terrain
-        this.segments = 500;        // Higher mesh resolution for detail
+        this.size = config.size || 10000;          // 10km x 10km terrain
+        this.segments = config.segments || 500;        // Higher mesh resolution for detail
+        this.heightScale = config.heightScale || 1.0;
 
         // Mountain parameters - MASSIVE steep peak
-        this.peakHeight = params.peakHeight || 800;   // 800m tall peak!
-        this.baseHeight = 0;        // Base level
+        this.peakHeight = config.maxHeight !== undefined ? config.maxHeight : (config.peakHeight || 800);   // 800m tall peak! (using maxHeight as alias)
+        this.baseHeight = config.baseHeight !== undefined ? config.baseHeight : 0;        // Base level
         this.mountainRadius = 1500; // Smaller radius = steeper slopes
         this.summitRadius = 100;    // Small summit area
 
         // Noise scales for rocky/snowy details
-        this.ridgeScale = 0.003;    // Large rock formations
-        this.detailScale = 0.012;   // Medium detail
-        this.snowScale = 0.025;     // Small snow texture
+        this.ridgeScale = config.noiseScale || 0.003;    // Large rock formations
+        this.detailScale = config.hillScale || 0.012;   // Medium detail
+        this.snowScale = config.detailScale || 0.025;     // Small snow texture
+        // microScale could map to finer noise if added
 
         // Snow line (below this height, more rock visible)
         this.snowLineHeight = 150;
 
+        this.mesh = null;
+        this.heightData = [];
+    }
+
+    updateParams(params) {
+        if (params.seed !== undefined && params.seed !== this.config.seed) {
+            this.noise = new PerlinNoise(params.seed);
+            this.config.seed = params.seed;
+        }
+        if (params.maxHeight !== undefined) this.peakHeight = params.maxHeight;
+        if (params.baseHeight !== undefined) this.baseHeight = params.baseHeight;
+        if (params.heightScale !== undefined) this.heightScale = params.heightScale;
+
+        if (params.noiseScale !== undefined) this.ridgeScale = params.noiseScale;
+        if (params.hillScale !== undefined) this.detailScale = params.hillScale;
+        if (params.detailScale !== undefined) this.snowScale = params.detailScale;
+    }
+
+    dispose() {
+        if (this.mesh) {
+            if (this.mesh.geometry) this.mesh.geometry.dispose();
+            if (this.mesh.material) {
+                if (Array.isArray(this.mesh.material)) {
+                    this.mesh.material.forEach(m => m.dispose());
+                } else {
+                    this.mesh.material.dispose();
+                }
+            }
+            // Dispose fog child
+            this.mesh.children.forEach(child => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) child.material.dispose();
+            });
+        }
         this.mesh = null;
         this.heightData = [];
     }
@@ -229,7 +266,7 @@ export class EverestGenerator {
         height += snowNoise * 3;
 
         // Ensure base is not below ground
-        return Math.max(height + this.baseHeight, this.baseHeight);
+        return Math.max(height + this.baseHeight, this.baseHeight) * this.heightScale;
     }
 
     /**

@@ -81,23 +81,65 @@ class PerlinNoise {
  * Terrain Generator - Creates large low-poly procedural terrain
  */
 export class TerrainGenerator {
-    constructor() {
-        this.noise = new PerlinNoise(42);
+    constructor(config = {}) {
+        this.config = config;
+        this.noise = new PerlinNoise(config.seed || 42);
 
         // Terrain parameters
-        this.size = 5000;          // Massive terrain (5km x 5km)
-        this.segments = 400;       // More segments to maintain detail
-        this.maxHeight = 50;       // Higher mountains for epic scale
-        this.baseHeight = 0;       // Level base
+        this.size = config.size || 5000;          // Massive terrain (5km x 5km)
+        this.segments = config.segments || 400;       // More segments to maintain detail
+        this.maxHeight = config.maxHeight !== undefined ? config.maxHeight : 50;       // Higher mountains for epic scale
+        this.baseHeight = config.baseHeight !== undefined ? config.baseHeight : 0;       // Level base
+        this.heightScale = config.heightScale !== undefined ? config.heightScale : 1.0; // Global scalar for height
 
         // Noise parameters - MUCH lower scales for smoother, spread terrain
-        this.noiseScale = 0.002;   // Very spread out base terrain
-        this.hillScale = 0.006;    // Medium hills
-        this.detailScale = 0.015;  // Gentle detail
-        this.microScale = 0.04;    // Subtle micro texture
+        this.noiseScale = config.noiseScale !== undefined ? config.noiseScale : 0.002;   // Very spread out base terrain
+        this.hillScale = config.hillScale !== undefined ? config.hillScale : 0.006;    // Medium hills
+        this.detailScale = config.detailScale !== undefined ? config.detailScale : 0.015;  // Gentle detail
+        this.microScale = config.microScale !== undefined ? config.microScale : 0.04;    // Subtle micro texture
 
         this.mesh = null;
         this.heightData = [];      // For collision queries
+    }
+
+    /**
+     * Update terrain parameters
+     * @param {Object} params - New parameters
+     */
+    updateParams(params) {
+        if (params.seed !== undefined && params.seed !== this.config.seed) {
+            this.noise = new PerlinNoise(params.seed);
+            this.config.seed = params.seed;
+        }
+
+        if (params.size !== undefined) this.size = params.size;
+        if (params.segments !== undefined) this.segments = params.segments;
+        if (params.maxHeight !== undefined) this.maxHeight = params.maxHeight;
+        if (params.baseHeight !== undefined) this.baseHeight = params.baseHeight;
+        if (params.heightScale !== undefined) this.heightScale = params.heightScale;
+
+        if (params.noiseScale !== undefined) this.noiseScale = params.noiseScale;
+        if (params.hillScale !== undefined) this.hillScale = params.hillScale;
+        if (params.detailScale !== undefined) this.detailScale = params.detailScale;
+        if (params.microScale !== undefined) this.microScale = params.microScale;
+    }
+
+    /**
+     * Dispose of terrain resources
+     */
+    dispose() {
+        if (this.mesh) {
+            if (this.mesh.geometry) this.mesh.geometry.dispose();
+            if (this.mesh.material) {
+                if (Array.isArray(this.mesh.material)) {
+                    this.mesh.material.forEach(m => m.dispose());
+                } else {
+                    this.mesh.material.dispose();
+                }
+            }
+        }
+        this.mesh = null;
+        this.heightData = [];
     }
 
     /**
@@ -201,7 +243,7 @@ export class TerrainGenerator {
         // Add base height
         height += this.baseHeight;
 
-        return height;
+        return height * this.heightScale;
     }
 
     /**

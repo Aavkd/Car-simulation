@@ -635,20 +635,36 @@ export class EditorController {
 
         // Terrain folder
         const terrainFolder = this.gui.addFolder('Terrain');
-        this.guiParams.heightScale = this.levelConfig.params?.heightScale || 50;
-        this.guiParams.seed = this.levelConfig.params?.seed || 42;
+        const terrainParams = this.currentLevel.environment.parameters || {};
 
-        terrainFolder.add(this.guiParams, 'heightScale', 10, 200, 5)
-            .name('Height Scale')
-            .onChange(v => {
-                this.currentLevel.environment.parameters.heightScale = v;
-                // Note: Would need to regenerate terrain for effect
-            });
-        terrainFolder.add(this.guiParams, 'seed', 0, 10000, 1)
-            .name('Seed')
-            .onChange(v => {
-                this.currentLevel.environment.seed = v;
-            });
+        // Ensure defaults exist if not in level data
+        this.guiParams.terrain = {
+            heightScale: terrainParams.heightScale !== undefined ? terrainParams.heightScale : 1.0,
+            seed: terrainParams.seed !== undefined ? terrainParams.seed : 42,
+            noiseScale: terrainParams.noiseScale !== undefined ? terrainParams.noiseScale : 0.002,
+            hillScale: terrainParams.hillScale !== undefined ? terrainParams.hillScale : 0.006,
+            detailScale: terrainParams.detailScale !== undefined ? terrainParams.detailScale : 0.015,
+            microScale: terrainParams.microScale !== undefined ? terrainParams.microScale : 0.04,
+            maxHeight: terrainParams.maxHeight !== undefined ? terrainParams.maxHeight : 50,
+            baseHeight: terrainParams.baseHeight !== undefined ? terrainParams.baseHeight : 0,
+        };
+
+        const updateTerrain = () => {
+            // Debounce regeneration to avoid lag
+            if (this._terrainUpdateTimer) clearTimeout(this._terrainUpdateTimer);
+            this._terrainUpdateTimer = setTimeout(() => {
+                this._regenerateTerrain(this.guiParams.terrain);
+            }, 100);
+        };
+
+        terrainFolder.add(this.guiParams.terrain, 'heightScale', 0.1, 5.0, 0.1).name('global Height Scale').onChange(updateTerrain);
+        terrainFolder.add(this.guiParams.terrain, 'seed', 0, 10000, 1).name('Seed').onChange(updateTerrain);
+        terrainFolder.add(this.guiParams.terrain, 'noiseScale', 0.0001, 0.01, 0.0001).name('Base Noise Scale').onChange(updateTerrain);
+        terrainFolder.add(this.guiParams.terrain, 'hillScale', 0.001, 0.05, 0.001).name('Hill Scale').onChange(updateTerrain);
+        terrainFolder.add(this.guiParams.terrain, 'detailScale', 0.005, 0.1, 0.001).name('Detail Scale').onChange(updateTerrain);
+        terrainFolder.add(this.guiParams.terrain, 'microScale', 0.01, 0.2, 0.001).name('Micro Scale').onChange(updateTerrain);
+        terrainFolder.add(this.guiParams.terrain, 'maxHeight', 10, 500, 5).name('Max Height').onChange(updateTerrain);
+        terrainFolder.add(this.guiParams.terrain, 'baseHeight', -100, 100, 5).name('Base Height').onChange(updateTerrain);
 
         // Close folders by default
         physicsFolder.close();
@@ -681,6 +697,47 @@ export class EditorController {
             car.physicsEngine.suspensionDamping = value;
         } else if (param === 'enginePower') {
             // Would need to modify car spec
+        }
+    }
+
+    _regenerateTerrain(params) {
+        if (!this.game.terrain) return;
+
+        console.log('[Editor] Regenerating terrain with params:', params);
+
+        // Update level data
+        this.currentLevel.environment.parameters = { ...this.currentLevel.environment.parameters, ...params };
+        if (params.seed) this.currentLevel.environment.seed = params.seed;
+
+        // Check if terrain supports dynamic update
+        if (this.game.terrain.updateParams && this.game.terrain.generate) {
+            // 1. Dispose old mesh
+            if (this.game.terrain.mesh) {
+                this.game.scene.remove(this.game.terrain.mesh);
+                if (this.game.terrain.dispose) {
+                    this.game.terrain.dispose();
+                } else if (this.game.terrain.mesh.geometry) {
+                    // Fallback disposal
+                    this.game.terrain.mesh.geometry.dispose();
+                    this.game.terrain.mesh.material.dispose();
+                }
+            }
+
+            // 2. Update parameters
+            this.game.terrain.updateParams(params);
+
+            // 3. Generate new mesh
+            const newMesh = this.game.terrain.generate();
+            this.game.scene.add(newMesh);
+
+            // 4. Update Physics Provider connections if needed
+            // The terrain object itself is the provider, so references held by Car/Plane should still work 
+            // IF they call getHeightAt() on the terrain object.
+            // However, visually we need the new mesh.
+
+            this.game.terrain.mesh = newMesh; // Ensure reference consistency if needed
+        } else {
+            console.warn('[Editor] Current terrain generator does not support dynamic regeneration');
         }
     }
 

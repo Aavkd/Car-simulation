@@ -403,6 +403,28 @@ class Game {
     _openEditorSelector() {
         const levels = getAllLevels();
 
+        // Add Blank Canvas option
+        const blankLevel = {
+            id: 'blank',
+            name: 'Blank Canvas',
+            description: 'Flat terrain for building from scratch',
+            type: 'procedural',
+            color: '#e2e8f0', // Slate 200
+            params: {
+                seed: 0,
+                heightScale: 0, // Ensures flatness
+                noiseScale: 0.001,
+                hillScale: 0,
+                detailScale: 0,
+                microScale: 0,
+                baseHeight: 0,
+                maxHeight: 0
+            }
+        };
+
+        // Combine blank level with existing levels
+        const displayLevels = [blankLevel, ...levels];
+
         // Create dialog
         const dialog = document.createElement('div');
         dialog.className = 'editor-select-dialog';
@@ -412,7 +434,7 @@ class Game {
                 <h2>🛠️ Select Base Level for Editor</h2>
                 <p>Choose a terrain template to start editing:</p>
                 <div class="level-select-grid">
-                    ${levels.map(level => `
+                    ${displayLevels.map(level => `
                         <div class="level-select-item" data-level-id="${level.id}" style="border-color: ${level.color}">
                             <span class="level-select-icon">${this._getLevelIcon(level.type)}</span>
                             <span class="level-select-name">${level.name}</span>
@@ -429,7 +451,7 @@ class Game {
         dialog.querySelectorAll('.level-select-item').forEach(item => {
             item.onclick = () => {
                 const levelId = item.dataset.levelId;
-                const level = levels.find(l => l.id === levelId);
+                const level = displayLevels.find(l => l.id === levelId);
                 dialog.remove();
                 if (level) {
                     this._enterEditorState(level);
@@ -793,7 +815,7 @@ class Game {
         this.renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
             antialias: true,
-            powerPreference: 'high-performance'  
+            powerPreference: 'high-performance'
         });
 
         this.renderer.setSize(window.innerWidth, window.innerHeight);
