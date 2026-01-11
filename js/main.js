@@ -139,7 +139,11 @@ class Game {
         this.planeMesh = null;
         this.selectedVehicleType = 'car'; // Default selection from menu
         this.selectedCarId = 'ae86'; // Default car selection
+        this.selectedCarId = 'ae86'; // Default car selection
         this.activeVehicle = 'car'; // 'car' or 'plane'
+
+        // Track vehicles spawned from editor
+        this.spawnedVehicles = [];
 
         // Player mode state
         this.isOnFoot = false;
@@ -528,19 +532,109 @@ class Game {
         this.activeVehicle = null;
         this.canvas.requestPointerLock();
 
-        // 5. Initialize Car if needed (Editor doesn't load it by default)
-        // We still need the car to be present so the player can enter it
-        const selectedCar = CAR_REGISTRY[this.selectedCarId] || CAR_REGISTRY['ae86'];
+        // 5. Initialize Vehicles from Editor Objects
+        this.spawnedVehicles = [];
+        let playerSpawnedAtVehicle = false;
 
-        if (!this.carMesh) {
-            console.log('Loading car for play test...');
-            await this._loadCarModel(selectedCar.model);
-        }
+        // Find vehicle objects in the editor scene
+        const editorObjects = this.editor ? this.editor.objectManager.objects : [];
+        const vehicleObjects = editorObjects.filter(obj =>
+            obj.userData.type === 'car' || obj.userData.type === 'plane'
+        );
 
-        // Ensure physics exists
-        if (!this.car) {
-            console.log('Initializing car physics for play test...');
-            this.car = new CarPhysics(this.carMesh, this.terrain, this.scene, selectedCar.spec);
+        if (vehicleObjects.length > 0) {
+            console.log(`[Game] Found ${vehicleObjects.length} vehicles in editor. Spawning...`);
+
+            for (const obj of vehicleObjects) {
+                // Create physics instance based on type
+                if (obj.userData.type === 'car') {
+                    // Start with AE86 as base, but we should really load the specific spec
+                    let carSpec = ToyotaAE86;
+                    if (obj.userData.assetPath.includes('RX-7')) carSpec = MazdaRX7;
+                    if (obj.userData.assetPath.includes('cobra')) carSpec = ShelbyCobra427;
+
+                    // Clone the mesh for the physics car (leave original in editor invisible?)
+                    // Actually, the editor disables the object manager, so we can just use the mesh
+                    // BUT Game expects clean meshes. Let's clone.
+                    const carMesh = obj.clone();
+                    this.scene.add(carMesh);
+
+                    const carPhysics = new CarPhysics(carMesh, this.terrain, this.scene, carSpec);
+
+                    // Set initial state from editor object
+                    carPhysics.position.copy(obj.position);
+                    carPhysics.physics.position.copy(obj.position);
+                    carPhysics.physics.quaternion.copy(obj.quaternion);
+                    carPhysics.physics.velocity.set(0, 0, 0);
+                    carPhysics.physics.angularVelocity.set(0, 0, 0);
+                    carPhysics._updateMesh();
+
+                    this.spawnedVehicles.push(carPhysics);
+
+                    // If this is the first car, set it as default 'this.car' for HUD/Camera compatibility
+                    if (!this.car) {
+                        this.car = carPhysics;
+                        this.carMesh = carMesh;
+                    }
+
+                } else if (obj.userData.type === 'plane') {
+                    const planeMesh = obj.clone();
+                    this.scene.add(planeMesh);
+
+                    const planePhysics = new PlanePhysics(planeMesh, this.scene);
+                    if (this.terrain) planePhysics.setPhysicsProvider(this.terrain);
+
+                    // Set initial state
+                    planePhysics.mesh.position.copy(obj.position);
+                    // Plane rotation might need adjustment if model forward is different
+                    planePhysics.mesh.quaternion.copy(obj.quaternion);
+                    // Reset physics state
+                    planePhysics.speed = 0;
+                    planePhysics.velocity.set(0, 0, 0);
+
+                    this.spawnedVehicles.push(planePhysics);
+
+                    if (!this.plane) {
+                        this.plane = planePhysics;
+                        this.planeMesh = planeMesh;
+                    }
+                }
+            }
+
+            // Hide editor objects (they are static visuals)
+            // The editor.disable() call usually handles hiding UI, but objects remain in scene
+            // We should hide them to avoid duplicates (static ghost + physics vehicle)
+            vehicleObjects.forEach(obj => obj.visible = false);
+
+        } else {
+            // FALLBACK: No vehicles placed, spawn default car near player
+            console.log('[Game] No vehicles in editor, spawning default car.');
+
+            const selectedCar = CAR_REGISTRY[this.selectedCarId] || CAR_REGISTRY['ae86'];
+
+            if (!this.carMesh) {
+                await this._loadCarModel(selectedCar.model);
+            }
+            if (!this.car) {
+                this.car = new CarPhysics(this.carMesh, this.terrain, this.scene, selectedCar.spec);
+            }
+
+            // Position near camera
+            const spawnPos = this.camera.position.clone();
+            const offset = new THREE.Vector3(5, 0, -10);
+            const carPos = spawnPos.clone().add(offset);
+            if (this.terrain) {
+                carPos.y = this.terrain.getHeightAt(carPos.x, carPos.z) + 2;
+            }
+
+            this.car.position.copy(carPos);
+            this.car.physics.position.copy(carPos);
+            this.car.velocity.set(0, 0, 0);
+            this.car.physics.velocity.set(0, 0, 0);
+            this.car.physics.quaternion.set(0, 0, 0, 1);
+            this.car._updateMesh();
+
+            this.spawnedVehicles.push(this.car);
         }
 
         // 6. Spawn Player at Camera Position
@@ -549,7 +643,6 @@ class Game {
         // Ensure we spawn above ground
         if (this.terrain) {
             const groundH = this.terrain.getHeightAt(spawnPos.x, spawnPos.z);
-            // Spawn player slightly above ground or at camera height if higher
             spawnPos.y = Math.max(spawnPos.y, groundH + 3);
         }
 
@@ -561,33 +654,10 @@ class Game {
         // Set Player Position
         this.player.setPosition(spawnPos, 0);
 
-        // 7. Park Vehicles Nearby
-        // Place car slightly in front/side of player so it's visible and accessible
-        const carOffset = new THREE.Vector3(5, 0, -10); // 5m right, 10m forward
-        // Rotate offset by camera/spawn rotation if we had one, but simple offset is fine for now
-        const carPos = spawnPos.clone().add(carOffset);
-
-        if (this.terrain) {
-            const carGroundH = this.terrain.getHeightAt(carPos.x, carPos.z);
-            carPos.y = carGroundH + 2;
-        }
-
-        if (this.car) {
-            this.car.position.copy(carPos);
-            this.car.velocity.set(0, 0, 0);
-            this.car.physics.velocity.set(0, 0, 0);
-            this.car.physics.angularVelocity.set(0, 0, 0);
-
-            // Orient car continuously (e.g. random or aligned) - let's align it to look "forward" relative to spawn
-            this.car.physics.quaternion.set(0, 0, 0, 1);
-            this.car._updateMesh();
-        }
-
         // 8. Setup Camera for Player
         this.cameraController.setPlayerMode(true);
-        // Ensure player variable is updated on camera controller (usually handled in update, but good to be sure)
 
-        // 9. Configure Atmosphere if needed
+        // 9. Configure Atmosphere
         if (this.levelManager.currentLevel) {
             if (this.plane) {
                 this.plane.setPhysicsProvider(this.terrain);
@@ -634,7 +704,23 @@ class Game {
         // Hide Cockpit Overlay
         if (this.cockpitOverlay) this.cockpitOverlay.classList.add('hidden');
 
-        // 3. Re-enable Editor
+        // 3. Cleanup Spawned Vehicles
+        // We spawned duplicates of editor objects or new instances, so we should remove them
+        // to avoid accumulation and state persistence issues
+        if (this.spawnedVehicles) {
+            this.spawnedVehicles.forEach(v => {
+                if (v.mesh) this.scene.remove(v.mesh);
+                if (v.dispose) v.dispose(); // If physics classes have dispose
+            });
+            this.spawnedVehicles = [];
+        }
+
+        // Restore visibility of editor objects
+        if (this.editor && this.editor.objectManager) {
+            this.editor.objectManager.objects.forEach(obj => obj.visible = true);
+        }
+
+        // 4. Re-enable Editor
         if (this.editor) {
             this.editor.returnToEditor();
         }
@@ -1227,26 +1313,44 @@ class Game {
 
         // ==================== PLAY STATE ONLY ====================
         if (this.gameState === GameState.PLAY) {
-            // Update car physics (only when in vehicle and active)
-            if (this.car && !this.isOnFoot && this.activeVehicle === 'car') {
-                this.car.update(deltaTime, this.input);
+            // Update all spawned vehicles
+            this.spawnedVehicles.forEach(vehicle => {
+                // Only pass input if this is the active vehicle AND we are not on foot
+                const isActive = !this.isOnFoot &&
+                    ((this.activeVehicle === 'car' && vehicle === this.car) ||
+                        (this.activeVehicle === 'plane' && vehicle === this.plane));
 
-                // Update sun shadow to follow car
-                if (this.sun) {
-                    this.sun.target.position.copy(this.car.position);
-                    this.sun.target.updateMatrixWorld();
+                // For inactive vehicles, pass empty input to let them idle/coast
+                const vehicleInput = isActive ? this.input : {};
+
+                // Update vehicle physics/logic
+                if (vehicle.update) {
+                    vehicle.update(deltaTime, vehicleInput);
                 }
+            });
+
+            // Legacy support for single active car/plane (if not in spawned list)
+            // This covers the main menu car or default spawn if no editor vehicles
+            if (this.car && !this.spawnedVehicles.includes(this.car) && !this.isOnFoot && this.activeVehicle === 'car') {
+                this.car.update(deltaTime, this.input);
+            }
+            if (this.plane && !this.spawnedVehicles.includes(this.plane) && !this.isOnFoot && this.activeVehicle === 'plane') {
+                this.plane.update(deltaTime, this.input);
             }
 
-            // Update Plane physics
-            if (this.plane && !this.isOnFoot && this.activeVehicle === 'plane') {
-                this.plane.update(deltaTime, this.input);
+            // Update sun shadow to follow active vehicle or player
+            let shadowTarget = null;
+            if (this.isOnFoot && this.player) {
+                shadowTarget = this.player.position;
+            } else if (this.activeVehicle === 'car' && this.car) {
+                shadowTarget = this.car.position;
+            } else if (this.activeVehicle === 'plane' && this.plane) {
+                shadowTarget = this.plane.mesh.position;
+            }
 
-                // Sun shadow follows plane
-                if (this.sun) {
-                    this.sun.target.position.copy(this.plane.mesh.position);
-                    this.sun.target.updateMatrixWorld();
-                }
+            if (this.sun && shadowTarget) {
+                this.sun.target.position.copy(shadowTarget);
+                this.sun.target.updateMatrixWorld();
             }
 
             // Update player (only when on foot)
@@ -1529,51 +1633,82 @@ class Game {
     /**
      * Toggle between vehicle and on-foot modes
      */
+    /**
+     * Toggle between vehicle and on-foot modes
+     */
     _toggleVehicleMode() {
         if (!this.player) return;
 
         if (this.isOnFoot) {
-            // Try to enter a vehicle
+            // Finding closest vehicle in spawned list
             const playerPos = this.player.position;
+            const INTERACTION_RADIUS = 5.0; // Meters (Distance to the vehicle surface)
 
-            // Check Car Distance
-            const carDist = this.car ? playerPos.distanceTo(this.car.position) : Infinity;
+            let closestVehicle = null;
+            let minDistance = Infinity;
 
-            // Check Plane Distance
-            const planeDist = this.plane ? playerPos.distanceTo(this.plane.mesh.position) : Infinity;
+            // Gather all candidate vehicles
+            const candidates = [...this.spawnedVehicles];
+            if (this.car && !candidates.includes(this.car)) candidates.push(this.car);
+            if (this.plane && !candidates.includes(this.plane)) candidates.push(this.plane);
 
-            const INTERACTION_RADIUS = 5.0; // Meters
+            const tempBox = new THREE.Box3();
 
-            if (carDist < INTERACTION_RADIUS && carDist <= planeDist) {
-                // Enter Car
-                console.log('Entering Car');
-                this.isOnFoot = false;
-                this.activeVehicle = 'car';
+            for (const vehicle of candidates) {
+                // Get mesh for bounds check
+                const mesh = vehicle.mesh;
+                if (!mesh) continue;
 
-                this.cameraController.setVehicleType('car');
-                this.cameraController.setPlayerMode(false);
-                this.cameraController.currentModeIndex = 0; // Chase
+                // Calculate distance to the vehicle's bounding box
+                tempBox.setFromObject(mesh);
+                const dist = tempBox.distanceToPoint(playerPos);
 
-                // Restore car visibility in case it was hidden
-                if (this.carMesh) {
-                    this.carMesh.visible = !this.cameraController.isCockpitMode;
+                // Debug log (can remove later)
+                // console.log(`[VehicleToggle] Dist to bounds: ${dist.toFixed(2)}`);
+
+                if (dist < INTERACTION_RADIUS && dist < minDistance) {
+                    minDistance = dist;
+                    closestVehicle = vehicle;
                 }
+            }
 
-            } else if (planeDist < INTERACTION_RADIUS) {
-                // Enter Plane
-                console.log('Entering Plane');
-                this.isOnFoot = false;
-                this.activeVehicle = 'plane';
+            if (closestVehicle) {
+                // Determine type
+                const isCar = closestVehicle instanceof CarPhysics;
+                const isPlane = closestVehicle instanceof PlanePhysics;
 
-                this.cameraController.setVehicleType('plane');
-                this.cameraController.setPlayerMode(false);
-                // Switch to flight cam
-                const flightIndex = this.cameraController.modes.indexOf('flight');
-                if (flightIndex >= 0) this.cameraController.currentModeIndex = flightIndex;
+                if (isCar) {
+                    console.log('Entering Car');
+                    this.isOnFoot = false;
+                    this.activeVehicle = 'car';
+                    this.car = closestVehicle; // Set active car
+                    this.carMesh = closestVehicle.mesh;
 
+                    this.cameraController.setVehicleType('car');
+                    this.cameraController.setPlayerMode(false);
+                    this.cameraController.currentModeIndex = 0; // Chase
+
+                    if (this.carMesh) {
+                        this.carMesh.visible = !this.cameraController.isCockpitMode;
+                    }
+
+                } else if (isPlane) {
+                    console.log('Entering Plane');
+                    this.isOnFoot = false;
+                    this.activeVehicle = 'plane';
+                    this.plane = closestVehicle; // Set active plane
+                    this.planeMesh = closestVehicle.mesh;
+
+                    this.cameraController.setVehicleType('plane');
+                    this.cameraController.setPlayerMode(false);
+                    // Switch to flight cam
+                    const flightIndex = this.cameraController.modes.indexOf('flight');
+                    if (flightIndex >= 0) this.cameraController.currentModeIndex = flightIndex;
+                }
             } else {
                 console.log('No vehicle nearby');
             }
+
         } else {
             // Exit Vehicle
             console.log('Exiting Vehicle');
@@ -1582,21 +1717,24 @@ class Game {
 
             // Teleport player to vehicle position
             const vehiclePos = this.activeVehicle === 'car' ? this.car.position : this.plane.mesh.position;
+            const vehicleQuat = this.activeVehicle === 'car' ? this.car.physics.quaternion : this.plane.mesh.quaternion;
+
             // Offset slightly so we don't spawn inside
             const offset = new THREE.Vector3(3, 0, 0); // Side
             if (this.activeVehicle === 'car') {
                 offset.set(-3, 0, 0); // Left of car
-                offset.applyQuaternion(this.carMesh.quaternion);
             } else {
                 offset.set(5, 0, 0); // Side of plane
-                offset.applyQuaternion(this.planeMesh.quaternion);
             }
+            offset.applyQuaternion(vehicleQuat);
 
             const exitPos = vehiclePos.clone().add(offset);
 
             // Ensure on ground
-            const groundH = this.terrain.getHeightAt(exitPos.x, exitPos.z);
-            exitPos.y = groundH + this.player.specs.height;
+            if (this.terrain) {
+                const groundH = this.terrain.getHeightAt(exitPos.x, exitPos.z);
+                exitPos.y = groundH + this.player.specs.height;
+            }
 
             this.player.setPosition(exitPos, 0);
 
@@ -1605,6 +1743,14 @@ class Game {
                 this.cockpitOverlay.classList.add('hidden');
             }
 
+            // Don't nullify activeVehicle/car/plane strictly if we want them to stay valid references,
+            // but for logic we set activeVehicle to null or keep it for HUD logic??
+            // Main loop checks !isOnFoot && activeVehicle, so clearing activeVehicle is safe for input blocking
+            // but we might want to keep this.car assigned for updates if we want it to simulate while we walk?
+            // Current _animate loop updates all spawnedVehicles regardless, but only passes input if active.
+            // So we can leave this.car/this.plane assigned.
+
+            // Just update HUD state via logic
             this.activeVehicle = null;
         }
     }

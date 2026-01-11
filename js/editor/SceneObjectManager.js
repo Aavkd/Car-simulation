@@ -125,6 +125,12 @@ export class SceneObjectManager {
         try {
             const gltf = await this._loadModel(assetConfig.path);
             this.placementPreview = gltf.scene.clone();
+
+            // Apply scale if specified in asset config
+            if (assetConfig.scale) {
+                this.placementPreview.scale.setScalar(assetConfig.scale);
+            }
+
             this.placementPreview.traverse(child => {
                 if (child.isMesh) {
                     child.material = child.material.clone();
@@ -169,6 +175,15 @@ export class SceneObjectManager {
 
             // Apply position
             object.position.copy(position);
+
+            // Apply scale if provided in metadata (e.g. from asset config)
+            if (metadata.scale) {
+                if (typeof metadata.scale === 'number') {
+                    object.scale.setScalar(metadata.scale);
+                } else {
+                    object.scale.set(metadata.scale.x, metadata.scale.y, metadata.scale.z);
+                }
+            }
 
             // Store metadata
             object.userData = {
@@ -565,7 +580,8 @@ export class SceneObjectManager {
             } else {
                 this.addObject(this.placementAsset.path, position, {
                     name: this.placementAsset.name,
-                    type: this.placementAsset.type || 'object'
+                    type: this.placementAsset.type || 'object',
+                    scale: this.placementAsset.scale || 1
                 });
             }
             // Stay in placement mode for multiple placements (hold ESC to cancel)

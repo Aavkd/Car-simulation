@@ -120,55 +120,56 @@ export class PlanePhysics {
 
     _processInput(input, dt) {
         // Map inputs to control surfaces (smoothed)
+
+        // Ensure input objects exist to prevent crashes
+        const keys = input.keys || {};
+        const gamepad = input.gamepad || {};
+
         // Pitch: W/S or Left Stick Y
         let targetPitch = 0;
-        if (input.keys.forward) targetPitch = -1; // Nose down
-        if (input.keys.backward) targetPitch = 1; // Nose up
-        if (input.gamepad) targetPitch += input.gamepad.moveY;
+        if (keys.forward) targetPitch = -1; // Nose down
+        if (keys.backward) targetPitch = 1; // Nose up
+        // Gamepad (ensure gamepad object exists)
+        if (gamepad.moveY !== undefined) targetPitch += gamepad.moveY;
 
         // Roll: A/D or Left Stick X
         let targetRoll = 0;
-        if (input.keys.left) targetRoll = 1; // Roll left
-        if (input.keys.right) targetRoll = -1; // Roll right
-        // Use moveX (raw) instead of steering (inverted) for inverted roll behavior (Left Stick -> Right Roll)
-        // Or actually, steering is inverted (-raw).
-        // If we want inverted roll (Stick Left -> Roll Right), we want Negative value for Left Stick.
-        // Stick Left -> moveX (-1).
-        if (input.gamepad) {
-            // Use moveX if available (added in recent update), else fall back to -steering
-            const rollInput = input.gamepad.moveX !== undefined ? input.gamepad.moveX : -input.gamepad.steering;
-            targetRoll += rollInput;
+        if (keys.left) targetRoll = 1; // Roll left
+        if (keys.right) targetRoll = -1; // Roll right
+
+        // Gamepad Roll
+        if (gamepad.moveX !== undefined) {
+            // Use moveX directly
+            targetRoll += gamepad.moveX;
+        } else if (gamepad.steering !== undefined) {
+            // Fallback to steering
+            targetRoll += -gamepad.steering;
         }
 
         // Yaw: Q/E or L1/R1
         let targetYaw = 0;
-        if (input.keys.shiftDown) targetYaw = 1; // Left (A key)
-        if (input.keys.shiftUp) targetYaw = -1;  // Right (E key)
-        // Gamepad L1/R1 for yaw
-        if (input.gamepad) {
-            if (input.gamepad.yawLeft) targetYaw = 1;   // L1 - Yaw Left
-            if (input.gamepad.yawRight) targetYaw = -1; // R1 - Yaw Right
-        }
+        if (keys.shiftDown) targetYaw = 1; // Left (A key)
+        if (keys.shiftUp) targetYaw = -1;  // Right (E key)
+
+        // Gamepad Yaw
+        if (gamepad.yawLeft) targetYaw = 1;   // L1 - Yaw Left
+        if (gamepad.yawRight) targetYaw = -1; // R1 - Yaw Right
 
         // Throttle: Shift/Ctrl or R2/L2
-        // We accumulate throttle (unlike car where it's direct mapping) ? 
-        // Or direct mapping? Direct mapping is easier for casual flight.
         let targetThrottle = 0;
-        if (input.keys.sprint) targetThrottle = 1.0; // Shift for max
-        if (input.gamepad) targetThrottle = input.gamepad.throttle;
+        if (keys.sprint) targetThrottle = 1.0; // Shift for max
+        if (gamepad.throttle !== undefined) targetThrottle = gamepad.throttle;
 
         // Apply smoothed inputs
         this.throttle = THREE.MathUtils.lerp(this.throttle, targetThrottle, 2.0 * dt);
 
         // Hover: X key or Cross/A gamepad button
-        // Binary input - either hovering or not
-        this.input.hover = input.keys.hover || (input.gamepad && input.gamepad.hover);
+        this.input.hover = keys.hover || gamepad.hover;
 
         // Reverse Thrust: L2/Left Trigger (analog 0-1)
-        // Keyboard: backward key can be used for reverse when not in forward motion
         let targetReverse = 0;
-        if (input.keys.backward) targetReverse = 1.0;
-        if (input.gamepad) targetReverse = Math.max(targetReverse, input.gamepad.brake);
+        if (keys.backward) targetReverse = 1.0;
+        if (gamepad.brake !== undefined) targetReverse = Math.max(targetReverse, gamepad.brake);
         this.input.reverseThrust = THREE.MathUtils.lerp(this.input.reverseThrust, targetReverse, 3.0 * dt);
 
         // Helper for smoothing logic

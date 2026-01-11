@@ -122,6 +122,45 @@ export class AssetLibrary {
                     diskRadius: 3.5,
                     isPulsar: true
                 }
+            },
+            // === Vehicles ===
+            {
+                id: 'ae86',
+                name: 'Toyota AE86',
+                path: 'assets/models/Toyota AE86.glb',
+                category: 'vehicles',
+                icon: '🚗',
+                type: 'car',
+                specId: 'ae86'
+            },
+            {
+                id: 'rx7',
+                name: 'Mazda RX-7',
+                path: 'assets/models/Mazda RX-7.glb',
+                category: 'vehicles',
+                icon: '🏎️',
+                type: 'car',
+                specId: 'rx7',
+                scale: 4.5
+            },
+            {
+                id: 'cobra',
+                name: 'Shelby Cobra 427',
+                path: 'assets/models/1966_shelby_cobra_427.glb',
+                category: 'vehicles',
+                icon: '🐍',
+                type: 'car',
+                specId: 'cobra',
+                scale: 4.5
+            },
+            {
+                id: 'f16',
+                name: 'F-16 Jet',
+                path: 'assets/models/silver_surfer.glb',
+                category: 'vehicles',
+                icon: '✈️',
+                type: 'plane',
+                scale: 2.0
             }
         ];
 
