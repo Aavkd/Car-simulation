@@ -19,6 +19,7 @@ import { ToyotaAE86 } from './core/vehicle-specs/ToyotaAE86.js';
 import { MazdaRX7 } from './core/vehicle-specs/MazdaRX7.js';
 import { ShelbyCobra427 } from './core/vehicle-specs/ShelbyCobra427.js';
 import { EditorController } from './editor/EditorController.js';
+import { RPGManager } from './rpg/systems/RPGManager.js';
 
 /**
  * Available car specifications registry
@@ -142,6 +143,9 @@ class Game {
         this.selectedCarId = 'ae86'; // Default car selection
         this.activeVehicle = 'car'; // 'car' or 'plane'
 
+        // RPG System
+        this.rpgManager = new RPGManager(this);
+
         // Track vehicles spawned from editor
         this.spawnedVehicles = [];
 
@@ -197,6 +201,9 @@ class Game {
         // Populate and show main menu
         this._setupMainMenu();
         this._enterMenuState();
+
+        // Initialize RPG System
+        this.rpgManager.init();
 
         // Start render loop (always runs, state controls what's updated)
         this._animate();
@@ -1313,6 +1320,11 @@ class Game {
 
         // ==================== PLAY STATE ONLY ====================
         if (this.gameState === GameState.PLAY) {
+            // Update RPG Systems
+            if (this.rpgManager) {
+                this.rpgManager.update(this.clock.elapsedTime, deltaTime);
+            }
+
             // Update all spawned vehicles
             this.spawnedVehicles.forEach(vehicle => {
                 // Only pass input if this is the active vehicle AND we are not on foot

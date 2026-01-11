@@ -8,21 +8,22 @@ This document outlines the step-by-step plan to transform the Racing Simulator i
 
 **Goal**: Establish the core file structure and basic state management systems.
 
-- [ ] **Directory Setup**: Ensure `js/rpg/` structure exists.
-    - `js/rpg/systems/` (Logic classes)
-    - `js/rpg/data/` (JSON/JS data files)
-    - `js/rpg/ui/` (UI Controllers)
+- [x] **Directory Setup**: Ensure `js/rpg/` structure exists.
+    - [x] `js/rpg/systems/`: Created (will contain logic classes).
+    - [x] `js/rpg/data/`: Created (will contain JSON/JS data).
+    - [x] `js/rpg/ui/`: Created (will contain UI controllers).
 
-- [ ] **Game State Extension**:
-    - Modify `js/main.js` to initialize an `RPGManager` singleton.
-    - Ensure RPG systems update during the `PLAY` state.
+- [x] **Game State Extension**:
+    - [x] Modify `js/main.js`: Imported and initialized `RPGManager`.
+    - [x] Lifecycle Hook: Added `rpgManager.update()` to `_animate` loop under `PLAY` state.
 
-- [ ] **Save/Load System**:
-    - Create `RPGProfile.js` to track:
-        - Player Stats (XP, Money, Reputation)
-        - Quest States (Not Started, Active, Completed)
-        - Inventory
-        - World State (e.g., unlocked regions)
+- [x] **Save/Load System**:
+    - [x] Created `js/rpg/RPGProfile.js`: 
+        - Tracks XP, Level, Money, Reputation.
+        - Implements `serialize()`/`deserialize()` for LocalStorage persistence.
+    - [x] Created `js/rpg/systems/RPGManager.js`:
+        - Singleton Architecture.
+        - Initialization and Update loop stub ready for subsystems.
 
 ---
 
