@@ -1642,7 +1642,8 @@ class Game {
         if (this.isOnFoot) {
             // Finding closest vehicle in spawned list
             const playerPos = this.player.position;
-            const INTERACTION_RADIUS = 5.0; // Meters (Distance to the vehicle surface)
+            const INTERACTION_RADIUS = 3.0; // Meters (Distance to surface) - increased for usability
+            const VIEW_THRESHOLD = 0.5; // Dot product (approx 60 degrees cone)
 
             let closestVehicle = null;
             let minDistance = Infinity;
@@ -1653,6 +1654,12 @@ class Game {
             if (this.plane && !candidates.includes(this.plane)) candidates.push(this.plane);
 
             const tempBox = new THREE.Box3();
+            const center = new THREE.Vector3();
+            const camDir = new THREE.Vector3();
+            if (this.camera) this.camera.getWorldDirection(camDir);
+            const dirToVehicle = new THREE.Vector3();
+
+            console.log(`[VehicleToggle] Candidates: ${candidates.length}`);
 
             for (const vehicle of candidates) {
                 // Get mesh for bounds check
@@ -1663,12 +1670,20 @@ class Game {
                 tempBox.setFromObject(mesh);
                 const dist = tempBox.distanceToPoint(playerPos);
 
-                // Debug log (can remove later)
-                // console.log(`[VehicleToggle] Dist to bounds: ${dist.toFixed(2)}`);
+                // Calculate View Alignment (Looking at vehicle?)
+                tempBox.getCenter(center);
+                dirToVehicle.subVectors(center, playerPos).normalize();
+                const alignment = camDir.dot(dirToVehicle);
 
-                if (dist < INTERACTION_RADIUS && dist < minDistance) {
-                    minDistance = dist;
-                    closestVehicle = vehicle;
+                // Check Proximity AND View Alignment
+                if (dist < INTERACTION_RADIUS) {
+                    if (alignment > VIEW_THRESHOLD) {
+                        // Priority: Closest distance among those we are looking at
+                        if (dist < minDistance) {
+                            minDistance = dist;
+                            closestVehicle = vehicle;
+                        }
+                    }
                 }
             }
 
