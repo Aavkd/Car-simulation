@@ -180,6 +180,7 @@ class Game {
         this._setupLighting();
         this._setupPostProcessing();
         this._setupInput();
+        this._setupPointerLock();
 
         // Setup camera controller (needed for menu showcase view)
         this.cameraController = new CameraController(this.camera, this.canvas);
@@ -522,64 +523,92 @@ class Game {
         const timeDisplay = document.getElementById('time-display');
         if (timeDisplay) timeDisplay.classList.remove('hidden');
 
-        // 4. Set active vehicle (Force Car for now, or use last selected)
-        this.activeVehicle = 'car';
-        this.isOnFoot = false;
+        // 4. Set Player Mode (Spawn on Foot)
+        this.isOnFoot = true;
+        this.activeVehicle = null;
+        this.canvas.requestPointerLock();
 
         // 5. Initialize Car if needed (Editor doesn't load it by default)
+        // We still need the car to be present so the player can enter it
         const selectedCar = CAR_REGISTRY[this.selectedCarId] || CAR_REGISTRY['ae86'];
 
         if (!this.carMesh) {
-            // Show simple loading indicator if meaningful delay expected, but for now just await
             console.log('Loading car for play test...');
             await this._loadCarModel(selectedCar.model);
         }
 
         // Ensure physics exists
-        // If we came from Menu->Editor, car physics isn't created yet
         if (!this.car) {
             console.log('Initializing car physics for play test...');
             this.car = new CarPhysics(this.carMesh, this.terrain, this.scene, selectedCar.spec);
         }
 
-        // 6. Spawn Car at Camera Position
+        // 6. Spawn Player at Camera Position
         const spawnPos = this.camera.position.clone();
 
         // Ensure we spawn above ground
         if (this.terrain) {
             const groundH = this.terrain.getHeightAt(spawnPos.x, spawnPos.z);
-            spawnPos.y = Math.max(spawnPos.y, groundH + 3); // +3m safety
+            // Spawn player slightly above ground or at camera height if higher
+            spawnPos.y = Math.max(spawnPos.y, groundH + 3);
         }
 
-        // Reset Car Physics State
+        // Initialize Player if needed
+        if (!this.player) {
+            this.player = new PlayerController(this.terrain);
+        }
+
+        // Set Player Position
+        this.player.setPosition(spawnPos, 0);
+
+        // 7. Park Vehicles Nearby
+        // Place car slightly in front/side of player so it's visible and accessible
+        const carOffset = new THREE.Vector3(5, 0, -10); // 5m right, 10m forward
+        // Rotate offset by camera/spawn rotation if we had one, but simple offset is fine for now
+        const carPos = spawnPos.clone().add(carOffset);
+
+        if (this.terrain) {
+            const carGroundH = this.terrain.getHeightAt(carPos.x, carPos.z);
+            carPos.y = carGroundH + 2;
+        }
+
         if (this.car) {
-            this.car.physics.position.copy(spawnPos);
+            this.car.position.copy(carPos);
+            this.car.velocity.set(0, 0, 0);
             this.car.physics.velocity.set(0, 0, 0);
             this.car.physics.angularVelocity.set(0, 0, 0);
 
-            // Align with camera look direction
-            const lookDir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-            lookDir.y = 0; // Flatten
-            lookDir.normalize();
-            if (lookDir.lengthSq() < 0.1) lookDir.set(0, 0, 1); // Fallback if looking straight down
-
-            const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), lookDir);
-            this.car.physics.quaternion.copy(targetQuat);
-
-            this.car._updateMesh(); // Sync visual
+            // Orient car continuously (e.g. random or aligned) - let's align it to look "forward" relative to spawn
+            this.car.physics.quaternion.set(0, 0, 0, 1);
+            this.car._updateMesh();
         }
 
-        // 7. Setup Camera
-        this.cameraController.setVehicleType('car');
-        this.cameraController.currentModeIndex = 0; // Chase
+        // 8. Setup Camera for Player
+        this.cameraController.setPlayerMode(true);
+        // Ensure player variable is updated on camera controller (usually handled in update, but good to be sure)
 
-        // 8. Configure Atmosphere if needed (re-apply current level settings)
+        // 9. Configure Atmosphere if needed
         if (this.levelManager.currentLevel) {
-            // Already set by editor, but ensure physics provider updates
             if (this.plane) {
                 this.plane.setPhysicsProvider(this.terrain);
             }
         }
+
+        // Hide Vehicle HUD initially since we are on foot
+        const vehicleHud = document.getElementById('hud');
+        if (vehicleHud) {
+            vehicleHud.style.opacity = '0.3';
+        }
+
+        // 10. Setup Input Callbacks
+        this.input.onEnterExitVehicle = () => this._toggleVehicleMode();
+        this.input.onTimePause = () => this._toggleTimePause();
+        this.input.onTimePreset = (preset) => this._setTimePreset(preset);
+        this.input.onHeadlightsToggle = () => this._toggleHeadlights();
+        this.input.onCameraChange = () => this._handleCameraChange();
+
+        // Hide Cockpit Overlay
+        if (this.cockpitOverlay) this.cockpitOverlay.classList.add('hidden');
     }
 
     /**
