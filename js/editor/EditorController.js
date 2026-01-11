@@ -3,6 +3,7 @@ import { FlyControls } from './FlyControls.js';
 import { SceneObjectManager } from './SceneObjectManager.js';
 import { AssetLibrary } from './AssetLibrary.js';
 import { LevelSerializer } from './LevelSerializer.js';
+import { RPGEditorController } from './RPGEditorController.js';
 import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
 
 /**
@@ -21,6 +22,7 @@ export class EditorController {
         this.objectManager = null;
         this.assetLibrary = null;
         this.serializer = null;
+        this.rpgEditor = null;
 
         // lil-gui for game parameters
         this.gui = null;
@@ -57,6 +59,7 @@ export class EditorController {
         );
         this.assetLibrary = new AssetLibrary();
         this.serializer = new LevelSerializer();
+        this.rpgEditor = new RPGEditorController(this);
 
         // Initialize asset library
         await this.assetLibrary.initialize();
@@ -72,6 +75,11 @@ export class EditorController {
         // Setup UI
         this._createEditorUI();
         this._createGameParameterPanel();
+
+        // Initialize RPG Editor (needs GUI from parameter panel)
+        if (this.gui) {
+            this.rpgEditor.initialize(this.gui);
+        }
 
         // Setup callbacks
         this.objectManager.onDraggingChanged = (isDragging) => {
@@ -459,7 +467,10 @@ export class EditorController {
         document.getElementById('bh-pulsar').onchange = (e) => this._updateBlackHoleProperty('isPulsar', e.target.checked);
 
         // Listen for selection changes to show/hide properties panel
-        this.objectManager.onSelectionChanged = (object) => this._onSelectionChanged(object);
+        this.objectManager.onSelectionChanged = (object) => {
+            this._onSelectionChanged(object);
+            this.rpgEditor.onObjectSelected(object);
+        };
     }
 
     _setTransformMode(mode) {

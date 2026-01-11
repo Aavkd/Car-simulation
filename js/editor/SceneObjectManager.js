@@ -518,6 +518,19 @@ export class SceneObjectManager {
             data.assetPath = object.userData.assetPath;
         }
 
+        // RPG NPC Data
+        if (object.userData.type === 'npc' || object.userData.type === 'enemy') {
+            data.npcId = object.userData.npcId;
+            data.dialogueId = object.userData.dialogueId;
+            data.behavior = object.userData.behavior; // { type: 'patrol', ... }
+            data.flags = object.userData.flags;       // { faction: '...' }
+        }
+
+        // RPG Item Data
+        if (object.userData.type === 'item') {
+            data.itemId = object.userData.itemId;
+        }
+
         return data;
     }
 
@@ -542,7 +555,16 @@ export class SceneObjectManager {
             object = await this.addObject(data.assetPath, new THREE.Vector3(), {
                 id: data.id,
                 name: data.name,
-                type: data.type
+                type: data.type,
+                // Restore NPC data
+                npcId: data.npcId,
+                dialogueId: data.dialogueId,
+                behavior: data.behavior,
+                dialogueId: data.dialogueId,
+                behavior: data.behavior,
+                flags: data.flags,
+                // Restore Item data
+                itemId: data.itemId
             });
         }
 

@@ -88,22 +88,22 @@ This document outlines the step-by-step plan to transform the Racing Simulator i
 
 **Goal**: Extend the Level Editor to be a full-featured RPG content creation tool.
 
-- [ ] **NPC Management Extension**:
-    - Extend `SceneObjectManager` to handle `NPCEntity` creation/deletion separate from generic objects.
-    - Implement visual gizmos for NPC patrol paths or interaction zones.
+- [x] **NPC Management Extension**:
+    - [x] Extend `SceneObjectManager` to handle `NPCEntity` creation/deletion separate from generic objects.
+    - [x] Implement visual gizmos for NPC patrol paths or interaction zones.
 
-- [ ] **Dedicated RPG Editor Panel**:
-    - Create a new "RPG Mode" or tab in the Editor UI.
-    - **NPC Details**:
-        - Edit name, model, starting dialogue ID.
-        - Configure behavior (Idle, Patrol, Trade).
-    - **Data Managers (CRUD)**:
-        - **Dialogues**: Visual node editor or structured form to create/edit conversation trees.
-        - **Quests**: Form to create quests, define steps, and set rewards.
-        - **Items**: Create custom items and add them to the global registry or specific loot tables.
+- [x] **Dedicated RPG Editor Panel**:
+    - [x] Create a new "RPG Mode" or tab in the Editor UI.
+    - [x] **NPC Details**:
+        - [x] Edit name, model, starting dialogue ID.
+        - [x] Configure behavior (Idle, Patrol, Trade).
+    - [x] **Data Managers (CRUD)**:
+        - [x] **Dialogues**: Visual node editor or structured form to create/edit conversation trees.
+        - [x] **Quests**: Form to create quests, define steps, and set rewards.
+        - [x] **Items**: Create custom items and add them to the global registry or specific loot tables.
 
-- [ ] **Scene Persistence**:
-    - Ensure RPG data created in Editor is saved correctly to `level-data.json` or a separate `rpg-data.json`.
+- [x] **Scene Persistence**:
+    - [x] Ensure RPG data created in Editor is saved correctly to `level-data.json` or a separate `rpg-data.json`.
 
 ---
 

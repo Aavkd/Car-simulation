@@ -38,6 +38,7 @@ export class RPGManager {
         if (this.initialized) return;
 
         // Initialize interaction listeners, etc.
+        this._loadCustomData();
         console.log('[RPGManager] Initialized.');
 
         this.initialized = true;
@@ -50,5 +51,37 @@ export class RPGManager {
 
         // Example: Update Quest timers
         // this.questManager.update(delta);
+    }
+
+    _loadCustomData() {
+        try {
+            // Load Custom Items
+            const customItems = JSON.parse(localStorage.getItem('ae86_custom_items') || '{}');
+            // Merge into runtime data (shallow merge is enough for top-level IDs)
+            this.data.ITEMS = { ...this.data.ITEMS, ...customItems };
+            if (Object.keys(customItems).length > 0) {
+                console.log(`[RPGManager] Loaded ${Object.keys(customItems).length} custom items.`);
+            }
+
+            // Load Custom Quests
+            const customQuests = JSON.parse(localStorage.getItem('ae86_custom_quests') || '[]');
+            if (customQuests.length > 0) {
+                // Determine which are new vs overrides
+                const runtimeQuests = [...this.data.QUESTS];
+                customQuests.forEach(cq => {
+                    const idx = runtimeQuests.findIndex(rq => rq.id === cq.id);
+                    if (idx >= 0) {
+                        runtimeQuests[idx] = cq; // Override
+                    } else {
+                        runtimeQuests.push(cq); // Add new
+                    }
+                });
+                this.data.QUESTS = runtimeQuests;
+                console.log(`[RPGManager] Loaded ${customQuests.length} custom quests.`);
+            }
+
+        } catch (e) {
+            console.error('[RPGManager] Failed to load custom data:', e);
+        }
     }
 }

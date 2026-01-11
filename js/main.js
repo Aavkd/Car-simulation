@@ -612,7 +612,10 @@ class Game {
                     // Create Wrapper Entity
                     const npcEntity = new NPCEntity(npcMesh, {
                         name: obj.userData.name,
-                        dialogueRootId: obj.userData.dialogueRootId || 'default'
+                        dialogueId: obj.userData.dialogueId,
+                        behavior: obj.userData.behavior,
+                        flags: obj.userData.flags,
+                        npcId: obj.userData.npcId
                     });
 
                     // Track for cleanup if needed?
