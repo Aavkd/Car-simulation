@@ -685,24 +685,82 @@ export class EditorController {
             microScale: terrainParams.microScale !== undefined ? terrainParams.microScale : 0.04,
             maxHeight: terrainParams.maxHeight !== undefined ? terrainParams.maxHeight : 50,
             baseHeight: terrainParams.baseHeight !== undefined ? terrainParams.baseHeight : 0,
+
+            // New Shape Params
+            baseNoiseHeight: terrainParams.baseNoiseHeight !== undefined ? terrainParams.baseNoiseHeight : 10,
+            hillNoiseHeight: terrainParams.hillNoiseHeight !== undefined ? terrainParams.hillNoiseHeight : 6,
+            detailNoiseHeight: terrainParams.detailNoiseHeight !== undefined ? terrainParams.detailNoiseHeight : 2,
+
+            // Water
+            waterLevel: terrainParams.waterLevel !== undefined ? terrainParams.waterLevel : -100,
+
+            // Colors
+            colorGrassLow: terrainParams.colors?.grassLow !== undefined ? terrainParams.colors.grassLow : '#3d5c3d',
+            colorGrassHigh: terrainParams.colors?.grassHigh !== undefined ? terrainParams.colors.grassHigh : '#5a7d4a',
+            colorDirt: terrainParams.colors?.dirt !== undefined ? terrainParams.colors.dirt : '#6b5344',
+            colorRock: terrainParams.colors?.rock !== undefined ? terrainParams.colors.rock : '#7a7a7a',
+            colorSnow: terrainParams.colors?.snow !== undefined ? terrainParams.colors.snow : '#e8e8e8',
+            colorWater: terrainParams.colors?.water !== undefined ? terrainParams.colors.water : '#1a6985',
         };
 
         const updateTerrain = () => {
             // Debounce regeneration to avoid lag
             if (this._terrainUpdateTimer) clearTimeout(this._terrainUpdateTimer);
             this._terrainUpdateTimer = setTimeout(() => {
-                this._regenerateTerrain(this.guiParams.terrain);
+                // Reconstruct colors object
+                const params = { ...this.guiParams.terrain };
+                params.colors = {
+                    grassLow: params.colorGrassLow,
+                    grassHigh: params.colorGrassHigh,
+                    dirt: params.colorDirt,
+                    rock: params.colorRock,
+                    snow: params.colorSnow,
+                    water: params.colorWater
+                };
+
+                // Remove flattened color keys from params passed to generator
+                delete params.colorGrassLow;
+                delete params.colorGrassHigh;
+                delete params.colorDirt;
+                delete params.colorRock;
+                delete params.colorSnow;
+                delete params.colorWater;
+
+                this._regenerateTerrain(params);
             }, 100);
         };
 
-        terrainFolder.add(this.guiParams.terrain, 'heightScale', 0.1, 5.0, 0.1).name('global Height Scale').onChange(updateTerrain);
+        // General
         terrainFolder.add(this.guiParams.terrain, 'seed', 0, 10000, 1).name('Seed').onChange(updateTerrain);
-        terrainFolder.add(this.guiParams.terrain, 'noiseScale', 0.0001, 0.01, 0.0001).name('Base Noise Scale').onChange(updateTerrain);
-        terrainFolder.add(this.guiParams.terrain, 'hillScale', 0.001, 0.05, 0.001).name('Hill Scale').onChange(updateTerrain);
-        terrainFolder.add(this.guiParams.terrain, 'detailScale', 0.005, 0.1, 0.001).name('Detail Scale').onChange(updateTerrain);
-        terrainFolder.add(this.guiParams.terrain, 'microScale', 0.01, 0.2, 0.001).name('Micro Scale').onChange(updateTerrain);
-        terrainFolder.add(this.guiParams.terrain, 'maxHeight', 10, 500, 5).name('Max Height').onChange(updateTerrain);
-        terrainFolder.add(this.guiParams.terrain, 'baseHeight', -100, 100, 5).name('Base Height').onChange(updateTerrain);
+        terrainFolder.add(this.guiParams.terrain, 'heightScale', 0.1, 5.0, 0.1).name('global Height Scale').onChange(updateTerrain);
+
+        // Shape / Noise
+        const shapeFolder = terrainFolder.addFolder('Shape Details');
+        shapeFolder.add(this.guiParams.terrain, 'noiseScale', 0.0001, 0.01, 0.0001).name('Base Breakdown').onChange(updateTerrain);
+        shapeFolder.add(this.guiParams.terrain, 'baseNoiseHeight', 0, 50, 0.5).name('Base Amplitude').onChange(updateTerrain);
+
+        shapeFolder.add(this.guiParams.terrain, 'hillScale', 0.001, 0.05, 0.001).name('Hill Breakdown').onChange(updateTerrain);
+        shapeFolder.add(this.guiParams.terrain, 'hillNoiseHeight', 0, 30, 0.5).name('Hill Amplitude').onChange(updateTerrain);
+
+        shapeFolder.add(this.guiParams.terrain, 'detailScale', 0.005, 0.1, 0.001).name('Detail Breakdown').onChange(updateTerrain);
+        shapeFolder.add(this.guiParams.terrain, 'detailNoiseHeight', 0, 10, 0.1).name('Detail Amplitude').onChange(updateTerrain);
+
+        shapeFolder.add(this.guiParams.terrain, 'microScale', 0.01, 0.2, 0.001).name('Micro Texture').onChange(updateTerrain);
+        shapeFolder.add(this.guiParams.terrain, 'maxHeight', 10, 500, 5).name('Mnt Max Height').onChange(updateTerrain);
+        shapeFolder.add(this.guiParams.terrain, 'baseHeight', -100, 100, 5).name('Base Height').onChange(updateTerrain);
+
+        // Water
+        const waterFolder = terrainFolder.addFolder('Water');
+        waterFolder.add(this.guiParams.terrain, 'waterLevel', -100, 50, 1).name('Water Level').onChange(updateTerrain);
+        waterFolder.addColor(this.guiParams.terrain, 'colorWater').name('Water Color').onChange(updateTerrain);
+
+        // Colors
+        const colorFolder = terrainFolder.addFolder('Terrain Colors');
+        colorFolder.addColor(this.guiParams.terrain, 'colorDirt').name('Dirt (Low)').onChange(updateTerrain);
+        colorFolder.addColor(this.guiParams.terrain, 'colorGrassLow').name('Grass Dk (Low)').onChange(updateTerrain);
+        colorFolder.addColor(this.guiParams.terrain, 'colorGrassHigh').name('Grass Lt (Mid)').onChange(updateTerrain);
+        colorFolder.addColor(this.guiParams.terrain, 'colorRock').name('Rock (High)').onChange(updateTerrain);
+        colorFolder.addColor(this.guiParams.terrain, 'colorSnow').name('Snow (Peak)').onChange(updateTerrain);
 
         // Close folders by default
         physicsFolder.close();

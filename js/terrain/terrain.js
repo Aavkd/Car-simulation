@@ -98,6 +98,25 @@ export class TerrainGenerator {
         this.detailScale = config.detailScale !== undefined ? config.detailScale : 0.015;  // Gentle detail
         this.microScale = config.microScale !== undefined ? config.microScale : 0.04;    // Subtle micro texture
 
+        // Noise Amplitudes (replacing hardcoded multipliers)
+        this.baseNoiseHeight = config.baseNoiseHeight !== undefined ? config.baseNoiseHeight : 10;
+        this.hillNoiseHeight = config.hillNoiseHeight !== undefined ? config.hillNoiseHeight : 6;
+        this.detailNoiseHeight = config.detailNoiseHeight !== undefined ? config.detailNoiseHeight : 2;
+
+        // Colors
+        this.colors = config.colors || {
+            grassLow: 0x3d5c3d,
+            grassHigh: 0x5a7d4a,
+            dirt: 0x6b5344,
+            rock: 0x7a7a7a,
+            snow: 0xe8e8e8,
+            water: 0x1a6985
+        };
+
+        // Water
+        this.waterLevel = config.waterLevel !== undefined ? config.waterLevel : -100; // Default hidden
+        this.waterMesh = null;
+
         this.mesh = null;
         this.heightData = [];      // For collision queries
     }
@@ -122,6 +141,16 @@ export class TerrainGenerator {
         if (params.hillScale !== undefined) this.hillScale = params.hillScale;
         if (params.detailScale !== undefined) this.detailScale = params.detailScale;
         if (params.microScale !== undefined) this.microScale = params.microScale;
+
+        if (params.baseNoiseHeight !== undefined) this.baseNoiseHeight = params.baseNoiseHeight;
+        if (params.hillNoiseHeight !== undefined) this.hillNoiseHeight = params.hillNoiseHeight;
+        if (params.detailNoiseHeight !== undefined) this.detailNoiseHeight = params.detailNoiseHeight;
+
+        if (params.waterLevel !== undefined) this.waterLevel = params.waterLevel;
+
+        if (params.colors) {
+            this.colors = { ...this.colors, ...params.colors };
+        }
     }
 
     /**
@@ -137,6 +166,11 @@ export class TerrainGenerator {
                     this.mesh.material.dispose();
                 }
             }
+            // Dispose water child
+            this.mesh.children.forEach(child => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) child.material.dispose();
+            });
         }
         this.mesh = null;
         this.heightData = [];
@@ -199,7 +233,30 @@ export class TerrainGenerator {
         this.mesh = new THREE.Mesh(geometry, material);
         this.mesh.receiveShadow = true;
 
+        // Create water if level is high enough to be visible
+        if (this.waterLevel > -50) {
+            this._createWater();
+        }
+
         return this.mesh;
+    }
+
+    _createWater() {
+        const waterGeometry = new THREE.PlaneGeometry(this.size, this.size);
+        waterGeometry.rotateX(-Math.PI / 2);
+
+        const waterMaterial = new THREE.MeshLambertMaterial({
+            color: this.colors.water,
+            transparent: true,
+            opacity: 0.8,
+            side: THREE.DoubleSide
+        });
+
+        const water = new THREE.Mesh(waterGeometry, waterMaterial);
+        water.position.y = this.waterLevel;
+        water.receiveShadow = true;
+
+        this.mesh.add(water);
     }
 
     /**
@@ -207,13 +264,13 @@ export class TerrainGenerator {
      */
     _calculateHeight(x, z) {
         // Base rolling terrain - very smooth, large scale
-        let height = this.noise.fbm(x * this.noiseScale, z * this.noiseScale, 3, 2, 0.4) * 10;
+        let height = this.noise.fbm(x * this.noiseScale, z * this.noiseScale, 3, 2, 0.4) * this.baseNoiseHeight;
 
         // Medium hills - gentler
-        height += this.noise.fbm(x * this.hillScale, z * this.hillScale, 3, 2, 0.5) * 6;
+        height += this.noise.fbm(x * this.hillScale, z * this.hillScale, 3, 2, 0.5) * this.hillNoiseHeight;
 
         // Fine detail for subtle variation
-        height += this.noise.noise2D(x * this.detailScale, z * this.detailScale) * 2;
+        height += this.noise.noise2D(x * this.detailScale, z * this.detailScale) * this.detailNoiseHeight;
 
         // Micro texture for low-poly feel
         height += this.noise.noise2D(x * this.microScale, z * this.microScale) * 0.5;
@@ -251,11 +308,11 @@ export class TerrainGenerator {
      */
     _calculateColor(height, x, z) {
         // Color palette for natural terrain
-        const grassLow = new THREE.Color(0x3d5c3d);    // Dark grass
-        const grassHigh = new THREE.Color(0x5a7d4a);   // Light grass
-        const dirt = new THREE.Color(0x6b5344);        // Brown dirt
-        const rock = new THREE.Color(0x7a7a7a);        // Grey rock
-        const snow = new THREE.Color(0xe8e8e8);        // White snow
+        const grassLow = new THREE.Color(this.colors.grassLow);    // Dark grass
+        const grassHigh = new THREE.Color(this.colors.grassHigh);   // Light grass
+        const dirt = new THREE.Color(this.colors.dirt);        // Brown dirt
+        const rock = new THREE.Color(this.colors.rock);        // Grey rock
+        const snow = new THREE.Color(this.colors.snow);        // White snow
 
         // Add some noise to color transitions
         const colorNoise = this.noise.noise2D(x * 0.05, z * 0.05) * 0.3;
@@ -357,6 +414,14 @@ export class TerrainGenerator {
      */
     getSurfaceType(worldX, worldZ) {
         const height = this.getHeightAt(worldX, worldZ);
+
+        if (height < this.waterLevel) {
+            return {
+                type: 'water',
+                friction: 0.3,
+                drag: 5.0
+            };
+        }
 
         // Return surface type based on height/biome
         if (height < 0) {
