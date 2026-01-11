@@ -653,6 +653,78 @@ export class EditorController {
                 }
             });
 
+        // --- SKY CUSTOMIZATION ---
+        if (this.game.sky && this.game.sky.settings) {
+            const sky = this.game.sky;
+            const skyFolder = envFolder.addFolder('Sky Customization');
+
+            // Helper to bind color property (handles hex conversion)
+            const bindColor = (folder, obj, key, name) => {
+                const proxy = { color: '#' + obj[key].toString(16).padStart(6, '0') };
+                folder.addColor(proxy, 'color').name(name).onChange(v => {
+                    if (typeof v === 'string') {
+                        obj[key] = parseInt(v.replace('#', ''), 16);
+                    } else {
+                        obj[key] = v; // Should not happen with addColor but just in case
+                    }
+                    if (sky.updateSettings) sky.updateSettings();
+                });
+            };
+
+            if (sky.constructor.name === 'SkySystem') {
+                // Day
+                const dayFolder = skyFolder.addFolder('Day Colors');
+                bindColor(dayFolder, sky.settings.day, 'top', 'Top');
+                bindColor(dayFolder, sky.settings.day, 'horizon', 'Horizon');
+                bindColor(dayFolder, sky.settings.day, 'bottom', 'Bottom');
+                bindColor(dayFolder, sky.settings.day, 'sunGlow', 'Sun Glow');
+
+                // Sunset
+                const sunsetFolder = skyFolder.addFolder('Sunset Colors');
+                bindColor(sunsetFolder, sky.settings.sunset, 'top', 'Top');
+                bindColor(sunsetFolder, sky.settings.sunset, 'horizon', 'Horizon');
+                bindColor(sunsetFolder, sky.settings.sunset, 'bottom', 'Bottom');
+                bindColor(sunsetFolder, sky.settings.sunset, 'sunGlow', 'Sun Glow');
+
+                // Night
+                const nightFolder = skyFolder.addFolder('Night Colors');
+                bindColor(nightFolder, sky.settings.night, 'top', 'Top');
+                bindColor(nightFolder, sky.settings.night, 'horizon', 'Horizon');
+                bindColor(nightFolder, sky.settings.night, 'bottom', 'Bottom');
+                bindColor(nightFolder, sky.settings.night, 'sunGlow', 'Sun Glow');
+
+                // Lights
+                const lightFolder = skyFolder.addFolder('Light & Atmosphere');
+                lightFolder.add(sky.settings.lights, 'sunIntensity', 0, 5).name('Sun Intensity');
+                lightFolder.add(sky.settings.lights, 'moonIntensity', 0, 2).name('Moon Intensity');
+                lightFolder.add(sky.settings.lights, 'ambientIntensity', 0, 2).name('Ambient Light');
+                lightFolder.add(sky.settings.lights, 'hemiIntensity', 0, 2).name('Hemisphere Light');
+
+                // Phase Durations
+                const durationFolder = skyFolder.addFolder('Phase Durations (Multipliers)');
+                durationFolder.add(sky.settings.durations, 'day', 0.1, 10).name('Day Duration');
+                durationFolder.add(sky.settings.durations, 'sunset', 0.1, 10).name('Sunset Duration');
+                durationFolder.add(sky.settings.durations, 'night', 0.1, 10).name('Night Duration');
+
+                // Stars
+                if (sky.starfield) {
+                    const starFolder = skyFolder.addFolder('Starfield');
+                    starFolder.add(sky.starfield.settings, 'sizeScale', 0.1, 5).name('Star Size');
+                    starFolder.add(sky.starfield.settings, 'brightness', 0, 5).name('Brightness');
+                    starFolder.add(sky.starfield.settings, 'milkyWayOpacity', 0, 1).name('Milky Way Opacity');
+                }
+
+            } else if (sky.constructor.name === 'SkyDeepSpace') {
+                bindColor(skyFolder, sky.settings, 'topColor', 'Top Color');
+                bindColor(skyFolder, sky.settings, 'bottomColor', 'Bottom Color');
+                bindColor(skyFolder, sky.settings, 'sunColor', 'Sun Color');
+
+                skyFolder.add(sky.settings, 'exponent', 0.1, 3).name('Gradient Power').onChange(() => sky.updateSettings());
+                skyFolder.add(sky.settings, 'sunIntensity', 0, 5).name('Sun Intensity').onChange(() => sky.updateSettings());
+                skyFolder.add(sky.settings, 'ambientIntensity', 0, 2).name('Ambient Light').onChange(() => sky.updateSettings());
+            }
+        }
+
         // Car folder (if car exists)
         if (this.game.car) {
             const carFolder = this.gui.addFolder('Car');

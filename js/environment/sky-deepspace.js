@@ -8,6 +8,16 @@ export class SkyDeepSpace {
     constructor(scene) {
         this.scene = scene;
 
+        // Settings
+        this.settings = {
+            topColor: 0x000000,
+            bottomColor: 0x000005,
+            sunColor: 0xaaccff,
+            exponent: 0.6,
+            sunIntensity: 1.0,
+            ambientIntensity: 0.3
+        };
+
         // Components
         this.skyDome = null;
         this.sunLight = null; // We still need a "sun" for shadows
@@ -23,9 +33,9 @@ export class SkyDeepSpace {
         // Pure black to very dark blue gradient
         const material = new THREE.ShaderMaterial({
             uniforms: {
-                topColor: { value: new THREE.Color(0x000000) },
-                bottomColor: { value: new THREE.Color(0x000005) },
-                exponent: { value: 0.6 }
+                topColor: { value: new THREE.Color(this.settings.topColor) },
+                bottomColor: { value: new THREE.Color(this.settings.bottomColor) },
+                exponent: { value: this.settings.exponent }
             },
             vertexShader: `
                 varying vec3 vWorldPosition;
@@ -55,15 +65,32 @@ export class SkyDeepSpace {
 
     _createLighting() {
         // Key light (simulating a nearby star or galactic core)
-        this.sunLight = new THREE.DirectionalLight(0xaaccff, 1.0);
+        this.sunLight = new THREE.DirectionalLight(this.settings.sunColor, this.settings.sunIntensity);
         this.sunLight.position.set(100, 500, 100).normalize();
         this.scene.add(this.sunLight);
 
         // Ambient starlight
-        this.ambientLight = new THREE.AmbientLight(0x222244, 0.3);
+        this.ambientLight = new THREE.AmbientLight(0x222244, this.settings.ambientIntensity);
         this.scene.add(this.ambientLight);
 
         // No hemisphere light - space is directional
+    }
+
+    updateSettings() {
+        if (this.skyDome) {
+            this.skyDome.material.uniforms.topColor.value.setHex(this.settings.topColor);
+            this.skyDome.material.uniforms.bottomColor.value.setHex(this.settings.bottomColor);
+            this.skyDome.material.uniforms.exponent.value = this.settings.exponent;
+        }
+
+        if (this.sunLight) {
+            this.sunLight.color.setHex(this.settings.sunColor);
+            this.sunLight.intensity = this.settings.sunIntensity;
+        }
+
+        if (this.ambientLight) {
+            this.ambientLight.intensity = this.settings.ambientIntensity;
+        }
     }
 
     update(deltaTime, cameraPosition) {

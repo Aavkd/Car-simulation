@@ -10,39 +10,47 @@ export class Starfield {
         this.scene = scene;
         this.starsGroup = new THREE.Group();
         this.starsGroup.name = 'starfield';
-        
+
+        // Settings
+        this.settings = {
+            count: 15000,
+            sizeScale: 1.0,
+            brightness: 1.0,
+            milkyWayOpacity: 0.8
+        };
+
         // Milky Way GLB model
         this.milkyWayModel = null;
-        
+
         this._createStars();
         this._createMilkyWay();
         this._createBrightStars();
         this._loadMilkyWayModel();
-        
+
         this.scene.add(this.starsGroup);
         this.starsGroup.visible = false; // Hidden by default (daytime)
     }
-    
+
     /**
      * Load the Milky Way GLB model
      */
     _loadMilkyWayModel() {
         const loader = new GLTFLoader();
-        
+
         loader.load(
             'assets/models/milky_way.glb',
             (gltf) => {
                 this.milkyWayModel = gltf.scene;
-                
+
                 // Position and scale the galaxy model to fit in the skybox
                 // Keep it within the sky dome radius (~4000) but visible
                 this.milkyWayModel.scale.setScalar(1000);
-                this.milkyWayModel.position.set(0, -100, 0);
-                
+                this.milkyWayModel.position.set(0, -200, 0);
+
                 // Rotate to align with the sky - tilt it to arc across the sky
                 this.milkyWayModel.rotation.x = Math.PI * 0.3;
                 this.milkyWayModel.rotation.z = Math.PI * 0.2;
-                
+
                 // Make the model emissive/glowing for night sky effect
                 this.milkyWayModel.traverse((child) => {
                     if (child.isMesh) {
@@ -53,31 +61,39 @@ export class Starfield {
                         child.material.blending = THREE.AdditiveBlending;
                         child.material.depthWrite = false;
                         child.material.side = THREE.DoubleSide;
-                        
+
                         // Disable fog so the glow is visible at any distance
                         child.material.fog = false;
-                        
+
                         // Disable distance-based attenuation
                         child.material.toneMapped = false;
-                        
+
                         // Boost base color for more vibrancy
                         if (child.material.color) {
                             child.material.color.multiplyScalar(5.0);
                         }
-                        
+
                         // Add strong emissive glow with colorful tint - high intensity for distance visibility
                         if (child.material.emissive) {
                             child.material.emissive = new THREE.Color(0xcc88ff); // Brighter purple-blue glow
-                            child.material.emissiveIntensity = 24;
+                            // Store base intensity
+                            child.userData.baseEmissiveIntensity = 24.0;
+                            child.material.emissiveIntensity = 24.0;
                         }
-                        
+
                         // Increase material brightness for emissive maps
                         if (child.material.emissiveMap) {
+                            child.userData.baseEmissiveIntensity = 10.0; // Override if map exists
                             child.material.emissiveIntensity = 10.0;
+                        }
+
+                        // Fallback if no emissive set but we want to track it
+                        if (child.userData.baseEmissiveIntensity === undefined) {
+                            child.userData.baseEmissiveIntensity = 1.0;
                         }
                     }
                 });
-                
+
                 this.starsGroup.add(this.milkyWayModel);
                 console.log('Milky Way GLB model loaded successfully');
             },
@@ -92,7 +108,7 @@ export class Starfield {
 
     _createStars() {
         // Main star field - thousands of small stars
-        const starCount = 15000;
+        const starCount = this.settings.count;
         const positions = new Float32Array(starCount * 3);
         const colors = new Float32Array(starCount * 3);
         const sizes = new Float32Array(starCount);
@@ -134,7 +150,8 @@ export class Starfield {
         const material = new THREE.ShaderMaterial({
             uniforms: {
                 time: { value: 0 },
-                opacity: { value: 1.0 }
+                opacity: { value: 1.0 },
+                sizeScale: { value: 1.0 }
             },
             vertexShader: `
                 attribute float size;
@@ -142,13 +159,14 @@ export class Starfield {
                 varying vec3 vColor;
                 varying float vSize;
                 uniform float time;
+                uniform float sizeScale;
                 
                 void main() {
                     vColor = color;
                     vSize = size;
                     
                     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                    gl_PointSize = size * (300.0 / -mvPosition.z);
+                    gl_PointSize = size * sizeScale * (300.0 / -mvPosition.z);
                     gl_Position = projectionMatrix * mvPosition;
                 }
             `,
@@ -219,7 +237,8 @@ export class Starfield {
         const material = new THREE.ShaderMaterial({
             uniforms: {
                 time: { value: 0 },
-                opacity: { value: 1.0 }
+                opacity: { value: 1.0 },
+                sizeScale: { value: 1.0 }
             },
             vertexShader: `
                 attribute float size;
@@ -227,6 +246,7 @@ export class Starfield {
                 varying vec3 vColor;
                 varying float vSize;
                 uniform float time;
+                uniform float sizeScale;
                 
                 void main() {
                     vColor = color;
@@ -236,7 +256,7 @@ export class Starfield {
                     
                     // Twinkling effect
                     float twinkle = sin(time * 2.0 + position.x * 0.01) * 0.3 + 0.7;
-                    gl_PointSize = size * twinkle * (300.0 / -mvPosition.z);
+                    gl_PointSize = size * sizeScale * twinkle * (300.0 / -mvPosition.z);
                     gl_Position = projectionMatrix * mvPosition;
                 }
             `,
@@ -289,16 +309,16 @@ export class Starfield {
         for (let i = 0; i < milkyWayStars; i++) {
             // Create a band across the sky (tilted)
             const theta = Math.random() * Math.PI * 2;
-            
+
             // Concentrate stars in a band with gaussian-like distribution
             const bandWidth = 0.3 + Math.random() * 0.2;
             const phi = Math.PI / 2 + (Math.random() - 0.5) * bandWidth * Math.PI;
-            
+
             const radius = 3800 + Math.random() * 300;
 
             // Rotate the band for more natural look
             const tiltAngle = Math.PI * 0.15;
-            
+
             let x = radius * Math.sin(phi) * Math.cos(theta);
             let y = radius * Math.sin(phi) * Math.sin(theta);
             let z = radius * Math.cos(phi);
@@ -377,14 +397,14 @@ export class Starfield {
     _createNebulaClouds() {
         // Create subtle nebula/dust clouds in the Milky Way
         const cloudCount = 50;
-        
+
         for (let i = 0; i < cloudCount; i++) {
             const theta = Math.random() * Math.PI * 2;
             const phi = Math.PI / 2 + (Math.random() - 0.5) * 0.4 * Math.PI;
             const radius = 3700;
 
             const tiltAngle = Math.PI * 0.15;
-            
+
             let x = radius * Math.sin(phi) * Math.cos(theta);
             let y = radius * Math.sin(phi) * Math.sin(theta);
             let z = radius * Math.cos(phi);
@@ -397,7 +417,7 @@ export class Starfield {
             // Create a sprite for each cloud
             const cloudColors = [0x6666aa, 0x8877aa, 0x7788bb, 0x9988aa];
             const color = cloudColors[Math.floor(Math.random() * cloudColors.length)];
-            
+
             const spriteMaterial = new THREE.SpriteMaterial({
                 color: color,
                 transparent: true,
@@ -408,7 +428,7 @@ export class Starfield {
             const sprite = new THREE.Sprite(spriteMaterial);
             sprite.position.set(x, newY, newZ);
             sprite.scale.setScalar(200 + Math.random() * 300);
-            
+
             this.starsGroup.add(sprite);
         }
     }
@@ -417,21 +437,30 @@ export class Starfield {
         // Update star twinkling
         if (this.starsMesh && this.starsMesh.material.uniforms) {
             this.starsMesh.material.uniforms.time.value = time;
-            this.starsMesh.material.uniforms.opacity.value = visibility;
+            this.starsMesh.material.uniforms.opacity.value = visibility * this.settings.brightness;
+            this.starsMesh.material.uniforms.sizeScale.value = this.settings.sizeScale;
         }
         if (this.brightStars && this.brightStars.material.uniforms) {
             this.brightStars.material.uniforms.time.value = time;
-            this.brightStars.material.uniforms.opacity.value = visibility;
+            this.brightStars.material.uniforms.opacity.value = visibility * this.settings.brightness;
+            this.brightStars.material.uniforms.sizeScale.value = this.settings.sizeScale;
         }
         if (this.milkyWay && this.milkyWay.material.uniforms) {
-            this.milkyWay.material.uniforms.opacity.value = visibility * 0.6;
+            this.milkyWay.material.uniforms.opacity.value = visibility * 0.6 * this.settings.milkyWayOpacity;
         }
-        
+
         // Update Milky Way GLB model opacity based on visibility
+        // Also scale emissive intensity to ensure it fades out despite additive blending
         if (this.milkyWayModel) {
             this.milkyWayModel.traverse((child) => {
                 if (child.isMesh && child.material) {
-                    child.material.opacity = visibility * 0.8;
+                    const opacity = visibility * this.settings.milkyWayOpacity;
+                    child.material.opacity = opacity;
+
+                    // Scale emissive intensity
+                    if (child.userData.baseEmissiveIntensity !== undefined) {
+                        child.material.emissiveIntensity = child.userData.baseEmissiveIntensity * opacity;
+                    }
                 }
             });
             // Slow rotation for subtle animation
