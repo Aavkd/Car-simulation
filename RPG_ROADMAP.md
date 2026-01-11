@@ -55,15 +55,15 @@ This document outlines the step-by-step plan to transform the Racing Simulator i
 
 **Goal**: Allow the player to interact with the world and NPCs.
 
-- [ ] **Interaction Raycaster**:
-    - Modify `PlayerController.js`:
-        - Add `interact()` method (triggered by 'E' key).
-        - Cast ray forward to detect objects with `interactive` tag.
+- [x] **Interaction Raycaster**:
+    - [x] Modify `PlayerController.js`:
+        - [x] Add `interact()` method (triggered by 'E' key).
+        - [x] Cast ray forward to detect objects with `interactive` tag.
 
-- [ ] **NPC Entity**:
-    - Create `NPCEntity` class (extends or wraps generic `SceneObject`).
-    - Properties: `name`, `dialogueRootId`, `behavior` (Idle, Walk, Patrol).
-    - Integration with `SceneObjectManager` to allow placing NPCs in the Editor.
+- [x] **NPC Entity**:
+    - [x] Create `NPCEntity` class (extends or wraps generic `SceneObject`).
+    - [x] Properties: `name`, `dialogueRootId`, `behavior` (Idle, Walk, Patrol).
+    - [x] Integration with `SceneObjectManager` to allow placing NPCs in the Editor.
 
 ---
 

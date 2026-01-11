@@ -161,6 +161,16 @@ export class AssetLibrary {
                 icon: '✈️',
                 type: 'plane',
                 scale: 2.0
+            },
+            // === NPCs ===
+            {
+                id: 'npc_dummy',
+                name: 'Test NPC',
+                path: 'assets/objects/venus_de_milo.glb', // Placeholder model
+                category: 'npc',
+                icon: '👤',
+                type: 'npc',
+                scale: 1.0
             }
         ];
 

@@ -30,7 +30,8 @@ export class InputHandler {
             pitchDown: false,
             pitchDown: false,
             hover: false,  // Vertical lift force (X key)
-            exitPlayMode: false // Escape key
+            exitPlayMode: false, // Escape key
+            interact: false // Interaction key (E / Square)
         };
 
         // Smoothed input values (0-1 range)
@@ -97,6 +98,12 @@ export class InputHandler {
                 if (!this.keys.shiftUp) {
                     this.keys.shiftUp = true;
                     this.onShiftUp?.();
+                }
+                // Also trigger interact if not shiftUp (context dependent, but input handler just sets state)
+                // Actually, let's set interact flag. Logic elsewhere can decide which to use.
+                if (!this.keys.interact) {
+                    this.keys.interact = true;
+                    this.onInteract?.();
                 }
                 break;
             case 'KeyT':
@@ -187,6 +194,7 @@ export class InputHandler {
                 break;
             case 'KeyE':
                 this.keys.shiftUp = false;
+                this.keys.interact = false;
                 break;
             case 'KeyT':
                 this.keys.timePause = false;
@@ -297,7 +305,8 @@ export class InputHandler {
                 sprint: false,
                 yawLeft: false,
                 yawRight: false,
-                hover: false  // Hover toggle (Cross/A button) for plane
+                hover: false,  // Hover toggle (Cross/A button) for plane
+                interact: false // Square/X button
             };
             console.log("Gamepad connected:", gp.id);
         }
@@ -378,6 +387,19 @@ export class InputHandler {
             }
         } else {
             this._trianglePressed = false;
+        }
+
+        // Interact (Square/X - Button 2)
+        // Note: On DualSense this is Square. On Xbox this is X.
+        if (gp.buttons[2].pressed) {
+            if (!this._squarePressed) {
+                this._squarePressed = true;
+                this.gamepad.interact = true;
+                this.onInteract?.();
+            }
+        } else {
+            this._squarePressed = false;
+            this.gamepad.interact = false;
         }
     }
 

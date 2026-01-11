@@ -39,6 +39,11 @@ export class PlayerController {
         this.mouseSensitivity = 0.002;
         this.minPitch = -Math.PI / 2 + 0.1;  // Prevent looking straight down
         this.maxPitch = Math.PI / 2 - 0.1;   // Prevent looking straight up
+
+        // Interaction
+        this.raycaster = new THREE.Raycaster();
+        this.interactables = []; // List of objects to check for interaction
+        this.interactionRange = 4.0; // Distance to search for interactables
     }
 
     /**
@@ -129,6 +134,8 @@ export class PlayerController {
         if (input.gamepad && input.gamepad.sprint) {
             this.isSprinting = true;
         }
+
+        // Interaction is handled via event callback in main.js calling player.interact()
 
         // ==================== MOVEMENT ====================
         // Calculate movement direction based on yaw
@@ -242,5 +249,55 @@ export class PlayerController {
     getLookAtPoint() {
         const dir = this.getLookDirection();
         return this.position.clone().add(dir);
+    }
+
+    /**
+     * Set objects that can be interacted with
+     * @param {Array<THREE.Object3D>} objects 
+     */
+    setInteractables(objects) {
+        this.interactables = objects;
+    }
+
+    /**
+     * Attempt to interact with objects in front of player
+     */
+    interact() {
+        if (!this.interactables || this.interactables.length === 0) return;
+
+        // Setup raycaster
+        const startPos = this.getCameraPosition();
+        const direction = this.getLookDirection();
+
+        this.raycaster.set(startPos, direction);
+        this.raycaster.far = this.interactionRange;
+
+        // Check intersections
+        const intersects = this.raycaster.intersectObjects(this.interactables, true);
+
+        if (intersects.length > 0) {
+            // Find the closest interactive object
+            // Note: intersects are sorted by distance
+            let hitObject = intersects[0].object;
+
+            // Traverse up to find the root object with interactivity logic
+            // (in case we hit a sub-mesh)
+            while (hitObject) {
+                if (hitObject.userData && hitObject.userData.interactive) {
+                    console.log(`[Player] Interacted with: ${hitObject.userData.name}`);
+
+                    if (hitObject.userData.onInteract) {
+                        hitObject.userData.onInteract();
+                    } else {
+                        console.warn('[Player] Object is interactive but has no onInteract callback');
+                    }
+                    return; // Stop after first valid interaction
+                }
+                hitObject = hitObject.parent;
+            }
+        } else {
+            // No hit
+            // console.log('[Player] Nothing to interact with');
+        }
     }
 }

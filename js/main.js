@@ -20,6 +20,7 @@ import { MazdaRX7 } from './core/vehicle-specs/MazdaRX7.js';
 import { ShelbyCobra427 } from './core/vehicle-specs/ShelbyCobra427.js';
 import { EditorController } from './editor/EditorController.js';
 import { RPGManager } from './rpg/systems/RPGManager.js';
+import { NPCEntity } from './rpg/entities/NPCEntity.js';
 
 /**
  * Available car specifications registry
@@ -539,30 +540,26 @@ class Game {
         this.activeVehicle = null;
         this.canvas.requestPointerLock();
 
-        // 5. Initialize Vehicles from Editor Objects
+        // 5. Initialize Vehicles and NPCs from Editor Objects
         this.spawnedVehicles = [];
         let playerSpawnedAtVehicle = false;
+        const interactableObjects = [];
 
-        // Find vehicle objects in the editor scene
+        // Find relevant objects in the editor scene
         const editorObjects = this.editor ? this.editor.objectManager.objects : [];
-        const vehicleObjects = editorObjects.filter(obj =>
-            obj.userData.type === 'car' || obj.userData.type === 'plane'
-        );
 
-        if (vehicleObjects.length > 0) {
-            console.log(`[Game] Found ${vehicleObjects.length} vehicles in editor. Spawning...`);
+        console.log(`[Game] Processing ${editorObjects.length} editor objects for Play Mode...`);
 
-            for (const obj of vehicleObjects) {
-                // Create physics instance based on type
+        if (editorObjects.length > 0) {
+            for (const obj of editorObjects) {
+                // handle Vehicles
                 if (obj.userData.type === 'car') {
+                    // ... (existing car logic) ...
                     // Start with AE86 as base, but we should really load the specific spec
                     let carSpec = ToyotaAE86;
                     if (obj.userData.assetPath.includes('RX-7')) carSpec = MazdaRX7;
                     if (obj.userData.assetPath.includes('cobra')) carSpec = ShelbyCobra427;
 
-                    // Clone the mesh for the physics car (leave original in editor invisible?)
-                    // Actually, the editor disables the object manager, so we can just use the mesh
-                    // BUT Game expects clean meshes. Let's clone.
                     const carMesh = obj.clone();
                     this.scene.add(carMesh);
 
@@ -578,24 +575,25 @@ class Game {
 
                     this.spawnedVehicles.push(carPhysics);
 
-                    // If this is the first car, set it as default 'this.car' for HUD/Camera compatibility
                     if (!this.car) {
                         this.car = carPhysics;
                         this.carMesh = carMesh;
                     }
 
+                    // Vehicles are interactable too (entering them)
+                    // But that logic is currently separate (distance check in toggleVehicleMode).
+                    // We could unify it later, but for now leave as is.
+
                 } else if (obj.userData.type === 'plane') {
+                    // ... (existing plane logic) ...
                     const planeMesh = obj.clone();
                     this.scene.add(planeMesh);
 
                     const planePhysics = new PlanePhysics(planeMesh, this.scene);
                     if (this.terrain) planePhysics.setPhysicsProvider(this.terrain);
 
-                    // Set initial state
                     planePhysics.mesh.position.copy(obj.position);
-                    // Plane rotation might need adjustment if model forward is different
                     planePhysics.mesh.quaternion.copy(obj.quaternion);
-                    // Reset physics state
                     planePhysics.speed = 0;
                     planePhysics.velocity.set(0, 0, 0);
 
@@ -605,16 +603,41 @@ class Game {
                         this.plane = planePhysics;
                         this.planeMesh = planeMesh;
                     }
+
+                } else if (obj.userData.type === 'npc') {
+                    console.log(`[Game] Spawning NPC: ${obj.userData.name}`);
+                    const npcMesh = obj.clone();
+                    this.scene.add(npcMesh);
+
+                    // Create Wrapper Entity
+                    const npcEntity = new NPCEntity(npcMesh, {
+                        name: obj.userData.name,
+                        dialogueRootId: obj.userData.dialogueRootId || 'default'
+                    });
+
+                    // Track for cleanup if needed?
+                    // For now just add mesh to scene.
+                    // We should add to a list to remove later if needed, mostly for cleanup.
+                    // Let's reuse spawnedVehicles or make a new list?
+                    // Reusing spawnedVehicles might be confusing but they share lifecycle (removed on exit).
+                    // Actually let's make a generic spawnedObjects list or just add a .dispose method to it if we push to spawnedVehicles.
+                    // NPCEntity doesn't have physics loop requirements yet, so maybe just standard scene removal is enough.
+                    this.spawnedVehicles.push({
+                        mesh: npcMesh,
+                        dispose: () => { } // nothing special to dispose yet
+                    });
+
+                    interactableObjects.push(npcMesh);
                 }
             }
 
-            // Hide editor objects (they are static visuals)
-            // The editor.disable() call usually handles hiding UI, but objects remain in scene
-            // We should hide them to avoid duplicates (static ghost + physics vehicle)
-            vehicleObjects.forEach(obj => obj.visible = false);
+            // Hide editor objects
+            editorObjects.forEach(obj => obj.visible = false);
 
         } else {
             // FALLBACK: No vehicles placed, spawn default car near player
+            // ... (existing fallback logic unchanged, but need to be careful with replacement)
+            // I will include the fallback logic here to be safe since I'm replacing the whole block
             console.log('[Game] No vehicles in editor, spawning default car.');
 
             const selectedCar = CAR_REGISTRY[this.selectedCarId] || CAR_REGISTRY['ae86'];
@@ -661,6 +684,9 @@ class Game {
         // Set Player Position
         this.player.setPosition(spawnPos, 0);
 
+        // Pass interactables to player
+        this.player.setInteractables(interactableObjects);
+
         // 8. Setup Camera for Player
         this.cameraController.setPlayerMode(true);
 
@@ -683,6 +709,11 @@ class Game {
         this.input.onTimePreset = (preset) => this._setTimePreset(preset);
         this.input.onHeadlightsToggle = () => this._toggleHeadlights();
         this.input.onCameraChange = () => this._handleCameraChange();
+        this.input.onInteract = () => {
+            if (this.isOnFoot && this.player) {
+                this.player.interact();
+            }
+        };
 
         // Hide Cockpit Overlay
         if (this.cockpitOverlay) this.cockpitOverlay.classList.add('hidden');
@@ -1785,5 +1816,5 @@ class Game {
 
 // Start game
 window.addEventListener('DOMContentLoaded', () => {
-    new Game();
+    window.game = new Game();
 });
