@@ -19,15 +19,25 @@ export class QuestManager {
             return;
         }
 
+        // Look up static definition
+        // We assume this.rpgManager.data.QUESTS is an array, so we find by ID
+        // (Optimally this would be a map, but the current file format is an array)
+        const staticDef = this.rpgManager.data.QUESTS.find(q => q.id === questId);
+        if (!staticDef) {
+            console.error(`[QuestManager] Quest definition for ${questId} not found.`);
+            return;
+        }
+
         this.profile.quests[questId] = {
             id: questId,
             status: 'ACTIVE',
             objectiveIndex: 0,
             startedAt: Date.now(),
+            title: staticDef.title, // Cache basics in save for easier UI display
             ...questData
         };
 
-        console.log(`[QuestManager] Started quest: ${questId}`);
+        console.log(`[QuestManager] Started quest: ${staticDef.title} (${questId})`);
         this.profile.save();
         // TODO: Emit 'quest_started' event
     }

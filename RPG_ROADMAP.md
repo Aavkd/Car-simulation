@@ -71,18 +71,43 @@ This document outlines the step-by-step plan to transform the Racing Simulator i
 
 **Goal**: Populate the world with actual narrative content.
 
-- [ ] **Data Definitions**:
-    - [ ] `js/rpg/data/dialogues.js`: Database of all conversation trees.
-    - [ ] `js/rpg/data/quests.js`: Database of missions.
-    - [ ] `js/rpg/data/items.js`: Item catalog.
-    - [ ] `js/rpg/data/npcs.js`: NPC definitions (mesh, default dialogue).
+- [x] **Data Definitions**:
+    - [x] `js/rpg/data/dialogues.js`: Database of all conversation trees.
+    - [x] `js/rpg/data/quests.js`: Database of missions.
+    - [x] `js/rpg/data/items.js`: Item catalog.
+    - [x] `js/rpg/data/npcs.js`: NPC definitions (mesh, default dialogue).
 
-- [ ] **Editor Integration**:
-    - Update `EditorController` to inspect/edit NPC properties (e.g., select Dialogue ID from a dropdown).
+- [ ] **Editor Integration**: (Moved to Phase 5)
 
 ---
 
-## 🖥️ Phase 5: UI Implementation
+
+---
+
+## 🛠️ Phase 5: Advanced Editor Integration
+
+**Goal**: Extend the Level Editor to be a full-featured RPG content creation tool.
+
+- [ ] **NPC Management Extension**:
+    - Extend `SceneObjectManager` to handle `NPCEntity` creation/deletion separate from generic objects.
+    - Implement visual gizmos for NPC patrol paths or interaction zones.
+
+- [ ] **Dedicated RPG Editor Panel**:
+    - Create a new "RPG Mode" or tab in the Editor UI.
+    - **NPC Details**:
+        - Edit name, model, starting dialogue ID.
+        - Configure behavior (Idle, Patrol, Trade).
+    - **Data Managers (CRUD)**:
+        - **Dialogues**: Visual node editor or structured form to create/edit conversation trees.
+        - **Quests**: Form to create quests, define steps, and set rewards.
+        - **Items**: Create custom items and add them to the global registry or specific loot tables.
+
+- [ ] **Scene Persistence**:
+    - Ensure RPG data created in Editor is saved correctly to `level-data.json` or a separate `rpg-data.json`.
+
+---
+
+## 🖥️ Phase 6: UI Implementation
 
 **Goal**: Visual feedback for the RPG elements.
 
@@ -101,7 +126,7 @@ This document outlines the step-by-step plan to transform the Racing Simulator i
 
 ---
 
-## 🏁 Phase 6: Gameplay Loop & Verification
+## 🏁 Phase 7: Gameplay Loop & Verification
 
 **Goal**: Tie it all together into a playable loop.
 

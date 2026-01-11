@@ -167,26 +167,25 @@ Data-driven design for expanding the car roster.
 
 ---
 
-## 9. Future RPG Roadmap
+## 9. RPG Implementation (Phase 4 Status)
+The project has successfully integrated the core RPG architecture and data pipeline.
 
-The transition to an RPG will require extending the current component-based architecture.
+### 9.1 Architecture
+- **RPGManager** (`js/rpg/systems/RPGManager.js`): Singleton orchestrator. Initializes all subsystems and data.
+    - **InventoryManager**: Handles item storage and lookups.
+    - **QuestManager**: Manages quest states, objectives, and progression.
+    - **DialogueSystem**: Logic for traversing conversation trees and triggering events.
+- **Data Layer** (`js/rpg/RPGData.js`):
+    - Central registry importing static definitions from `js/rpg/data/`.
+    - **Files**: `quests.js`, `dialogues.js`, `items.js`, `npcs.js`.
+    - **Format**: JS Objects/Arrays exporting const data (e.g. `export const QUESTS = [...]`).
 
-### 9.1 Directory Structure
-- Leverage `js/rpg/` for all RPG-specific logic.
-- **Proposed Modules**:
-    - `QuestManager.js`: State machine for quest tracking (Start, Active, Completed).
-    - `DialogueSystem.js`: Generic interaction system for NPCs.
-    - `Inventory.js`: Data structure for player items.
+### 9.2 Entities & Spawning
+- **NPCEntity** (`js/rpg/entities/NPCEntity.js`): Wraps a visual mesh with RPG data (Name, Dialogue ID).
+- **Spawning**: `RPGManager` iterates over the `NPCS` data registry on initialization and spawns entity placeholders (Capsules) or models into the scene.
 
-### 9.2 Integration Points
-1.  **Player Extension**:
-    - Modify `PlayerController` to link with an `RPGStats` component (Health, XP, Level).
-    - Add interaction triggers (e.g., "Press E to talk") when nearing NPCs.
-2.  **World Interaction**:
-    - Extend `SceneObjectManager` to support "Interactive Objects" that have RPG data attached (e.g., a chest with loot, an NPC with a dialogue tree).
-3.  **UI Overlay**:
-    - Create a separate HUD layer (DOM-based or Canvas-based) for the RPG interface (Quest log, Inventory, Dialogue box), distinct from the Racing HUD.
-
-### 9.3 Data Design
-- **Quests**: Define in JSON files (referenced in `js/rpg/data/quests.js`).
-- **NPCs**: extend the `SceneObjectManager` to spawn NPCs that use the `PlayerController` physics but usually stay static or follow pathfinding waypoints.
+### 9.3 Interaction Flow
+1.  **Input**: Player presses 'E' (Interact).
+2.  **Detection**: Raycaster finds object with `userData.interactive = true`.
+3.  **Trigger**: `NPCEntity.onInteract()` calls `RPGManager.dialogueSystem.startDialogue(npc.dialogueId)`.
+4.  **Dialogue**: UI (console for now) displays text -> Player selects option -> Triggers Quest (via `startQuest`) or Item events.

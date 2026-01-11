@@ -9,7 +9,7 @@ export class NPCEntity {
         this.data = data;
 
         this.name = data.name || 'Unknown NPC';
-        this.dialogueRootId = data.dialogueRootId || 'default';
+        this.dialogueId = data.dialogueId || data.dialogueRootId || 'default';
         this.behavior = data.behavior || 'idle';
 
         // Setup interactive user data
@@ -43,9 +43,8 @@ export class NPCEntity {
     onInteract() {
         console.log(`[NPCEntity] Interaction with ${this.name}`);
 
-        // TODO: Trigger Dialogue System
         if (window.game && window.game.rpgManager) {
-            // window.game.rpgManager.dialogueSystem.startDialogue(this.dialogueRootId);
+            window.game.rpgManager.dialogueSystem.startDialogue(this.dialogueId);
         }
 
         // Visual feedback (e.g. bounce or emote)

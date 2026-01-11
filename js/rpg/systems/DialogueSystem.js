@@ -11,27 +11,35 @@ export class DialogueSystem {
     }
 
     /**
-     * Starts a dialogue interacton.
+     * Starts a dialogue interaction.
      * @param {string} dialogueId - The ID of the dialogue tree to start.
-     * @param {Object} dialogueData - The full dialogue data structure (until we have a database).
+     * @param {Object} dialogueData - The full dialogue data registry (usually RPGData.DIALOGUES).
      */
-    startDialogue(dialogueId, dialogueData) {
-        if (!dialogueData[dialogueId]) {
+    startDialogue(dialogueId) {
+        // Access static data via RPGManager if not passed directly, or assume passed data is the full registry
+        const allDialogues = this.rpgManager.data.DIALOGUES;
+
+        if (!allDialogues[dialogueId]) {
             console.warn(`[DialogueSystem] Dialogue ${dialogueId} not found.`);
             return;
         }
 
-        this.currentDialogue = dialogueData;
-        this.currentNode = dialogueData[dialogueId];
+        this.currentDialogue = allDialogues[dialogueId];
+        // The new data structure has a 'nodes' object containing 'start', etc.
+        this.currentNode = this.currentDialogue.nodes['start'];
+
+        if (!this.currentNode) {
+            console.error(`[DialogueSystem] Dialogue ${dialogueId} has no 'start' node.`);
+            return;
+        }
 
         console.log(`[DialogueSystem] Started dialogue: ${dialogueId}`);
-        console.log(`[NPC]: ${this.currentNode.text}`);
+        console.log(`[NPC - ${this.currentNode.speaker || 'Unknown'}]: ${this.currentNode.text}`);
 
-        // Check for auto-triggers (e.g. give quest immediately)
         this.processNodeTriggers(this.currentNode);
-
-        // In a real UI, we would display options here.
         this.logOptions();
+
+        // TODO: Emit event to UI to show dialogue
     }
 
     /**
@@ -39,27 +47,44 @@ export class DialogueSystem {
      * @param {number} index - Index of the option selected.
      */
     selectOption(index) {
-        if (!this.currentNode || !this.currentNode.options) return;
+        if (!this.currentNode || !this.currentNode.choices) return;
 
-        const option = this.currentNode.options[index];
+        const option = this.currentNode.choices[index];
         if (!option) {
             console.warn('[DialogueSystem] Invalid option index.');
             return;
         }
 
-        // Check requirements
-        if (option.req && !this.checkRequirement(option.req)) {
+        // Check requirements (if any)
+        if (option.condition && !this.checkRequirement(option.condition)) {
             console.log('[DialogueSystem] Requirement not met for this option.');
             return;
         }
 
         console.log(`[Player]: ${option.text}`);
 
+        // Process immediate actions on the option (e.g. setFlag)
+        this.processOptionActions(option);
+
+        // Move to next node
         if (option.next) {
-            this.currentNode = this.currentDialogue[option.next];
-            console.log(`[NPC]: ${this.currentNode.text}`);
+            this.currentNode = this.currentDialogue.nodes[option.next];
+            if (!this.currentNode) {
+                console.error(`[DialogueSystem] Node ${option.next} not found.`);
+                this.endDialogue();
+                return;
+            }
+
+            console.log(`[NPC - ${this.currentNode.speaker || 'Unknown'}]: ${this.currentNode.text}`);
+
+            // Process triggers on the new node
             this.processNodeTriggers(this.currentNode);
-            this.logOptions();
+
+            if (this.currentNode.end) {
+                this.endDialogue();
+            } else {
+                this.logOptions();
+            }
         } else {
             this.endDialogue();
         }
@@ -69,40 +94,61 @@ export class DialogueSystem {
         console.log('[DialogueSystem] Dialogue ended.');
         this.currentDialogue = null;
         this.currentNode = null;
+        // TODO: Emit event to UI to close dialogue
     }
 
     checkRequirement(req) {
-        // Example: req: { type: 'item', id: 'wrench', count: 1 }
-        if (req.type === 'item') {
-            return this.rpgManager.inventory.hasItem(req.id, req.count);
-        }
-        if (req.type === 'quest_status') {
-            const status = this.rpgManager.questManager.getQuestStatus(req.id);
-            return status === req.status;
+        // Example: req: { stat: 'strength', min: 12 }
+        if (req.stat) {
+            // TODO: Check player stats from profile
+            // For now, assume true or check a dummy stat object
+            return true;
         }
         return true;
     }
 
-    processNodeTriggers(node) {
-        if (!node.trigger) return;
-
-        const t = node.trigger;
-        // Example: trigger: { type: 'quest_start', id: 'quest_01' }
-        if (t.type === 'quest_start') {
-            this.rpgManager.questManager.startQuest(t.id);
+    processOptionActions(option) {
+        if (option.setFlag) {
+            // { key: 'philosophy', value: 'chaos' }
+            this.rpgManager.profile.setFlag(option.setFlag.key, option.setFlag.value);
+            console.log(`[DialogueSystem] Set flag ${option.setFlag.key} = ${option.setFlag.value}`);
         }
-        if (t.type === 'item_give') {
-            this.rpgManager.inventory.addItem(t.id, t.count || 1);
+        if (option.action) {
+            this.handleActionString(option.action);
+        }
+    }
+
+    processNodeTriggers(node) {
+        // Some nodes might have immediate actions upon entering
+        if (node.action) {
+            this.handleActionString(node.action);
+        }
+    }
+
+    handleActionString(actionStr) {
+        // Format: "verb:param" e.g. "acceptQuest:scout_mission" or "openShop:tybalt_scrap"
+        const [verb, param] = actionStr.split(':');
+
+        switch (verb) {
+            case 'acceptQuest':
+                this.rpgManager.questManager.startQuest(param);
+                break;
+            case 'openShop':
+                console.log(`[DialogueSystem] Opening shop: ${param}`);
+                // this.rpgManager.ui.openShop(param);
+                break;
+            default:
+                console.warn(`[DialogueSystem] Unknown action: ${verb}`);
         }
     }
 
     logOptions() {
-        if (!this.currentNode.options) {
-            console.log('[DialogueSystem] (End of conversation)');
+        if (!this.currentNode.choices) {
+            if (!this.currentNode.end) console.log('[DialogueSystem] (No choices, waiting...)');
             return;
         }
-        this.currentNode.options.forEach((opt, i) => {
-            const reqText = opt.req ? ` [REQ: ${JSON.stringify(opt.req)}]` : '';
+        this.currentNode.choices.forEach((opt, i) => {
+            const reqText = opt.condition ? ` [REQ: ${JSON.stringify(opt.condition)}]` : '';
             console.log(`   [${i}] ${opt.text}${reqText}`);
         });
     }

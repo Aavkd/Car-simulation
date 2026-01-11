@@ -88,4 +88,14 @@ export class InventoryManager {
     listItems() {
         console.table(this.profile.inventory);
     }
+
+    /**
+     * Retrieves static item definition.
+     * @param {string} itemId 
+     */
+    getItemDefinition(itemId) {
+        // Access static data via RPGManager
+        // ITEMS is an object map
+        return this.rpgManager.data.ITEMS[itemId];
+    }
 }
