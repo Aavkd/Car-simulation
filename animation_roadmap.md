@@ -34,14 +34,14 @@ This roadmap outlines the implementation of a AAA-quality animation system for t
 ## 🎭 Phase 3: Procedural Layer & Blending
 **Goal:** Add "weight" and realism using blend trees and procedural bone manipulation.
 
-- [ ] **1D/2D Blend Trees**
+- [x] **1D/2D Blend Trees**
     - Create `BlendTree1D.js`: Blend between Idle -> Walk -> Run based on a single float (Speed).
     - Create `BlendTree2D.js`: Blend for strafing (X, Z movement).
-- [ ] **Procedural Spines (Inverse Kinematics)**
+- [x] **Procedural Spines (Inverse Kinematics)**
     - Implement **Head Look**, allowing characters to look at POIs or the Camera.
     - Implement **Torso Twist** to face aiming directions independent of hips.
     - Implement **Foot IK** (optional but recommended) for terrain slope adaptation.
-- [ ] **Layered Animation**
+- [x] **Layered Animation**
     - Allow playing "Upper Body" actions (Attack, Wave, Eat) while "Lower Body" is running or idle.
     - Implement `AnimationLayer` class with masking support (Avatar masks).
 

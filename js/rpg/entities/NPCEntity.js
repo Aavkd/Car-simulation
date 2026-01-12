@@ -1,4 +1,5 @@
 import { AnimationController } from '../../animation/core/AnimationController.js';
+import { HeadLook } from '../../animation/procedural/HeadLook.js';
 
 /**
  * NPCEntity - Represents an interactive character in the world
@@ -18,6 +19,21 @@ export class NPCEntity {
         // We always initialize it so the FSM logic can run (even if no visual clips exist yet)
         const animations = this.mesh.userData.animations || [];
         this.animator = new AnimationController(this.mesh, animations);
+
+        // LocalMotion BlendTree setup
+        this.animator.addBlendTree('Locomotion', [
+            { threshold: 0.0, clip: 'Idle' },
+            { threshold: 2.0, clip: 'Walk' },
+            { threshold: 6.0, clip: 'Run' }
+        ]);
+
+        // Procedural Layers
+        this.headLook = new HeadLook(this.mesh, {
+            headBoneName: 'Head',
+            neckBoneName: 'Neck',
+            speed: 5.0
+        });
+        this.animator.addProceduralLayer(this.headLook);
 
         if (animations.length > 0) {
             // Try to play safe defaults
@@ -66,10 +82,25 @@ export class NPCEntity {
 
             this.animator.update(deltaTime);
         }
+
+        // Procedural Look at Player
+        if (this.headLook && window.game && window.game.player) {
+            // Only look if close enough (e.g. 10 meters)
+            const playerPos = window.game.player.position;
+            const dist = this.mesh.position.distanceTo(playerPos);
+
+            if (dist < 10) {
+                this.headLook.setTarget(playerPos);
+            } else {
+                this.headLook.setTarget(null); // Return to neutral
+            }
+        }
     }
 
     onInteract() {
         console.log(`[NPCEntity] Interaction with ${this.name}`);
+
+
 
         if (window.game && window.game.rpgManager) {
             window.game.rpgManager.dialogueSystem.startDialogue(this.dialogueId);

@@ -3,6 +3,9 @@ import { StateMachine } from '../fsm/StateMachine.js';
 import { IdleState } from '../fsm/states/IdleState.js';
 import { MoveState } from '../fsm/states/MoveState.js';
 import { AirState } from '../fsm/states/AirState.js';
+import { BlendTree1D } from './BlendTree1D.js';
+import { AnimationLayer } from './AnimationLayer.js';
+
 
 /**
  * AnimationController
@@ -21,6 +24,16 @@ export class AnimationController {
         // Map clip names to AnimationActions
         this.actions = new Map();
         this.currentAction = null;
+
+
+
+        this.blendTrees = new Map();
+        this.activeBlendTree = null;
+
+        this.proceduralLayers = [];
+
+        // Animation Layers (Masked)
+        this.layers = new Map();
 
         // Initialize State Machine
         this.fsm = new StateMachine(this);
@@ -100,6 +113,133 @@ export class AnimationController {
      * Update the mixer and FSM
      * @param {number} delta - Time delta in seconds
      */
+    /**
+     * Stop all animations
+     */
+    stopAll() {
+        this.mixer.stopAllAction();
+        this.currentAction = null;
+        if (this.activeBlendTree) {
+            this.activeBlendTree.deactivate();
+            this.activeBlendTree = null;
+        }
+    }
+
+    /**
+     * Define a new Blend Tree
+     * @param {string} name 
+     * @param {Array<{threshold: number, clip: string}>} thresholds 
+     */
+    addBlendTree(name, thresholds) {
+        const tree = new BlendTree1D(this, name, thresholds);
+        this.blendTrees.set(name, tree);
+    }
+
+    /**
+     * Activate a Blend Tree
+     * @param {string} name 
+     */
+    playBlendTree(name) {
+        const tree = this.blendTrees.get(name);
+        if (!tree) return;
+
+        if (this.activeBlendTree === tree) return;
+
+        // Stop current single action if any
+        if (this.currentAction) {
+            this.currentAction.fadeOut(0.2);
+            this.currentAction = null;
+        }
+
+        // Deactivate old tree
+        if (this.activeBlendTree) {
+            this.activeBlendTree.deactivate();
+        }
+
+        this.activeBlendTree = tree;
+        this.activeBlendTree.activate();
+    }
+
+    /**
+     * Update a parameter on the active blend tree
+     * @param {number} value 
+     */
+    setBlendParameter(value) {
+        if (this.activeBlendTree) {
+            this.activeBlendTree.update(value);
+        }
+    }
+
+    getClipNames() {
+        return Array.from(this.actions.keys());
+    }
+
+    /**
+     * Add a masked animation layer
+     * @param {string} name 
+     * @param {string} rootBoneName 
+     */
+    addLayer(name, rootBoneName) {
+        const layer = new AnimationLayer(this, name, rootBoneName);
+        this.layers.set(name, layer);
+    }
+
+    /**
+     * Play a clip on a specific layer
+     * @param {string} layerName 
+     * @param {string} clipName 
+     */
+    playLayer(layerName, clipName) {
+        const layer = this.layers.get(layerName);
+        if (layer) {
+            layer.play(clipName);
+        }
+    }
+
+    /**
+     * Stop a layer
+     * @param {string} layerName 
+     */
+    stopLayer(layerName) {
+        const layer = this.layers.get(layerName);
+        if (layer) {
+            layer.stop();
+        }
+    }
+
+    /**
+     * Helper to find a bone by partial name
+     * @param {string} name 
+     */
+    _findBone(name) {
+        let bone = null;
+        if (!this.mesh) return null;
+
+        this.mesh.traverse(child => {
+            if (child.isBone && child.name.includes(name)) {
+                // Return the first match. 
+                // Warning: might be vague if "Spine" matches "Spine1", "Spine2". 
+                // Usually we want the parent-most one, which traverse order (Top-Down) usually gives?
+                // Actually traverse goes children first? No, default is pre-order (root first).
+                // So the first one we hit is likely the parent.
+                if (!bone) bone = child;
+            }
+        });
+        return bone;
+    }
+
+    /**
+     * Add a procedural animation layer (e.g. HeadLook, FootIK)
+     * @param {Object} layer - Must have update(delta) method
+     */
+    addProceduralLayer(layer) {
+        this.proceduralLayers.push(layer);
+    }
+
+    /**
+     * Update the mixer and FSM
+     * @param {number} delta - Time delta in seconds
+     */
     update(delta) {
         if (this.mixer) {
             this.mixer.update(delta);
@@ -107,6 +247,13 @@ export class AnimationController {
         if (this.fsm) {
             this.fsm.update(delta);
         }
+
+        // Update procedural layers AFTER mixer to override bone transforms
+        this.proceduralLayers.forEach(layer => {
+            if (layer.update) {
+                layer.update(delta);
+            }
+        });
     }
 
     /**

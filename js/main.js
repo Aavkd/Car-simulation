@@ -709,6 +709,7 @@ class Game {
                     // Add to tracked objects
                     this.spawnedVehicles.push({
                         mesh: npcMesh,
+                        update: (dt) => npcEntity.update(dt),
                         dispose: () => { }
                     });
 
