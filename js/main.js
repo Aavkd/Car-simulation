@@ -19,6 +19,7 @@ import { ToyotaAE86 } from './core/vehicle-specs/ToyotaAE86.js';
 import { MazdaRX7 } from './core/vehicle-specs/MazdaRX7.js';
 import { ShelbyCobra427 } from './core/vehicle-specs/ShelbyCobra427.js';
 import { EditorController } from './editor/EditorController.js';
+import { AnimatorEditorController } from './editor/animator/AnimatorEditorController.js';
 import { RPGManager } from './rpg/systems/RPGManager.js';
 import { NPCEntity } from './rpg/entities/NPCEntity.js';
 import { BlackHole } from './environment/BlackHole.js';
@@ -59,7 +60,8 @@ import { PlanePhysics } from './core/plane.js';
 const GameState = {
     MENU: 'menu',
     PLAY: 'play',
-    EDITOR: 'editor'
+    EDITOR: 'editor',
+    ANIMATOR: 'animator'
 };
 
 /**
@@ -275,7 +277,14 @@ class Game {
         this.input.onRetroToggle = () => this._toggleRetroFilter();
         this.input.onAsciiToggle = () => this._toggleAsciiFilter();
         this.input.onHalftoneToggle = () => this._toggleHalftoneFilter();
-        this.input.onExitPlayMode = () => this.exitPlayTestMode();
+        this.input.onExitPlayMode = () => {
+            if (this.gameState === GameState.ANIMATOR) {
+                this._exitAnimatorState();
+            } else {
+                this.exitPlayTestMode();
+            }
+        };
+        this.input.onAnimatorToggle = () => this._toggleAnimatorMode();
 
         // Hide loading screen, show main menu
         this.loadingScreen.classList.add('hidden');
@@ -595,6 +604,68 @@ class Game {
         this.editor.enable();
 
         console.log(`[Game] Entered EDITOR state with base level: ${levelConfig.name}`);
+    }
+
+    /**
+     * Toggle Animator Mode (F8)
+     */
+    async _toggleAnimatorMode() {
+        if (this.gameState === GameState.ANIMATOR) {
+            this._exitAnimatorState();
+        } else {
+            await this._enterAnimatorState();
+        }
+    }
+
+    async _enterAnimatorState() {
+        console.log('[Game] Entering ANIMATOR state');
+
+        // Store previous state to return to
+        if (this.gameState !== GameState.ANIMATOR) {
+            this.previousState = this.gameState;
+        }
+
+        this.gameState = GameState.ANIMATOR;
+
+        // Initialize Animator Controller if needed
+        if (!this.animator) {
+            this.animator = new AnimatorEditorController(this);
+            await this.animator.initialize();
+        }
+
+        // Enable Animator UI
+        this.animator.enable();
+
+        // Pause Game Time?
+        // Maybe we want time to continue for animations, but physics to pause?
+        // For now, let's keep everything running but overlay the UI.
+
+        // Disable other interactions if needed
+        if (this.editor) this.editor.disable();
+
+        // Unlock pointer if locked
+        if (document.pointerLockElement) {
+            document.exitPointerLock();
+        }
+    }
+
+    _exitAnimatorState() {
+        console.log('[Game] Exiting ANIMATOR state');
+
+        if (this.animator) {
+            this.animator.disable();
+        }
+
+        // Return to previous state
+        if (this.previousState) {
+            this.gameState = this.previousState;
+            // Re-enable editor if we came from there
+            if (this.gameState === GameState.EDITOR && this.editor) {
+                this.editor.enable();
+            }
+        } else {
+            this.gameState = GameState.PLAY;
+        }
     }
 
     /**
@@ -1414,7 +1485,7 @@ class Game {
     _setupPointerLock() {
         // Request pointer lock on click when on foot
         this.canvas.addEventListener('click', () => {
-            if (this.isOnFoot && !document.pointerLockElement) {
+            if (this.isOnFoot && !document.pointerLockElement && this.gameState === GameState.PLAY) {
                 this.canvas.requestPointerLock();
             }
         });
@@ -1713,6 +1784,13 @@ class Game {
         if (this.gameState === GameState.EDITOR) {
             if (this.editor) {
                 this.editor.update(deltaTime);
+            }
+        }
+
+        // ==================== ANIMATOR STATE ONLY ====================
+        if (this.gameState === GameState.ANIMATOR) {
+            if (this.animator) {
+                this.animator.update(deltaTime);
             }
         }
 

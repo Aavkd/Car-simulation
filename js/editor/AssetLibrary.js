@@ -251,7 +251,15 @@ export class AssetLibrary {
     async loadModel(path) {
         // Check cache first
         if (this.modelCache.has(path)) {
-            return this.modelCache.get(path).scene.clone();
+            const cached = this.modelCache.get(path);
+            // Use SkeletonUtils to clone properly (handles SkinnedMesh + Bones)
+            const clone = SkeletonUtils.clone(cached.scene);
+
+            // Re-attach userData animations (SkeletonUtils clips them? No, it clones the graph)
+            if (cached.animations) {
+                clone.userData.animations = cached.animations;
+            }
+            return clone;
         }
 
         // Load model
@@ -262,14 +270,18 @@ export class AssetLibrary {
                     // Cache the original
                     this.modelCache.set(path, gltf);
 
-                    // Attach animations to the scene's userData so they persist on clone
-                    // Note: Standard clone() doesn't clone animations array, but does clone userData
+                    // Attach animations to the scene's userData
+                    if (gltf.animations && gltf.animations.length > 0) {
+                        gltf.scene.userData.animations = gltf.animations;
+                    }
                     if (gltf.animations && gltf.animations.length > 0) {
                         gltf.scene.userData.animations = gltf.animations;
                     }
 
-                    // Return a clone
-                    resolve(gltf.scene.clone());
+                    // Return a proper clone
+                    const clone = SkeletonUtils.clone(gltf.scene);
+                    clone.userData.animations = gltf.animations; // Ensure animations are passed
+                    resolve(clone);
                 },
                 undefined,
                 reject

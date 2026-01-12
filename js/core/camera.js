@@ -101,6 +101,8 @@ export class CameraController {
         // Player mode (on-foot first person)
         this.isPlayerMode = false;
 
+        this.enabled = true; // Control flag
+
         this._bindMouseEvents();
     }
 
@@ -116,6 +118,8 @@ export class CameraController {
     }
 
     _onMouseWheel(e) {
+        if (!this.enabled) return;
+
         // e.deltaY > 0 means scrolling down (zoom out), < 0 means scrolling up (zoom in)
         this.currentDistance += e.deltaY * this.zoomSensitivity;
 
@@ -130,6 +134,8 @@ export class CameraController {
     }
 
     _onMouseDown(e) {
+        if (!this.enabled) return;
+
         if (e.button === 0) { // Left click
             this.isMouseDown = true;
             this.lastMouseX = e.clientX;
@@ -144,6 +150,7 @@ export class CameraController {
     }
 
     _onMouseMove(e) {
+        if (!this.enabled) return;
         if (!this.isMouseDown) return;
 
         const deltaX = e.clientX - this.lastMouseX;
@@ -503,6 +510,91 @@ export class CameraController {
         // Fixed FOV for player mode
         const targetFov = 75;
         this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, this.fovSmoothing * deltaTime);
+        this.camera.fov = this.currentFov;
+        this.camera.updateProjectionMatrix();
+    }
+
+
+    /**
+     * Update camera orbiting around a target position (Absolute World Orbit)
+     * Used for Editor/Animator modes where we want to inspsect an object from all angles
+     * regardless of its rotation.
+     * @param {THREE.Vector3} targetPos - Center of orbit
+     * @param {number} deltaTime - Time step
+     */
+    updateOrbit(targetPos, deltaTime) {
+        if (!targetPos) return;
+
+        const config = this.modeConfigs['chase']; // Default to chase config for smooth orbit params
+        const positionSmoothing = config.positionSmoothing || this.positionSmoothing;
+        const lookAtSmoothing = config.lookAtSmoothing || this.lookAtSmoothing;
+
+        // Smooth orbit angle interpolation
+        this.orbitAngleX = THREE.MathUtils.lerp(this.orbitAngleX, this.targetOrbitX, 10 * deltaTime);
+        this.orbitAngleY = THREE.MathUtils.lerp(this.orbitAngleY, this.targetOrbitY, 10 * deltaTime);
+
+        // Calculate offset based on Spherical coordinates
+        // distance, phi (vertical), theta (horizontal)
+        // orbitAngleY is pitch (-0.2 to 1.2). Map to Phi (polar angle from Y up)
+        // phi 0 = up, phi PI = down.
+        // We want 0 orbitAngleY -> slightly above horizon.
+
+        // Let's use the existing logic from update() but strict world axis
+
+        let offsetX = 0;
+        let offsetZ = this.currentDistance; // Start behind (or just distance)
+        let offsetY = 0;
+
+        // Rotate around X (Pitch) - effectively changing Y and Z
+        // In update(), we used sin/cos on Y. 
+        // Let's stick to standard spherical conversion for cleanliness or reuse logic?
+        // Reuse logic to maintain 'feel' consistency:
+
+        // Horizontal rotation (Theta)
+        const cosX = Math.cos(this.orbitAngleX);
+        const sinX = Math.sin(this.orbitAngleX);
+
+        // Vertical rotation (Phi-ish)
+        const cosY = Math.cos(this.orbitAngleY); // Scale horizontal radius
+        const sinY = Math.sin(this.orbitAngleY); // Height offset
+
+        // Apply Vertical (Pitch)
+        // As orbitAngleY goes up, camera goes up.
+        // Horizontal distance shrinks by cosY
+        const r = this.currentDistance * cosY;
+        offsetY = this.currentDistance * sinY;
+
+        // Apply Horizontal (Yaw)
+        offsetX = r * sinX;
+        offsetZ = r * cosX;
+
+        // Height offset from target center (e.g. look at center/head not feet)
+        const lookAtHeight = 1.0;
+
+        // Desired Position
+        const desiredPosition = new THREE.Vector3(
+            targetPos.x + offsetX,
+            targetPos.y + offsetY + lookAtHeight,
+            targetPos.z + offsetZ
+        );
+
+        // Smooth Camera Position
+        this.currentPosition.lerp(desiredPosition, positionSmoothing * deltaTime);
+
+        // Look At Target
+        const desiredLookAt = new THREE.Vector3(
+            targetPos.x,
+            targetPos.y + lookAtHeight,
+            targetPos.z
+        );
+        this.currentLookAt.lerp(desiredLookAt, lookAtSmoothing * deltaTime);
+
+        // Apply
+        this.camera.position.copy(this.currentPosition);
+        this.camera.lookAt(this.currentLookAt);
+
+        // Reset FOV
+        this.currentFov = THREE.MathUtils.lerp(this.currentFov, 60, this.fovSmoothing * deltaTime);
         this.camera.fov = this.currentFov;
         this.camera.updateProjectionMatrix();
     }

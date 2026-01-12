@@ -35,7 +35,8 @@ export class InputHandler {
             hover: false,  // Vertical lift force (X key)
             exitPlayMode: false, // Escape key
             interact: false, // Interaction key (E / Square)
-            editorToggle: false // F9 key
+            editorToggle: false, // F9 key
+            animatorToggle: false // F8 key
         };
 
         // Smoothed input values (0-1 range)
@@ -178,6 +179,13 @@ export class InputHandler {
             case 'KeyX':
                 this.keys.hover = true;
                 break;
+            case 'F8':
+                if (!this.keys.animatorToggle) {
+                    this.keys.animatorToggle = true;
+                    this.onAnimatorToggle?.();
+                }
+                e.preventDefault();
+                break;
             case 'Escape':
                 if (!this.keys.exitPlayMode) {
                     this.keys.exitPlayMode = true;
@@ -257,6 +265,9 @@ export class InputHandler {
             case 'Digit3':
             case 'Digit4':
                 this.keys.timePreset = false;
+                break;
+            case 'F8':
+                this.keys.animatorToggle = false;
                 break;
             case 'KeyX':
                 this.keys.hover = false;

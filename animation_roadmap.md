@@ -46,21 +46,20 @@ This roadmap outlines the implementation of a AAA-quality animation system for t
     - Implement `AnimationLayer` class with masking support (Avatar masks).
 
 ## 🎬 Phase 4: Deep Animator Editor (Distinct from F9)
-**Goal:** A simplified "Unity Animator" style editor to visualize and tweak state machines in real-time.
+**Goal:** A "Unity Animator" style editor to visualize and tweak state machines in real-time.
 
-- [ ] **Editor Core** `js/editor/animator/`
+- [x] **Editor Core** `js/editor/animator/`
     - **Toggle**: Use `F8` to switch to Animator Mode.
     - **Selection**: Click a character in the world to "Inspect" their animator.
-- [ ] **Visual Graph (GUI) **
+- [x] **Visual Graph (GUI) **
     - **Nodes**: innovative UI showing current active State (highlighted).
     - **Parameters**: Real-time slider adjustments for `Speed`, `Health`, `IsGrounded`.
     - **Transition Rules**: View/Edit transition conditions (e.g., `Speed > 0.1` → Move).
-- [ ] **Timeline / Preview**
-    - Scrubber to test specific animations on the selected character.
-    - Scrubber to test specific animations on the selected character.
-    - "Record" button to capture a sequence of inputs and replay it to test transitions.
+- [x] **Timeline / Preview**
+    - [x] Implement animation scrubber.
+    - [ ] "Record" button to capture a sequence of inputs and replay it to test transitions. ⏳ Pending
 - [ ] **Deep Animation Creation Mode**
-    - **Visual Pose Editor**:
+    - [ ] **Visual Pose Editor**: ⏳ Pending
         - Select bones (FK) or effectors (IK) to create key poses.
         - "Ghosting" / Onion skinning to see previous frames.
     - **Timeline & Keyframing**:

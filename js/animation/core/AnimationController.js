@@ -40,6 +40,7 @@ export class AnimationController {
         this._initializeFSM();
 
         this._initializeActions();
+        this.paused = false;
     }
 
     _initializeFSM() {
@@ -241,6 +242,10 @@ export class AnimationController {
      * @param {number} delta - Time delta in seconds
      */
     update(delta) {
+        if (this.paused) {
+            // console.log('AnimationController paused'); // Uncomment to debug
+            return;
+        }
         if (this.mixer) {
             this.mixer.update(delta);
         }
