@@ -1,21 +1,35 @@
-# 🏎️ Universal Racing & Flight Simulator
+# 🏎️ Universal Racing & RPG Simulator
 
-> **A browser-based, high-fidelity vehicle simulation engine building on Three.js.**  
-> Features realistic raycast vehicle physics, 6-DOF aerodynamics, infinite procedural terrains, and a fully-featured in-game level editor.
+> **A browser-based, high-fidelity vehicle simulation engine evolving into an open-world RPG.**  
+> Features realistic raycast vehicle physics, 6-DOF aerodynamics, infinite procedural terrains, and a rich narrative quest system.
 
 ![Three.js](https://img.shields.io/badge/Three.js-r160-black?logo=three.js)
 ![Physics](https://img.shields.io/badge/Physics-Custom_RigidBody-red)
 ![Status](https://img.shields.io/badge/Status-Active_Development-brightgreen)
+![RPG](https://img.shields.io/badge/RPG-Quests%20%26%20Dialogues-gold)
+
+---
+
+## 📸 Gallery
+
+| | |
+|:---:|:---:|
+| ![Day/Night Cycle](docs/images/uploaded_image_4_1768197378777.png)<br>_Dynamic Day/Night Cycle & Volumetric Fog_ | ![Level Editor](docs/images/uploaded_image_1_1768197378777.png)<br>_Real-time Level Editor with Asset Library_ |
+| ![RPG Elements](docs/images/uploaded_image_0_1768197378777.png)<br>_Narrative Events & Cosmic Phenomena_ | ![Flight](docs/images/uploaded_image_3_1768197378777.png)<br>_6-DOF Flight & Surfing Mechanics_ |
+
+![Procedural Terrain](docs/images/uploaded_image_2_1768197378777.png)
+_Infinite Procedural Terrains (e.g., Crystallized Moon)_
 
 ---
 
 ## 📚 Table of Contents
 - [✨ Key Features](#-key-features)
 - [🎮 Controls & Input](#-controls--input)
-- [🔧 Technical Architecture](#-technical-architecture)
+- [🗺️ RPG Systems](#-rpg-systems)
+- [🛠️ Creative Studio (Editor)](#-creative-studio-editor)
 - [🏎️ Physics Engine Deep Dive](#-physics-engine-deep-dive)
 - [🌌 Rendering & Visuals](#-rendering--visuals)
-- [🛠️ Level Editor Manual](#-level-editor-manual)
+- [🔧 Technical Architecture](#-technical-architecture)
 - [🚀 Content Overview](#-content-overview)
 - [📝 Installation](#-installation)
 
@@ -23,148 +37,119 @@
 
 ## ✨ Key Features
 
-### Core Gameplay
-- **Hybrid Vehicle System**: Seamlessly switch between realistic cars, stunt planes, and on-foot exploration.
-- **Infinite Worlds**: Procedurally generated terrains including infinite ice mountains, deep space voids, and vaporwave highways.
-- **Dynamic Time & Weather**: Full 24-hour day/night cycle with volumetric fog, wind effects, and atmospheric scattering.
+### 🌍 Open-World RPG
+- **Quest System**: Engage in multi-stage narrative missions. Track objectives via the HUD.
+- **Interactive NPCs**: Talk to characters like "Mechanic Mike" or the mysterious "Observer".
+- **Dialogue Trees**: Branching conversations with choices that affect outcomes.
+- **Inventory & Economy**: Collect parts, trade items, and upgrade your vehicle.
 
-### Advanced Physics
-- **Raycast Suspension**: 4-point independent suspension with compression damping and bump stops.
+### 🏎️ & ✈️ Hybrid Simulation
+- **Raycast Chassis**: 4-point independent suspension with compression damping and bump stops.
 - **Tire Model**: Pacejka-inspired friction curves with surface-dependent grip (Tarmac, Ice, Sand, Dirt).
-- **Aerodynamics**: Drag, lift, and downforce simulation for both cars and planes.
-- **Flight Dynamics**: 6-DOF physics with thrust vectoring, stalling, and banking mechanics.
+- **Aerodynamics**: 6-DOF physics with thrust vectoring, stalling, and banking mechanics.
+- **Walker Mode**: Get out of the car! Explore on foot with First-Person control.
+- **Drift Logic**: Custom friction curve allowing for sustained, controllable slides.
 
-### Creative Tools
+### 🎨 Creative Studio
 - **In-Game Editor**: Fly-camera based editor to place objects, ramps, and cosmic phenomena in real-time.
 - **Procedural Objects**: Configure black holes, nebulae, and loop-the-loops with tweakable parameters.
-- **Save/Load System**: Export your custom tracks to JSON and share them.
-
----
-
-## 📁 Project Structure & Architecture
-
-The project follows a modular, component-based architecture designed for extensibility.
-
-```bash
-Racing/
-├── index.html              # Main entry point (DOM structure, UI overlay)
-├── styles.css              # Glassmorphism UI, HUD, and Editor styling
-├── js/
-│   ├── main.js             # Game Bootstrapper & State Machine (Menu/Play/Editor)
-│   │
-│   ├── core/               # Central Systems
-│   │   ├── input.js        # Universal input handler (Keyboard + Gamepad)
-│   │   ├── camera.js       # Camera controller (Chase, Cockpit, Fly modes)
-│   │   ├── car.js          # Car entity logic (Visuals + Audio + Input mapping)
-│   │   ├── plane.js        # Plane entity logic & Aerodynamics
-│   │   ├── player.js       # On-foot first-person controller
-│   │   └── vehicle-specs/  # Configuration files for each car (AE86, RX7, Cobra)
-│   │
-│   ├── physics/            # Deterministic Physics Engine
-│   │   ├── new_car_physics.js  # The custom RigidBody + Suspension engine
-│   │   ├── physics-provider.js # Interface for terrain collision queries
-│   │   └── car_physics.js      # (Legacy) Old physics implementation
-│   │
-│   ├── environment/        # Visual Enivronment
-│   │   ├── sky.js          # Day/Night cycle & Atmospheric scattering
-│   │   ├── starfield.js    # Procedural stars & Milky Way rendering
-│   │   ├── wind.js         # Volumetric fog & wind effect controller
-│   │   └── BlackHole.js    # Shader-based cosmic entity
-│   │
-│   ├── terrain/            # Infinite Terrain Generators
-│   │   ├── terrain.js      # Base class & Simplex noise utils
-│   │   ├── deep-space.js   # Void generator
-│   │   ├── city.js         # Procedural city grid generator
-│   │   └── ...             # (dunes.js, everest.js, ice-mountain.js, etc.)
-│   │
-│   ├── editor/             # Level Editor System
-│   │   ├── EditorController.js # Editor state logic & UI bindings
-│   │   ├── SceneObjectManager.js # Gizmos & Object placement logic
-│   │   ├── AssetLibrary.js     # Registry of placeable props
-│   │   └── LevelSerializer.js  # JSON Import/Export logic
-│   │
-│   └── levels/             # Data
-│       ├── level-data.js   # Configuration presets for all levels
-│       └── level-manager.js # Factory for instantiating terrain
-│
-└── assets/                 # Binary Assets
-    ├── models/             # GLTF/GLB 3D models (Cars, Plane, Props)
-    └── texture/            # Textures & Sprites
-```
-
-### Architectural Highlights
-
-1.  **State Machine (`main.js`)**
-    The game operates efficiently by sequestering logic into three distinct states:
-    -   `MENU`: Lightweight rendering, UI focused.
-    -   `PLAY`: Full physics simulation loop, HUD active.
-    -   `EDITOR`: Physics paused, `FlyControls` active, Object manipulation enabled.
-
-2.  **Physics Decoupling**
-    The physics engine (`new_car_physics.js`) is entirely math-based and decoupled from Three.js. It accepts an Input state and a `PhysicsProvider` (terrain), then outputs a raw position/quaternion. This separation allows the physics to run at a fixed timestep for determinism, while the visuals interpolate at the monitor's refresh rate.
-
-3.  **Terrain Strategy Pattern**
-    All terrains share a common interface. The `LevelManager` instantiates the correct class (e.g., `DunesGenerator` or `CityGenerator`) at runtime. This makes adding new infinite worlds as simple as creating a new class file and adding it to the registry.
+- **Visual Filters**: Switch between **Retro 16-bit** (`F4`), **ASCII** (`F6`), and **Halftone** (`F7`) shaders.
+- **Save/Load System**: Export your custom tracks (including RPG data) to JSON and share them.
 
 ---
 
 ## 🎮 Controls & Input
 
-The game supports automatic switching between Keyboard/Mouse and Gamepad (DualSense/Xbox) inputs.
+The game handles seamless switching between **Driving**, **Flying**, **On-Foot**, and **Editor** modes. Supports Keyboard & Mouse and Gamepad (DualSense/Xbox).
 
-### 🚗 Car Controls
+### 🚶 On-Foot (Walker Mode)
 | Action | Keyboard | Gamepad |
 |--------|----------|---------|
-| **Throttle** | `W` / `↑` | `R2` / `Right Trigger` |
-| **Brake / Reverse** | `S` / `↓` | `L2` / `Left Trigger` |
-| **Steering** | `A` `D` / `←` `→` | `Left Stick` |
+| **Move** | `W` `A` `S` `D` | `Left Stick` |
+| **Look** | Mouse | `Right Stick` |
+| **Sprint** | `Shift` | `L3` |
+| **Interact/Talk** | `E` | `Square` / `X` |
+| **Enter Vehicle** | `F` | `Triangle` / `Y` |
+| **Jump** | `Space` | `Cross` / `A` |
+
+### 🚗 Driving
+| Action | Keyboard | Gamepad |
+|--------|----------|---------|
+| **Throttle** | `W` | `R2` / `RT` |
+| **Brake/Reverse** | `S` | `L2` / `LT` |
+| **Steer** | `A` `D` | `Left Stick` |
 | **Handbrake** | `Space` | `Circle` / `B` |
-| **Nitro / Sprint** | `Shift` | `L3` |
-| **Enter/Exit Vehicle** | `F` | `Triangle` / `Y` |
+| **Nitro** | `Shift` | `L3` |
 | **Headlights** | `H` | - |
-| **Shift Up (Manual)** | `E` | `R1` |
-| **Shift Down (Manual)** | `A` | `L1` |
+| **Shift Up/Down** | `E` / `A` | `R1` / `L1` |
 
 ### ✈️ Flight Controls
 | Action | Keyboard | Gamepad |
 |--------|----------|---------|
 | **Pitch** (Nose Up/Down) | `W` / `S` | `Left Stick Y` |
-| **Roll** | `Q` / `D` | `Left Stick X` (or Steering) |
+| **Roll** | `Q` `D` | `Right Stick X` |
 | **Yaw** (Rudder) | `A` / `E` | `L1` / `R1` |
 | **Thrust** | `Shift` | `R2` |
-| **Air Brake / Reverse** | `S` (Ground) | `L2` |
+| **Air Brake** | `S` | `L2` |
 | **Hover Mode** | `X` | `Cross` / `A` |
 
-### 🛠️ Editor & General
+### 🛠️ Editor & System
 | Action | Key | Description |
 |--------|-----|-------------|
-| **Toggle Camera** | `C` | Cycle between Chase, Cockpit, Hood, and On-Foot views |
-| **Time Control** | `T` | Pause/Resume Time |
-| **Time Speed** | `[` `]` | Decrease/Increase day/night cycle speed |
-| **Retro Mode** | `F4` | Toggle 16-bit CRT shader effect |
-| **Debug Mode** | `P` | Show physics debug lines (suspension rays, forces) |
+| **Toggle Editor** | `F9` | Switch between Play and Editor mode instantly. |
+| **Retro Filter** | `F4` | Toggle CRT/Pixel shader. |
+| **ASCII Filter** | `F6` | Toggle Matrix-style ASCII rendering. |
+| **Halftone Filter** | `F7` | Toggle Comic book style. |
+| **Time Scale** | `[` `]` | Speed up or slow down time. |
+| **Freeze Time** | `T` | Pause the day/night cycle. |
+| **Debug Lines** | `P` | Show suspension rays and physics forces. |
 
 ---
 
-## 🔧 Technical Architecture
+## 🗺️ RPG Systems
 
-### Game Loop & State Machine
-The application runs on a strict state machine architecture defined in `main.js`:
-1.  **MENU**: Level selection, vehicle configuration, and settings.
-2.  **PLAY**: Active gameplay loop with physics steps and rendering.
-3.  **EDITOR**: Paused physics, enabled fly-camera, and object manipulation tools.
+The simulation now features a persistence layer for role-playing elements.
 
-### Component System
--   **Core**: `Game` class initializes subsystems (Renderer, Input, Audio).
--   **Physics**: Decoupled physics engine running on a fixed timestep for deterministic behavior.
--   **Environment**: Modular systems for Sky (`sky.js`), Stars (`starfield.js`), and Particles (`spark-system.js`).
--   **Terrain**: Strategy pattern for terrain generation. Each level type (`dunes.js`, `deep-space.js`) implements a common `TerrainGenerator` interface.
+### 🗣️ Dialogue & Quests
+- **Interaction**: Approach an NPC and press `E`. A letterboxed cinema view will trigger.
+- **Branching**: Your choices matter. Some options require specific items or reputation levels.
+- **Quest Log**: Tracking is automatic. Notifications appear (Top Left) when objectives are updated.
+- **Rewards**: Completing quests grants XP, Money, or unique Vehicle Parts.
 
-4.  **Level Editor Architecture**
-    The editor uses a composition pattern where `EditorController` orchestrates three specialized subsystems:
-    -   `SceneObjectManager`: Handles raycasting, gizmo manipulation, and object placement.
-    -   `AssetLibrary`: Manages asynchronous loading and previewing of 3D assets.
-    -   `LevelSerializer`: Converts the scene graph into a JSON schema (position, rotation, scale, metadata) for persistence.
+### 💾 Save System
+- **Auto-Save**: Character progress (XP, Inventory) and World State (Placed objects) are saved to `LocalStorage`.
+- **JSON Export**: You can export your entire level, including custom NPC placement and quests, via the Editor.
+
+---
+
+## 🛠️ Creative Studio (Editor)
+
+Access the editor by pressing `F9` or selecting it from the Main Menu.
+
+### Core Tools
+- **Fly Cam**: `Right-Click + WASD` to navigate the scene freely. `Shift` for speed boost.
+- **Transform Gizmos**:
+    - `W`: Translate (Move)
+    - `E`: Rotate
+    - `R`: Scale
+- **Snapping**: Press `G` to snap the selected object to the terrain heightmap.
+
+### ⚙️ Game Parameters Panel
+Located in the top-right, this panel (lil-gui) offers deep control:
+- **Physics**: Adjust global `Gravity`, `Friction`, and `Air Resistance`.
+- **Environment**: Real-time control of `Time of Day` (Sun position), `Fog Density`, and Cloud coverage.
+- **Post-Processing**:
+    - **Bloom**: Threshold, Strength, Radius.
+    - **Retro**: Pixel Size, Scanline Intensity, Noise, Vignette.
+    - **ASCII**: Character set count, Zoom level, Color inverting.
+
+### 📦 Asset Library
+- **Structures**: Ancient Temples, Castles, Sci-Fi Towers.
+- **Cosmic**:
+    - **Black Holes**: Customizable Accretion Disk RAdius, Event Horizon Color, and Distortion strength.
+    - **Pulsars**: Emitting relativistic jets.
+- **Vehicles**: Spawn drivable cars or static props.
+- **NPCs**: Place quest givers or ambient characters directly into the world.
 
 ---
 
@@ -180,7 +165,7 @@ State-of-the-art rigid body simulation tailored for arcade-simulation balance.
 -   **Tire Friction**:
     *   Separates **Longitudinal** (Acceleration/Braking) and **Lateral** (Cornering) forces.
     *   **Slip Ratio**: Calculates wheel spin relative to ground speed for realistic burnouts.
-    *   **Circle of Friction**: Clamps total tire force to usually $F_{max} = \mu \cdot F_{normal}$.
+    *   **Circle of Friction**: Clamps total tire force using $F_{max} = \mu \cdot F_{normal}$.
 -   **Drift Mechanics**:
     *   Detects high slip angles to engage "Drift State".
     *   Modifies lateral friction coefficients dynamically to allow sustained slides without spinning out.
@@ -210,30 +195,62 @@ State-of-the-art rigid body simulation tailored for arcade-simulation balance.
 1.  **RenderPass**: Main scene render.
 2.  **UnrealBloomPass**: High-dynamic-range glow (critical for neon levels and stars).
 3.  **Retro16BitShader**: Custom shader that quantizes colors (5-6-5 bits) and adds pixelation/scanlines for a vintage aesthetic.
-
-### Particle Systems
--   **Sparks**: GPU-instanced geometry emitted on collision impacts.
--   **Tire Smoke**: Alpha-blended sprites generated based on wheel slip ratio.
--   **Speed Lines**: Vertex-displacement shader that stretches lines based on camera velocity ("Star Wars" warp effect).
+4.  **ASCII / Halftone**: Stylized shaders for unique visual signatures.
 
 ---
 
-## 🛠️ Level Editor Manual
+## 🔧 Technical Architecture
 
-Access the editor from the Main Menu or by pressing the **Editor** card.
+The project follows a modular, component-based architecture designed for extensibility.
 
-### Features
--   **Fly Controls**: `WASD` to move, `Right-Click Drag` to look. `Shift` for speed.
--   **Gizmos**: Visual handles for Translation, Rotation, and Scaling.
--   **Snapping**: Press `G` or the "Snap to Ground" button to align objects with terrain.
--   **Procedural Objects**:
-    *   **Black Holes**: Customizable Disk Radius, Event Horizon Color, and Distortion strength.
-    *   **Ramps/Loops**: Math-generated geometry for smooth stunt driving.
+```bash
+Racing/
+├── index.html              # Main entry point (DOM structure, UI overlay)
+├── styles.css              # Glassmorphism UI, HUD, and Editor styling
+├── js/
+│   ├── main.js             # Game Bootstrapper & State Machine (Menu/Play/Editor)
+│   │
+│   ├── core/               # Central Systems
+│   │   ├── input.js        # Universal input handler (Keyboard + Gamepad)
+│   │   ├── camera.js       # Camera controller (Chase, Cockpit, Fly modes)
+│   │   ├── car.js          # Car entity logic
+│   │   ├── plane.js        # Plane entity logic & Aerodynamics
+│   │   └── player.js       # On-foot first-person controller
+│   │
+│   ├── physics/            # Deterministic Physics Engine
+│   │   ├── new_car_physics.js  # The custom RigidBody + Suspension engine
+│   │   └── physics-provider.js # Interface for terrain collision queries
+│   │
+│   ├── rpg/                # RPG Layer
+│   │   ├── systems/        # Logic (DialogueSystem, QuestManager, InventoryManager)
+│   │   ├── data/           # JSON Databases (Quests, Items, NPCs)
+│   │   └── ui/             # UI Controllers (DialogueOverlay, QuestTracker)
+│   │
+│   ├── environment/        # Visual Enivronment (Sky, Stars, Wind)
+│   │
+│   ├── terrain/            # Infinite Terrain Generators (Strategy Pattern)
+│   │   ├── terrain.js      # Base class & Simplex noise utils
+│   │   ├── deep-space.js   # Void generator
+│   │   ├── city.js         # Procedural city grid generator
+│   │   └── ...             # (dunes.js, everest.js, ice-mountain.js, etc.)
+│   │
+│   └── editor/             # Level Editor System
+│       ├── EditorController.js    # Editor state logic & UI bindings
+│       ├── SceneObjectManager.js  # Gizmos & Object placement logic
+│       ├── AssetLibrary.js        # Registry of placeable props
+│       └── RPGEditorController.js # RPG-specific tools (NPC spawner)
+│
+└── assets/                 # Binary Assets
+    ├── models/             # GLTF/GLB 3D models (Cars, Plane, Props)
+    └── texture/            # Textures & Sprites
+```
 
-### Object Management
--   **Inspector**: Select an object to view its properties (Position, Scale, Custom Params).
--   **Asset Library**: Drag and drop assets from the sidebar (Speed Boosts, Neon Rings, Barriers).
--   **Serialization**: Levels are saved to LocalStorage automatically. Use **Export/Import** to save to `.json` files.
+### Architectural Highlights
+
+1.  **State Machine**: The game operates efficiently by sequestering logic into three distinct states: `MENU`, `PLAY` (Physics active), and `EDITOR` (Fly-cam active).
+2.  **Physics Decoupling**: The physics engine is completely decoupled from Three.js. It accepts an Input state and a `PhysicsProvider`, outputting raw position/quaternion data. This allows for fixed timestep updates.
+3.  **Strategy Pattern**: All terrains share a common interface. adding a new world is as simple as extending `TerrainGenerator`.
+4.  **RPG Manager**: A singleton that acts as the brain for the narrative layer, coordinating the Quest, Dialogue, and Inventory systems alongside the main game loop.
 
 ---
 
@@ -245,7 +262,7 @@ Access the editor from the Main Menu or by pressing the **Editor** card.
 3.  **The Everest**: 10km² map starting at 800m elevation. Extreme downhill physics.
 4.  **Deep Space**: Zero-gravity feel (visual only), infinite void. Features galaxies and nebulae.
 5.  **Vaporwave**: "Neon Horizon". Infinite highway with synthwave aesthetics.
-6.  **City**: Procedural urban grid with skyscrapers and tight alleyways.
+6.  **City**: Procedural urban grid with skyscrapers by "Procedural City Generator".
 
 ### Vehicles
 -   **Toyota AE86**: The drift king. RWD, lightweight, loose rear end.
