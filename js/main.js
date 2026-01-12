@@ -22,6 +22,8 @@ import { EditorController } from './editor/EditorController.js';
 import { RPGManager } from './rpg/systems/RPGManager.js';
 import { NPCEntity } from './rpg/entities/NPCEntity.js';
 import { BlackHole } from './environment/BlackHole.js';
+import { ASCIIShader } from './postprocessing/ASCIIShader.js';
+import { HalftoneShader } from './postprocessing/HalftoneShader.js';
 
 /**
  * Available car specifications registry
@@ -69,7 +71,18 @@ const Retro16BitShader = {
         'tDiffuse': { value: null },
         'resolution': { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
         'pixelSize': { value: 64.0 },
-        'colorDepth': { value: 32.0 }
+        'colorDepth': { value: 32.0 },
+        'contrast': { value: 1.1 },
+        'scanlineIntensity': { value: 0.15 },
+        'scanlineCount': { value: 1.5 },
+        'saturation': { value: 1.2 },
+        // New Effects
+        'noiseIntensity': { value: 0.05 },
+        'vignetteStength': { value: 0.3 }, // Radius
+        'vignetteIntensity': { value: 0.5 }, // Darkness
+        'aberration': { value: 0.0 },
+        'brightness': { value: 0.0 },
+        'exposure': { value: 1.0 }
     },
     vertexShader: `
         varying vec2 vUv;
@@ -83,27 +96,90 @@ const Retro16BitShader = {
         uniform vec2 resolution;
         uniform float pixelSize;
         uniform float colorDepth;
+        uniform float contrast;
+        uniform float scanlineIntensity;
+        uniform float scanlineCount;
+        uniform float saturation;
+        
+        uniform float noiseIntensity;
+        uniform float vignetteStength;
+        uniform float vignetteIntensity;
+        uniform float aberration;
+        uniform float brightness;
+        uniform float exposure;
+        
         varying vec2 vUv;
+        
+        vec3 adjustSaturation(vec3 color, float value) {
+            float average = (color.r + color.g + color.b) / 3.0;
+            return mix(vec3(average), color, value);
+        }
+        
+        // Simple pseudo-random noise
+        float random(vec2 st) {
+            return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+        }
 
         void main() {
             // Pixelation
             vec2 dxy = pixelSize / resolution;
             vec2 coord = dxy * floor(vUv / dxy);
             
-            vec4 color = texture2D(tDiffuse, coord);
+            // Chromatic Aberration (RGB Shift)
+            vec4 color;
+            if (aberration > 0.0) {
+                float r = texture2D(tDiffuse, coord + vec2(aberration * 0.005, 0.0)).r;
+                float g = texture2D(tDiffuse, coord).g;
+                float b = texture2D(tDiffuse, coord - vec2(aberration * 0.005, 0.0)).b;
+                color = vec4(r, g, b, 1.0);
+            } else {
+                color = texture2D(tDiffuse, coord);
+            }
             
-            // Color quantization for 16-bit look (5-6-5 RGB distribution)
-            float levels = colorDepth;
-            color.r = floor(color.r * levels + 0.5) / levels;
-            color.g = floor(color.g * (levels * 1.25) + 0.5) / (levels * 1.25); // More green levels like 16-bit
-            color.b = floor(color.b * levels + 0.5) / levels;
+            // Saturation
+            color.rgb = adjustSaturation(color.rgb, saturation);
             
-            // Slight contrast boost for that punchy retro feel
-            color.rgb = (color.rgb - 0.5) * 0.9 + 0.5;
+            // Contrast
+            color.rgb = (color.rgb - 0.5) * contrast + 0.5;
             
-            // Subtle scanline effect
-            float scanline = sin(gl_FragCoord.y * 1.5) * 0.02 + 0.98;
+            // Brightness (Lift) & Exposure (Gain)
+            color.rgb = (color.rgb + brightness) * exposure;
+            
+            // Color quantization
+            if (colorDepth > 0.0) {
+                float levels = colorDepth;
+                color.r = floor(color.r * levels + 0.5) / levels;
+                color.g = floor(color.g * (levels) + 0.5) / (levels); 
+                color.b = floor(color.b * levels + 0.5) / levels;
+            }
+            
+            // Scanlines
+            float scanline = sin(gl_FragCoord.y * scanlineCount) * scanlineIntensity + (1.0 - scanlineIntensity);
             color.rgb *= scanline;
+            
+            // Noise
+            if (noiseIntensity > 0.0) {
+                float n = random(vUv + fract(sin(dot(coord, vec2(12.989, 78.233)))*43758.54)); 
+                // That was static noise. For animated, we need time, but we don't have time uniform yet.
+                // Let's use static grain for "print/retro" look or just pixel noise.
+                // Or better:
+                n = random(gl_FragCoord.xy);
+                color.rgb += (n - 0.5) * noiseIntensity;
+            }
+            
+            // Vignette
+            if (vignetteStength > 0.0) {
+                vec2 center = vUv - 0.5;
+                float dist = length(center);
+                float vign = smoothstep(vignetteStength, vignetteStength - vignetteIntensity, dist);
+                // Actually: smoothstep(edge0, edge1, x). we want 1 at center, 0 at edges.
+                // radius is where it starts fading?
+                // Let's use standard formula:
+                // col *= 1.0 - smoothstep(radius, radius+softness, len)
+                float v = 1.0 - smoothstep(vignetteStength, vignetteStength + 0.5, dist);
+                // Mix with intensity
+                color.rgb = mix(color.rgb, color.rgb * v, vignetteIntensity);
+            }
             
             gl_FragColor = color;
         }
@@ -179,6 +255,8 @@ class Game {
 
         // Retro filter state
         this.retroEnabled = true;
+        this.asciiEnabled = false;
+        this.halftoneEnabled = false;
 
         this._init();
     }
@@ -195,6 +273,8 @@ class Game {
         // Setup camera controller (needed for menu showcase view)
         this.cameraController = new CameraController(this.camera, this.canvas);
         this.input.onRetroToggle = () => this._toggleRetroFilter();
+        this.input.onAsciiToggle = () => this._toggleAsciiFilter();
+        this.input.onHalftoneToggle = () => this._toggleHalftoneFilter();
         this.input.onExitPlayMode = () => this.exitPlayTestMode();
 
         // Hide loading screen, show main menu
@@ -481,8 +561,9 @@ class Game {
     /**
      * Enter EDITOR state
      * @param {Object} levelConfig - Base level configuration
+     * @param {boolean} forceInit - Force re-initialization of editor
      */
-    async _enterEditorState(levelConfig) {
+    async _enterEditorState(levelConfig, forceInit = false) {
         this.gameState = GameState.EDITOR;
 
         // Hide menu and HUD
@@ -501,9 +582,12 @@ class Game {
             this.scene.add(terrainMesh);
         }
 
-        // Initialize editor if not exists
+        // Initialize editor if not exists OR forced
         if (!this.editor) {
             this.editor = new EditorController(this);
+            await this.editor.initialize(levelConfig);
+        } else if (forceInit || this.editor.levelConfig !== levelConfig) {
+            console.log('[Game] Re-initializing editor for new level context');
             await this.editor.initialize(levelConfig);
         }
 
@@ -1140,7 +1224,9 @@ class Game {
         this.sky.setDayDuration(300); // 5 minute day cycle
 
         // Initialize atmospheric wind/fog effect
-        this.wind = new WindEffect(this.scene);
+        // Use a separate scene for wind to bypass post-processing artifacts (like bloom/pixelation)
+        this.windScene = new THREE.Scene();
+        this.wind = new WindEffect(this.windScene);
         this.wind.setIntensity(0.5); // Medium intensity by default
 
         // Camera
@@ -1161,22 +1247,89 @@ class Game {
         const renderPass = new RenderPass(this.scene, this.camera);
         this.composer.addPass(renderPass);
 
-        // Add 16-bit retro shader pass
-        this.retroPass = new ShaderPass(Retro16BitShader);
-        this.retroPass.uniforms['resolution'].value.set(window.innerWidth, window.innerHeight);
-        this.retroPass.uniforms['pixelSize'].value = 4.0;  // Adjust for more/less pixelation
-        this.retroPass.uniforms['colorDepth'].value = 16.0;  // 16-bit color depth
-        this.retroPass.enabled = this.retroEnabled;
-        // Bloom Pass for pure neon vibes - defaults to low/off, enabled per level
+        // Bloom Pass
         this.bloomPass = new UnrealBloomPass(
             new THREE.Vector2(window.innerWidth, window.innerHeight),
-            0.0,    // strength (0 to start)
-            0.4,    // radius
-            0.85    // threshold
+            1.5, 0.4, 0.85
         );
+        this.bloomPass.threshold = 0.0;
+        this.bloomPass.strength = 0.132;
+        this.bloomPass.radius = 1.0;
         this.composer.addPass(this.bloomPass);
 
+        // Retro Pass
+        this.retroPass = new ShaderPass(Retro16BitShader);
+        this.retroPass.uniforms['resolution'].value.set(window.innerWidth, window.innerHeight);
+        this.retroPass.uniforms['pixelSize'].value = 4.0;
+        this.retroPass.uniforms['colorDepth'].value = 16.0;
+
+        // Custom defaults from user
+        this.retroPass.uniforms['contrast'].value = 0.9;
+        this.retroPass.uniforms['saturation'].value = 0.5;
+        this.retroPass.uniforms['scanlineIntensity'].value = 0.15;
+        this.retroPass.uniforms['scanlineCount'].value = 1.5;
+        this.retroPass.uniforms['noiseIntensity'].value = 0.0;
+        this.retroPass.uniforms['vignetteStength'].value = 0.4;
+        this.retroPass.uniforms['vignetteIntensity'].value = 0.6;
+        this.retroPass.uniforms['aberration'].value = 0.0;
+        this.retroPass.uniforms['brightness'].value = -0.02;
+        this.retroPass.uniforms['exposure'].value = 3.0;
+
+        this.retroPass.enabled = this.retroEnabled;
         this.composer.addPass(this.retroPass);
+
+        // ASCII Pass
+        this.asciiPass = new ShaderPass(ASCIIShader);
+        this.asciiPass.enabled = false;
+
+        // Load ASCII textures
+        const textureLoader = new THREE.TextureLoader();
+        textureLoader.load('assets/texture/fillASCII.png', (tex) => {
+            this.asciiPass.uniforms['tFill'].value = tex;
+            tex.magFilter = THREE.NearestFilter;
+            tex.minFilter = THREE.NearestFilter;
+        });
+        // textureLoader.load('assets/texture/edgesASCII.png', (tex) => { ... });
+
+        this.asciiPass.uniforms['resolution'].value.set(window.innerWidth, window.innerHeight);
+        this.composer.addPass(this.asciiPass);
+
+        // Halftone Pass
+        this.halftonePass = new ShaderPass(HalftoneShader);
+        this.halftonePass.enabled = false;
+        this.halftonePass.uniforms['resolution'].value.set(window.innerWidth, window.innerHeight);
+        this.composer.addPass(this.halftonePass);
+    }
+
+    _toggleRetroFilter() {
+        this.retroEnabled = !this.retroEnabled;
+        if (this.retroPass) {
+            this.retroPass.enabled = this.retroEnabled;
+        }
+
+        // Disable others if exclusive is desired? 
+        // Let's allow stacking for chaos, or disable others for clarity.
+        // User request implied switching filters, but stacking could be fun.
+        // Let's implement exclusive switching for F4/F5/F6 if they want clean views.
+        // But for now, independent toggles.
+
+        console.log(`[Game] Retro Filter: ${this.retroEnabled}`);
+    }
+
+    _toggleAsciiFilter() {
+        this.asciiEnabled = !this.asciiEnabled;
+        if (this.asciiPass) {
+            this.asciiPass.enabled = this.asciiEnabled;
+        }
+        console.log(`[Game] ASCII Filter: ${this.asciiEnabled}`);
+    }
+
+    _toggleHalftoneFilter() {
+        this.halftoneEnabled = !this.halftoneEnabled;
+        if (this.halftonePass) {
+            this.halftonePass.enabled = this.halftoneEnabled;
+        }
+        console.log(`[Game] Halftone Filter: ${this.halftoneEnabled}`);
     }
 
     _setupLighting() {
@@ -1188,6 +1341,73 @@ class Game {
     _setupInput() {
         this.input = new InputHandler();
         this.input.onRetroToggle = () => this._toggleRetroFilter();
+        this.input.onAsciiToggle = () => this._toggleAsciiFilter();
+        this.input.onHalftoneToggle = () => this._toggleHalftoneFilter();
+        this.input.onEditorToggle = () => this.enterLevelEditorFromPlay();
+    }
+
+    /**
+     * Enter EDITOR state from PLAY state (via F9)
+     */
+    async enterLevelEditorFromPlay() {
+        if (this.gameState !== GameState.PLAY) return;
+
+        console.log('[Game] Switching to Editor from Play Mode...');
+
+        // If we are in a Play Test session (from Editor), just exit it
+        if (this.previousState === GameState.EDITOR) {
+            this.exitPlayTestMode();
+            return;
+        }
+
+        // Clean up Play elements
+        this._cleanupPlayState();
+
+        // Enter Editor with current level
+        if (this.levelManager.currentLevel) {
+            // Force re-initialization of editor with strictly current level
+            await this._enterEditorState(this.levelManager.currentLevel, true);
+        } else {
+            // Fallback
+            this._openEditorSelector();
+        }
+    }
+
+    /**
+     * Clean up Play Mode entities when switching to Editor/Menu
+     */
+    _cleanupPlayState() {
+        // Unlock pointer
+        if (document.pointerLockElement) {
+            document.exitPointerLock();
+        }
+
+        // Remove Player
+        if (this.player) {
+            this.player = null;
+        }
+
+        // Remove Main Car
+        if (this.car) {
+            if (this.carMesh) this.scene.remove(this.carMesh);
+            this.car = null;
+            this.carMesh = null;
+        }
+
+        // Remove Plane
+        if (this.plane) {
+            if (this.planeMesh) this.scene.remove(this.planeMesh);
+            this.plane = null;
+            this.planeMesh = null;
+        }
+
+        // Remove Spawned Vehicles (NPCs, etc.)
+        if (this.spawnedVehicles) {
+            this.spawnedVehicles.forEach(v => {
+                if (v.mesh) this.scene.remove(v.mesh);
+            });
+            this.spawnedVehicles = [];
+        }
     }
 
     _setupPointerLock() {
@@ -1549,7 +1769,23 @@ class Game {
         }
 
         // Render with post-processing
+        // Render with post-processing
         this.composer.render();
+
+        // Render Wind Overlay (ignores post-processing)
+        if (this.windScene && this.wind && this.wind.enabled) {
+            this.renderer.autoClear = false;
+            this.renderer.clearDepth(); // Clear depth so it draws on top? 
+            // NO! If we clear depth, it will draw on top of mountains.
+            // But we don't have the main scene depth buffer here because Composer target might be different.
+            // Actually, if we render to screen, the depth buffer is in the default framebuffer.
+            // Composer.render() renders a quad. The depth of that quad is ... flat.
+            // So we effectively lost 3D depth for the overlay.
+            // We have to accept it's an overlay or use a more complex depth copy.
+            // For "fog banks", overlay is acceptable if soft.
+            this.renderer.render(this.windScene, this.camera);
+            this.renderer.autoClear = true;
+        }
     }
 
     _updateHUD() {

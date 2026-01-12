@@ -21,6 +21,9 @@ export class InputHandler {
             retroToggle: false,
             enterExit: false,
             sprint: false,
+            // Filter toggles
+            asciiToggle: false,
+            halftoneToggle: false,
             // Flight specific
             rollLeft: false,
             rollRight: false,
@@ -31,7 +34,8 @@ export class InputHandler {
             pitchDown: false,
             hover: false,  // Vertical lift force (X key)
             exitPlayMode: false, // Escape key
-            interact: false // Interaction key (E / Square)
+            interact: false, // Interaction key (E / Square)
+            editorToggle: false // F9 key
         };
 
         // Smoothed input values (0-1 range)
@@ -125,6 +129,27 @@ export class InputHandler {
                 }
                 e.preventDefault();
                 break;
+            case 'F6':
+                if (!this.keys.asciiToggle) {
+                    this.keys.asciiToggle = true;
+                    this.onAsciiToggle?.();
+                }
+                e.preventDefault();
+                break;
+            case 'F7':
+                if (!this.keys.halftoneToggle) {
+                    this.keys.halftoneToggle = true;
+                    this.onHalftoneToggle?.();
+                }
+                e.preventDefault();
+                break;
+            case 'F9':
+                if (!this.keys.editorToggle) {
+                    this.keys.editorToggle = true;
+                    this.onEditorToggle?.();
+                }
+                e.preventDefault();
+                break;
             case 'KeyF':
                 if (!this.keys.enterExit) {
                     this.keys.enterExit = true;
@@ -204,6 +229,15 @@ export class InputHandler {
                 break;
             case 'F4':
                 this.keys.retroToggle = false;
+                break;
+            case 'F6':
+                this.keys.asciiToggle = false;
+                break;
+            case 'F7':
+                this.keys.halftoneToggle = false;
+                break;
+            case 'F9':
+                this.keys.editorToggle = false;
                 break;
             case 'KeyF':
                 this.keys.enterExit = false;

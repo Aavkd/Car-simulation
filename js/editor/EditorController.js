@@ -728,7 +728,64 @@ export class EditorController {
                 }
             });
 
-        // --- SKY CUSTOMIZATION ---
+        // Post Processing Folder
+        const ppFolder = this.gui.addFolder('Post Processing');
+
+        // Bloom
+        if (this.game.bloomPass) {
+            const bloomFolder = ppFolder.addFolder('Bloom');
+            bloomFolder.add(this.game.bloomPass, 'threshold', 0, 1).name('Threshold');
+            bloomFolder.add(this.game.bloomPass, 'strength', 0, 3).name('Strength');
+            bloomFolder.add(this.game.bloomPass, 'radius', 0, 1).name('Radius');
+        }
+
+        // Retro (Pixel)
+        if (this.game.retroPass) {
+            const retroFolder = ppFolder.addFolder('Retro (Pixel) Filter');
+            retroFolder.add(this.game.retroPass.uniforms['pixelSize'], 'value', 1.0, 32.0, 1.0).name('Pixel Size');
+            retroFolder.add(this.game.retroPass.uniforms['colorDepth'], 'value', 2.0, 256.0, 1.0).name('Color Depth');
+            retroFolder.add(this.game.retroPass.uniforms['contrast'], 'value', 0.5, 2.0, 0.1).name('Contrast');
+            retroFolder.add(this.game.retroPass.uniforms['saturation'], 'value', 0.0, 2.0, 0.1).name('Saturation');
+            retroFolder.add(this.game.retroPass.uniforms['scanlineIntensity'], 'value', 0.0, 1.0, 0.01).name('Scanline Intensity');
+            retroFolder.add(this.game.retroPass.uniforms['scanlineCount'], 'value', 0.1, 10.0, 0.1).name('Scanline Density');
+
+            // New Controls
+            retroFolder.add(this.game.retroPass.uniforms['noiseIntensity'], 'value', 0.0, 1.0, 0.01).name('Noise');
+            retroFolder.add(this.game.retroPass.uniforms['vignetteStength'], 'value', 0.0, 1.0, 0.01).name('Vignette Radius');
+            retroFolder.add(this.game.retroPass.uniforms['vignetteIntensity'], 'value', 0.0, 1.0, 0.01).name('Vignette Darkness');
+            retroFolder.add(this.game.retroPass.uniforms['aberration'], 'value', 0.0, 10.0, 0.1).name('Chromatic Aberration');
+            retroFolder.add(this.game.retroPass.uniforms['brightness'], 'value', -0.5, 0.5, 0.01).name('Brightness');
+            retroFolder.add(this.game.retroPass.uniforms['exposure'], 'value', 0.0, 3.0, 0.1).name('Exposure');
+        }
+
+        // ASCII
+        if (this.game.asciiPass) {
+            const asciiFolder = ppFolder.addFolder('ASCII Filter');
+            const uniforms = this.game.asciiPass.uniforms;
+
+            asciiFolder.add(uniforms['fontCharCount'], 'value', 5, 40, 1).name('Char Count');
+            asciiFolder.add(uniforms['zoom'], 'value', 0.1, 4.0, 0.1).name('Zoom');
+            asciiFolder.add(uniforms['colorChar'], 'value').name('Colorize Chars');
+            asciiFolder.add(uniforms['invert'], 'value').name('Invert');
+
+            // Color helpers
+            const bindColor = (folder, obj, name) => {
+                const proxy = { color: '#' + obj.value.getHexString() };
+                folder.addColor(proxy, 'color').name(name).onChange(v => {
+                    obj.value.set(v);
+                });
+            };
+            bindColor(asciiFolder, uniforms['fillColor'], 'Fill Color');
+            bindColor(asciiFolder, uniforms['backgroundColor'], 'Background Color');
+        }
+
+        // Halftone
+        if (this.game.halftonePass) {
+            const htFolder = ppFolder.addFolder('Halftone Filter');
+            htFolder.add(this.game.halftonePass.uniforms['dotSize'], 'value', 0.1, 5.0).name('Dot Size');
+            htFolder.add(this.game.halftonePass.uniforms['angle'], 'value', 0, 360).name('Angle');
+            htFolder.add(this.game.halftonePass.uniforms['scale'], 'value', 0.1, 5.0).name('Scale');
+        }
         if (this.game.sky && this.game.sky.settings) {
             const sky = this.game.sky;
             const skyFolder = envFolder.addFolder('Sky Customization');
@@ -794,9 +851,38 @@ export class EditorController {
                 bindColor(skyFolder, sky.settings, 'bottomColor', 'Bottom Color');
                 bindColor(skyFolder, sky.settings, 'sunColor', 'Sun Color');
 
-                skyFolder.add(sky.settings, 'exponent', 0.1, 3).name('Gradient Power').onChange(() => sky.updateSettings());
                 skyFolder.add(sky.settings, 'sunIntensity', 0, 5).name('Sun Intensity').onChange(() => sky.updateSettings());
                 skyFolder.add(sky.settings, 'ambientIntensity', 0, 2).name('Ambient Light').onChange(() => sky.updateSettings());
+            }
+
+            // Wind Controls
+            if (this.game.wind) {
+                const windFolder = envFolder.addFolder('Wind & Fog');
+                const wind = this.game.wind;
+
+                windFolder.add(wind, 'enabled').name('Enabled').onChange(v => wind.configure({ enabled: v }));
+
+                windFolder.add(wind, 'windSpeed', 0, 200).name('Wind Speed').onChange(v => wind.configure({ windSpeed: v }));
+                windFolder.add(wind, 'fogOpacity', 0, 1).name('Opacity').onChange(v => wind.configure({ fogOpacity: v }));
+
+                windFolder.add(wind, 'wispCount', 10, 200, 1).name('Cloud Count').onFinishChange(v => {
+                    wind.configure({ wispCount: v });
+                });
+
+                windFolder.add(wind, 'spawnRadius', 100, 2000, 50).name('Spread Radius').onFinishChange(v => {
+                    wind.configure({ spawnRadius: v });
+                });
+
+                windFolder.add(wind, 'maxHeight', 50, 500, 10).name('Max Height').onFinishChange(v => {
+                    wind.configure({ maxHeight: v });
+                });
+
+                if (wind.fogColor) { // check existence
+                    const windColorProxy = { color: '#' + wind.fogColor.getHexString() };
+                    windFolder.addColor(windColorProxy, 'color').name('Fog Color').onChange(v => {
+                        wind.configure({ fogColor: v });
+                    });
+                }
             }
         }
 
