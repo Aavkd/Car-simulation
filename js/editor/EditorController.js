@@ -431,8 +431,8 @@ export class EditorController {
                     <div class="property-group">
                         <label>Scale</label>
                         <div class="scale-controls">
-                            <input type="range" id="scale-slider" min="0.1" max="10" step="0.1" value="1">
-                            <input type="number" id="scale-input" min="0.1" max="10" step="0.1" value="1">
+                            <input type="range" id="scale-slider" min="0.001" max="10" step="0.001" value="1">
+                            <input type="number" id="scale-input" step="any" value="1">
                         </div>
                     </div>
                     <div class="property-group">
@@ -552,10 +552,10 @@ export class EditorController {
             // Update scale UI
             const scale = object.scale.x; // Assuming uniform scale
             document.getElementById('scale-slider').value = scale;
-            document.getElementById('scale-input').value = scale.toFixed(1);
+            document.getElementById('scale-input').value = scale.toFixed(4);
 
             // Update position Y
-            document.getElementById('position-y-input').value = object.position.y.toFixed(1);
+            document.getElementById('position-y-input').value = object.position.y.toFixed(4);
 
             // Handle procedural object properties
             if (object.userData.procedural && object.userData.proceduralInstance && proceduralProps) {

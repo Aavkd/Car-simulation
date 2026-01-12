@@ -58,17 +58,17 @@ This roadmap outlines the implementation of a AAA-quality animation system for t
 - [x] **Timeline / Preview**
     - [x] Implement animation scrubber.
     - [ ] "Record" button to capture a sequence of inputs and replay it to test transitions. ⏳ Pending
-- [ ] **Deep Animation Creation Mode**
-    - [ ] **Visual Pose Editor**: ⏳ Pending
+- [x] **Deep Animation Creation Mode**
+    - [x] **Visual Pose Editor**:
         - Select bones (FK) or effectors (IK) to create key poses.
         - "Ghosting" / Onion skinning to see previous frames.
     - **Timeline & Keyframing**:
         - Linear interpolation between captured poses.
         - Dope-sheet view for adjusting timing.
     - **JSON Persistence System**:
-        - **Export**: Serialize `THREE.AnimationClip` data to `.anim.json` files.
-        - **Storage**: Save to `assets/animations/` (requires server-side write or manual file save).
-        - **Import**: Runtime loader to parse `.anim.json` back into clips and apply to `AnimationController`.
+        - [x] **Export**: Serialize `THREE.AnimationClip` data to `.anim.json` files.
+        - [ ] **Storage**: Save to `assets/animations/` (requires server-side write or manual file save).
+        - [ ] **Import**: Runtime loader to parse `.anim.json` back into clips and apply to `AnimationController`.
     - **Retargeting Support**:
         - Auto-map standard bone names (Hips, Spine, Head) so saved JSON animations work on any humanoid Rig.
 

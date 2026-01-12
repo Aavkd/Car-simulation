@@ -143,6 +143,14 @@ Located in the top-right, this panel (lil-gui) offers deep control:
     - **Retro**: Pixel Size, Scanline Intensity, Noise, Vignette.
     - **ASCII**: Character set count, Zoom level, Color inverting.
 
+### 🎬 Deep Animator (New)
+Access via `F8`. A dedicated tool for character animation.
+- **Inspect Mode**: Click any character to view its State Machine constants and current Active Clip.
+- **Pose Mode**:
+    - select bones and rotate them with Gizmos.
+    - Capture keyframes to create new animations.
+    - Export to JSON.
+
 ### 📦 Asset Library
 - **Structures**: Ancient Temples, Castles, Sci-Fi Towers.
 - **Cosmic**:

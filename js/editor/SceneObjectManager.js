@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { BlackHole } from '../environment/BlackHole.js';
 
 /**
@@ -37,8 +39,9 @@ export class SceneObjectManager {
         });
         this.scene.add(this.transformControls);
 
-        // GLTF Loader for models
+        // Loaders
         this.loader = new GLTFLoader();
+        this.fbxLoader = new FBXLoader();
 
         // Placement mode
         this.placementMode = false;
@@ -123,8 +126,17 @@ export class SceneObjectManager {
 
         // Load preview model for regular assets
         try {
-            const gltf = await this._loadModel(assetConfig.path);
-            this.placementPreview = gltf.scene.clone();
+            const loadedData = await this._loadModel(assetConfig.path);
+            let object;
+
+            if (loadedData.scene) {
+                object = loadedData.scene; // GLTF based, original scene remains
+            } else {
+                object = loadedData; // FBX based
+            }
+
+            // Use SkeletonUtils to clone correctly for preview (handling skinned meshes)
+            this.placementPreview = SkeletonUtils.clone(object);
 
             // Apply scale if specified in asset config
             if (assetConfig.scale) {
@@ -133,10 +145,21 @@ export class SceneObjectManager {
 
             this.placementPreview.traverse(child => {
                 if (child.isMesh) {
-                    child.material = child.material.clone();
-                    child.material.transparent = true;
-                    child.material.opacity = 0.5;
-                    child.material.color.setHex(0x00ff00);
+                    // Handle multi-material
+                    if (Array.isArray(child.material)) {
+                        child.material = child.material.map(m => {
+                            const newMat = m.clone();
+                            newMat.transparent = true;
+                            newMat.opacity = 0.5;
+                            newMat.color.setHex(0x00ff00);
+                            return newMat;
+                        });
+                    } else if (child.material && child.material.clone) {
+                        child.material = child.material.clone();
+                        child.material.transparent = true;
+                        child.material.opacity = 0.5;
+                        child.material.color.setHex(0x00ff00);
+                    }
                 }
             });
             this.scene.add(this.placementPreview);
@@ -170,15 +193,32 @@ export class SceneObjectManager {
      */
     async addObject(assetPath, position, metadata = {}) {
         try {
-            const gltf = await this._loadModel(assetPath);
-            const object = gltf.scene;
+            const loadedData = await this._loadModel(assetPath);
+            let object;
+            let animations = [];
+
+            if (loadedData.scene) {
+                object = loadedData.scene; // GLTF
+                animations = loadedData.animations || [];
+            } else {
+                object = loadedData; // FBX
+                animations = loadedData.animations || []; // FBX animations usually attach to root too
+            }
+
+            // Safe Clone using SkeletonUtils to preserve skinning
+            object = SkeletonUtils.clone(object);
+
+            // Re-attach animations to userData so they persist
+            if (animations.length > 0) {
+                object.userData.animations = animations;
+            } else if (loadedData.userData && loadedData.userData.animations) {
+                object.userData.animations = loadedData.userData.animations;
+            }
 
             // Apply position
             object.position.copy(position);
 
             // Apply scale if provided in metadata (e.g. from asset config)
-            // Apply scale if provided in metadata (e.g. from asset config)
-            // Note: if metadata.scale is present, it might override path-based scale
             if (metadata.scale !== undefined) {
                 if (typeof metadata.scale === 'number') {
                     object.scale.setScalar(metadata.scale);
@@ -194,8 +234,13 @@ export class SceneObjectManager {
                 type: metadata.type || 'object',
                 name: metadata.name || assetPath.split('/').pop().replace('.glb', ''),
                 ...metadata,
-                modified: false
+                modified: false,
+                animations: object.userData.animations // Ensure accessible
             };
+
+            // Link entities for picking 
+            // IMPORTANT: Removed child.userData.entity = object assignment to prevent circular references in JSON serialization during Play Mode transition.
+            // The AnimatorEditorController now handles finding the root entity by traversing up the parent chain or checking userData.id.
 
             // Enable shadows
             object.traverse(child => {
@@ -393,6 +438,12 @@ export class SceneObjectManager {
         const offset = new THREE.Vector3(2, 0, 2);
         const newPosition = original.position.clone().add(offset);
 
+        // Be careful with assetPath if it's missing (procedural?)
+        if (!original.userData.assetPath) {
+            console.warn("Cannot duplicate procedural or path-less object yet");
+            return;
+        }
+
         const newObject = await this.addObject(
             original.userData.assetPath,
             newPosition,
@@ -530,7 +581,9 @@ export class SceneObjectManager {
 
     async _loadModel(path) {
         return new Promise((resolve, reject) => {
-            this.loader.load(path, resolve, undefined, reject);
+            const isFBX = path.toLowerCase().endsWith('.fbx');
+            const loader = isFBX ? this.fbxLoader : this.loader;
+            loader.load(path, resolve, undefined, reject);
         });
     }
 
@@ -797,13 +850,4 @@ export class SceneObjectManager {
         }
     }
 
-    /**
-     * Dispose and cleanup
-     */
-    dispose() {
-        this.disable();
-        this.clearAllObjects();
-        this.scene.remove(this.transformControls);
-        this.transformControls.dispose();
-    }
 }

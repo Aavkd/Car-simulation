@@ -1,4 +1,6 @@
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
 /**
  * AssetLibrary - Manages available assets for the level editor
@@ -7,6 +9,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 export class AssetLibrary {
     constructor() {
         this.loader = new GLTFLoader();
+        this.fbxLoader = new FBXLoader();
 
         // Cache loaded models
         this.modelCache = new Map();
@@ -174,12 +177,21 @@ export class AssetLibrary {
             },
             {
                 id: 'knight_npc',
-                name: 'Knight',
+                name: 'Knight (GLB)',
                 path: 'assets/models/knight_final.glb',
                 category: 'npc',
                 icon: '🛡️',
                 type: 'npc',
                 scale: 1.0
+            },
+            {
+                id: 'knight_fbx',
+                name: 'Knight (FBX)',
+                path: 'assets/models/Knight.fbx',
+                category: 'npc',
+                icon: '🤺',
+                type: 'npc',
+                scale: 0.001 // Reduced from 0.01 to 0.001 to fix giant sizing issue.
             },
             // === Triggers ===
             {
@@ -252,35 +264,69 @@ export class AssetLibrary {
         // Check cache first
         if (this.modelCache.has(path)) {
             const cached = this.modelCache.get(path);
+
+            // If it's a raw object (FBX) or GLTF scene, we clone it.
+            // Note: Cached GLTF is the whole GLTF object usually, but for unity we store the scene/group
+            // Let's assume we store the 'result' object which might be a Group or an Object containing scene.
+
+            let sceneToClone;
+            let animations = [];
+
+            if (cached.scene) {
+                sceneToClone = cached.scene; // GLTF style
+                animations = cached.animations || [];
+            } else {
+                sceneToClone = cached; // FBX or raw group style
+                animations = cached.animations || [];
+            }
+
             // Use SkeletonUtils to clone properly (handles SkinnedMesh + Bones)
-            const clone = SkeletonUtils.clone(cached.scene);
+            const clone = SkeletonUtils.clone(sceneToClone);
 
             // Re-attach userData animations (SkeletonUtils clips them? No, it clones the graph)
-            if (cached.animations) {
-                clone.userData.animations = cached.animations;
+            if (animations.length > 0) {
+                clone.userData.animations = animations;
+            } else if (sceneToClone.userData.animations) {
+                clone.userData.animations = sceneToClone.userData.animations;
             }
+
             return clone;
         }
 
+        const isFBX = path.toLowerCase().endsWith('.fbx');
+
         // Load model
         return new Promise((resolve, reject) => {
-            this.loader.load(
+            const loader = isFBX ? this.fbxLoader : this.loader;
+
+            loader.load(
                 path,
-                (gltf) => {
+                (loadedData) => {
                     // Cache the original
-                    this.modelCache.set(path, gltf);
+                    this.modelCache.set(path, loadedData);
 
-                    // Attach animations to the scene's userData
-                    if (gltf.animations && gltf.animations.length > 0) {
-                        gltf.scene.userData.animations = gltf.animations;
-                    }
-                    if (gltf.animations && gltf.animations.length > 0) {
-                        gltf.scene.userData.animations = gltf.animations;
+                    let finalObject;
+
+                    if (isFBX) {
+                        // FBXLoader returns a THREE.Group directly
+                        finalObject = loadedData;
+                        // FBX animations are on the group itself usually
+                        if (loadedData.animations && loadedData.animations.length > 0) {
+                            finalObject.userData.animations = loadedData.animations;
+                        }
+                    } else {
+                        // GLTFLoader returns { scene, animations, ... }
+                        finalObject = loadedData.scene;
+                        // Attach animations to the scene's userData
+                        if (loadedData.animations && loadedData.animations.length > 0) {
+                            finalObject.userData.animations = loadedData.animations;
+                        }
                     }
 
-                    // Return a proper clone
-                    const clone = SkeletonUtils.clone(gltf.scene);
-                    clone.userData.animations = gltf.animations; // Ensure animations are passed
+                    // Return a proper clone to be safe for first usage (though we could return original if we are careful)
+                    // Better to clone so cache remains pure
+                    const clone = SkeletonUtils.clone(finalObject);
+                    clone.userData.animations = finalObject.userData.animations; // Ensure animations are passed
                     resolve(clone);
                 },
                 undefined,

@@ -169,6 +169,10 @@ export class AnimatorEditorController {
             this._updateRealtimeValues();
         }
 
+        if (this.isPoseMode) {
+            this._updateBoneHelpers();
+        }
+
         // Update Camera Orbit
         if (this.selectedEntity && this.game.cameraController) {
             // Handle Gamepad Camera Input
@@ -245,7 +249,12 @@ export class AnimatorEditorController {
 
         // POSE MODE: Select Bones
         if (this.isPoseMode && this.boneHelpers) {
-            const intersects = this.raycaster.intersectObjects(this.boneHelpers, false);
+            // Priority: If using the Transform Gizmo, ignore bone selection
+            if (this.transformControls && this.transformControls.axis) {
+                return;
+            }
+
+            const intersects = this.raycaster.intersectObjects(this.boneHelperGroup ? this.boneHelperGroup.children : this.boneHelpers, false);
             if (intersects.length > 0) {
                 const bone = intersects[0].object.userData.bone;
                 this._selectBone(bone);
@@ -270,6 +279,13 @@ export class AnimatorEditorController {
                     return;
                 }
 
+                // Fallback: If it's a managed object from SceneObjectManager (has id and type)
+                // and DOES NOT have a parent with an entity ref (we are at the root of the object)
+                if (target.userData && target.userData.id && (target.userData.type === 'npc' || target.userData.type === 'object' || target.userData.type === 'enemy')) {
+                    this._selectEntity(target, true);
+                    return;
+                }
+
                 target = target.parent;
                 if (target === this.game.scene) break;
             }
@@ -277,9 +293,32 @@ export class AnimatorEditorController {
         // console.log('[Animator] No entity hit');
     }
 
-    _selectEntity(mesh) {
-        let entityData = mesh.userData;
-        const entity = entityData.entity;
+    _selectEntity(mesh, isRawEntity = false) {
+        let entity;
+
+        if (isRawEntity) {
+            // Create a wrapper for raw scene objects so Animator can use them
+            entity = {
+                name: mesh.userData.name || 'Scene Object',
+                mesh: mesh,
+                animator: mesh.userData.proceduralInstance ? null : null, // Could attach an animator here if we wanted
+                // If the user manually added animations to userData, we could potentially use them, 
+                // but AnimationController usually manages them. 
+                // For Pose Mode, we just need the mesh.
+                userData: mesh.userData,
+                // If it's an NPC/Enemy, it might have an animator instance attached elsewhere, 
+                // but SceneObjectManager just spawns meshes. 
+                // If this is a real NPCEntity from game loop, it would have 'userData.entity'.
+                // Since it doesn't, this is a raw editor object.
+            };
+
+            // Try to find animator if it exists on the mesh
+            if (mesh.userData.animator) {
+                entity.animator = mesh.userData.animator;
+            }
+        } else {
+            entity = mesh.userData.entity;
+        }
 
         if (entity) {
             this.selectedEntity = entity;
@@ -288,6 +327,18 @@ export class AnimatorEditorController {
         } else {
             console.warn('[Animator] Selected object has no entity ref (logic mismatch)');
         }
+    }
+
+    _selectBone(bone) {
+        this.selectedBone = bone;
+        console.log(`[Animator] Selected Bone: ${bone.name}`);
+
+        // Attach Transform Controls
+        if (this.transformControls) {
+            this.transformControls.attach(bone);
+        }
+
+        this._buildUI();
     }
 
     _buildUI() {
@@ -400,6 +451,16 @@ export class AnimatorEditorController {
                     <button onclick="window.game.animator.transformControls.setMode('rotate')" style="background: #333; border: 1px solid #444; color: #eee; padding: 8px; flex:1; cursor: pointer;">Rotate (E)</button>
                 </div>
                 <div style="font-size:12px; color:#888;">Selected Bone: <span style="color:#fff;">${this.selectedBone ? this.selectedBone.name : 'None'}</span></div>
+                
+                <!-- Bone Size Slider -->
+                <div style="margin-top: 10px; border-top: 1px dashed #444; padding-top: 10px;">
+                    <div style="display:flex; justify-content:space-between; font-size:11px; color:#aaa; margin-bottom:4px;">
+                        <span>Bone Gizmo Size</span>
+                        <span id="bone-scale-val">${(this.boneScaleMultiplier || 1.0).toFixed(2)}x</span>
+                    </div>
+                    <input type="range" min="0.01" max="5.0" step="0.01" value="${this.boneScaleMultiplier || 1.0}" style="width:100%; accent-color:#e67e22;" 
+                        oninput="window.game.animator.setBoneScale(parseFloat(this.value)); document.getElementById('bone-scale-val').textContent = parseFloat(this.value).toFixed(2) + 'x'">
+                </div>
             </div>
 
             <div style="margin-bottom: 20px; border-top: 1px solid #444; padding-top: 15px;">
@@ -556,6 +617,16 @@ export class AnimatorEditorController {
         }
     }
 
+    setBoneScale(multiplier) {
+        if (!this.boneHelpers) return;
+        this.boneScaleMultiplier = multiplier;
+        this.boneHelpers.forEach(helper => {
+            if (helper && helper.userData.baseScale) {
+                helper.scale.setScalar(helper.userData.baseScale * multiplier);
+            }
+        });
+    }
+
     pauseClip() {
         if (this.selectedEntity && this.selectedEntity.animator && this.selectedEntity.animator.currentAction) {
             this.selectedEntity.animator.currentAction.paused = true;
@@ -621,29 +692,75 @@ export class AnimatorEditorController {
         if (!this.selectedEntity) return;
         this.boneHelpers = [];
 
-        const boxGeo = new THREE.BoxGeometry(0.05, 0.05, 0.05); // Small cubes
+        // Create a group for helpers if it doesn't exist
+        if (!this.boneHelperGroup) {
+            this.boneHelperGroup = new THREE.Group();
+            this.game.scene.add(this.boneHelperGroup);
+        } else {
+            this.game.scene.add(this.boneHelperGroup); // Ensure it's in scene
+        }
+
+        // Force matrix update to ensure world scales are correct before we measure
+        if (this.selectedEntity.mesh) {
+            this.selectedEntity.mesh.updateMatrixWorld(true);
+        }
+
+        const targetWorldSize = 0.05; // 5cm
+        const boxGeo = new THREE.BoxGeometry(1, 1, 1);
         const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, depthTest: false, transparent: true, opacity: 0.5 });
+        const worldScale = new THREE.Vector3();
 
-        this.selectedEntity.mesh.traverse(child => {
-            if (child.isBone) {
-                const helper = new THREE.Mesh(boxGeo, mat.clone());
-                helper.userData.bone = child;
-                helper.userData.isBoneHelper = true;
+        let bones = [];
+        if (this.selectedEntity.mesh.skeleton && this.selectedEntity.mesh.skeleton.bones) {
+            bones = this.selectedEntity.mesh.skeleton.bones;
+        } else {
+            this.selectedEntity.mesh.traverse(child => {
+                if (child.isBone) bones.push(child);
+            });
+        }
 
-                // We want the helper to follow the bone, so we attach it to the bone
-                child.add(helper);
-                this.boneHelpers.push(helper);
-            }
+        if (bones.length === 0) console.warn('[Animator] No bones found for helper creation.');
+
+        bones.forEach(bone => {
+            const helper = new THREE.Mesh(boxGeo, mat.clone());
+
+            // Calculate Scale
+            bone.getWorldScale(worldScale);
+            // If scale is weirdly 0 (can happen), default to 0.001 to avoid NaN
+            const sX = Math.abs(worldScale.x) < 0.000001 ? 0.001 : worldScale.x;
+            const requiredScale = targetWorldSize / sX;
+
+            // Apply init scale
+            helper.scale.setScalar(requiredScale);
+
+            // Store metadata
+            helper.userData.bone = bone;
+            helper.userData.isBoneHelper = true;
+            helper.userData.baseScale = requiredScale;
+
+            // Add to GROUP, not bone
+            this.boneHelperGroup.add(helper);
+            this.boneHelpers.push(helper);
         });
 
-        // DEBUG: Verify SkinnedMesh skeleton
-        this.selectedEntity.mesh.traverse(child => {
-            if (child.isSkinnedMesh) {
-                console.log(`[Animator] Found SkinnedMesh: ${child.name}`);
-                console.log(`[Animator] Skeleton Bone Count: ${child.skeleton.bones.length}`);
-                child.frustumCulled = false; // Force visibility
+        // Initial Sync
+        this._updateBoneHelpers();
+    }
+
+    _updateBoneHelpers() {
+        if (!this.boneHelpers || !this.boneHelperGroup) return;
+
+        // Sync helpers to bones
+        for (const helper of this.boneHelpers) {
+            const bone = helper.userData.bone;
+            if (bone) {
+                // Get bone's world transform
+                // We use helper.position/quaternion which are local to boneHelperGroup (scene root)
+                // So they match world transform directly
+                helper.position.setFromMatrixPosition(bone.matrixWorld);
+                helper.quaternion.setFromRotationMatrix(bone.matrixWorld);
             }
-        });
+        }
     }
 
     _validateAndRepairSkeleton() {
@@ -730,35 +847,6 @@ export class AnimatorEditorController {
         }
     }
 
-    _createBoneHelpers() {
-        if (!this.selectedEntity) return;
-        this.boneHelpers = [];
-
-        const boxGeo = new THREE.BoxGeometry(0.05, 0.05, 0.05); // Small cubes
-        const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, depthTest: false, transparent: true, opacity: 0.5 });
-
-        this.selectedEntity.mesh.traverse(child => {
-            if (child.isBone) {
-                const helper = new THREE.Mesh(boxGeo, mat.clone());
-                helper.userData.bone = child;
-                helper.userData.isBoneHelper = true;
-
-                // We want the helper to follow the bone, so we attach it to the bone
-                child.add(helper);
-                this.boneHelpers.push(helper);
-            }
-        });
-
-        // DEBUG: Verify SkinnedMesh skeleton
-        this.selectedEntity.mesh.traverse(child => {
-            if (child.isSkinnedMesh) {
-                console.log(`[Animator] Found SkinnedMesh: ${child.name}`);
-                console.log(`[Animator] Skeleton Bone Count: ${child.skeleton.bones.length}`);
-                child.frustumCulled = false; // Force visibility
-            }
-        });
-    }
-
     disablePoseMode() {
         this.isPoseMode = false;
 
@@ -777,10 +865,14 @@ export class AnimatorEditorController {
         }
 
         // Cleanup Bone Helpers
+        if (this.boneHelperGroup) {
+            this.game.scene.remove(this.boneHelperGroup);
+            // We usually don't dispose the group geometry, just clear children
+            this.boneHelperGroup.clear();
+        }
         if (this.boneHelpers) {
             this.boneHelpers.forEach(h => {
-                if (h.parent) h.parent.remove(h);
-                h.geometry.dispose();
+                if (h.geometry) h.geometry.dispose();
             });
             this.boneHelpers = [];
         }
@@ -799,63 +891,6 @@ export class AnimatorEditorController {
             }
         }
 
-        console.log('[Animator] Pose Mode DISABLED');
-        this._buildUI();
-    }
-
-    _onKeyDown(event) {
-        if (!this.isEnabled) return;
-        if (!this.isPoseMode) return;
-
-        switch (event.key.toLowerCase()) {
-            case 'q': this.transformControls.setSpace(this.transformControls.space === 'local' ? 'world' : 'local'); break;
-            case 'w': this.transformControls.setMode('translate'); break;
-            case 'e': this.transformControls.setMode('rotate'); break;
-            // case 'r': this.transformControls.setMode( 'scale' ); break; // Scale usually bad for bones
-        }
-    }
-
-    _selectBone(bone) {
-        if (!this.isPoseMode) return;
-        this.selectedBone = bone;
-        console.log(`[Animator] Selected Bone: ${bone.name} (ID: ${bone.uuid})`);
-
-        // DIAGNOSTIC CHECK: Is this bone in the SkinnedMesh skeleton?
-        let foundInSkeleton = false;
-        this.selectedEntity.mesh.traverse(child => {
-            if (child.isSkinnedMesh) {
-                if (child.skeleton.bones.includes(bone)) {
-                    console.log(`[Animator] ✅ Bone IS part of SkinnedMesh ${child.name} skeleton.`);
-                    foundInSkeleton = true;
-                } else {
-                    // Try to find by name to see if it's a clone issue
-                    const match = child.skeleton.bones.find(b => b.name === bone.name);
-                    if (match) {
-                        console.warn(`[Animator] ❌ Mismatch! Selected bone is NOT in skeleton, but a bone with same name IS. (Selected: ${bone.uuid}, Skeleton: ${match.uuid})`);
-                    } else {
-                        console.warn(`[Animator] ❌ bone not found in skeleton at all.`);
-                    }
-                }
-            }
-        });
-
-        // Highlight helper
-        this.boneHelpers.forEach(h => {
-            if (h.userData.bone === bone) {
-                h.material.color.setHex(0xffff00);
-                h.material.opacity = 0.8;
-            } else {
-                h.material.color.setHex(0x00ff00);
-                h.material.opacity = 0.5;
-            }
-        });
-
-        if (this.transformControls) {
-            this.transformControls.attach(bone);
-            // Default to rotate for bones
-            this.transformControls.setMode('rotate');
-        }
-
-        this._buildUI();
+        this._buildUI(); // Return to main menu
     }
 }
