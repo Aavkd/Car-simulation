@@ -5,28 +5,29 @@ This roadmap outlines the implementation of a AAA-quality animation system for t
 ## 🏗️ Phase 1: Core Animation Infrastructure
 **Goal:** Establish the foundational classes to handle GLB animations and the main update loop.
 
-- [ ] **Animation Component System** `js/animation/core/`
+- [x] **Animation Component System** `js/animation/core/`
     - Create `AnimationController.js`: Wrapper around `THREE.AnimationMixer`.
     - Handle initialization of `THREE.AnimationAction` from GLTF clips.
     - Implement `play(clipName, loop, fadeTime)` interface.
-- [ ] **Asset Pipeline Update**
+- [x] **Asset Pipeline Update**
     - Update `AssetLibrary.js` to flag assets as "SkinnedMesh" compatible.
     - Ensure `gltf.animations` are preserved during loading.
-- [ ] **Basic Integration**
+- [x] **Basic Integration**
     - Hook `AnimationController.update(delta)` into `NPCEntity.update`.
-    - Test with a simple "Idle" loop on a test NPC.
+    - **Note**: `knight_final.glb` is rigged but has no animations.
+    - Animation playback verification will be deferred until Phase 4 (Editor).
 
 ## 🧬 Phase 2: State Machine & Locomotion
 **Goal:** Implement a generic State Machine to manage logic transitions (Idle -> Walk -> Run -> Jump).
 
-- [ ] **Finite State Machine (FSM)** `js/animation/fsm/`
+- [x] **Finite State Machine (FSM)** `js/animation/fsm/`
     - Create `StateMachine.js`: Base class for managing states.
     - Create `State.js`: Base class with `enter()`, `update()`, `exit()`.
-- [ ] **Standard Character States**
+- [x] **Standard Character States**
     - `IdleState`: Random idle variations.
     - `MoveState`: Handles walking/running based on velocity.
     - `AirState`: Falling/Jumping logic.
-- [ ] **Input-to-Animation Driver**
+- [x] **Input-to-Animation Driver**
     - Map `PlayerController` velocity/input to animation parameters (speed, direction).
     - Implement smooth dampening for input values using `MathUtils.damp`.
 
@@ -56,7 +57,21 @@ This roadmap outlines the implementation of a AAA-quality animation system for t
     - **Transition Rules**: View/Edit transition conditions (e.g., `Speed > 0.1` → Move).
 - [ ] **Timeline / Preview**
     - Scrubber to test specific animations on the selected character.
+    - Scrubber to test specific animations on the selected character.
     - "Record" button to capture a sequence of inputs and replay it to test transitions.
+- [ ] **Deep Animation Creation Mode**
+    - **Visual Pose Editor**:
+        - Select bones (FK) or effectors (IK) to create key poses.
+        - "Ghosting" / Onion skinning to see previous frames.
+    - **Timeline & Keyframing**:
+        - Linear interpolation between captured poses.
+        - Dope-sheet view for adjusting timing.
+    - **JSON Persistence System**:
+        - **Export**: Serialize `THREE.AnimationClip` data to `.anim.json` files.
+        - **Storage**: Save to `assets/animations/` (requires server-side write or manual file save).
+        - **Import**: Runtime loader to parse `.anim.json` back into clips and apply to `AnimationController`.
+    - **Retargeting Support**:
+        - Auto-map standard bone names (Hips, Spine, Head) so saved JSON animations work on any humanoid Rig.
 
 ## ⚔️ Phase 5: Advanced Gameplay Integration
 **Goal:** Apply the system to complex gameplay scenarios.

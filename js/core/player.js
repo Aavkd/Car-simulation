@@ -44,6 +44,9 @@ export class PlayerController {
         this.raycaster = new THREE.Raycaster();
         this.interactables = []; // List of objects to check for interaction
         this.interactionRange = 4.0; // Distance to search for interactables
+
+        // Animation
+        this.animator = null;
     }
 
     /**
@@ -219,6 +222,15 @@ export class PlayerController {
             } else {
                 this.isGrounded = false;
             }
+        }
+
+        // ==================== ANIMATION DRIVER ====================
+        if (this.animator) {
+            // Speed (horizontal only)
+            const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
+            this.animator.setInput('speed', speed);
+            this.animator.setInput('isGrounded', this.isGrounded);
+            this.animator.update(dt);
         }
     }
 

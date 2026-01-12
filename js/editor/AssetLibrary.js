@@ -172,6 +172,15 @@ export class AssetLibrary {
                 type: 'npc',
                 scale: 1.0
             },
+            {
+                id: 'knight_npc',
+                name: 'Knight',
+                path: 'assets/models/knight_final.glb',
+                category: 'npc',
+                icon: '🛡️',
+                type: 'npc',
+                scale: 1.0
+            },
             // === Triggers ===
             {
                 id: 'trigger_volume',
@@ -252,6 +261,13 @@ export class AssetLibrary {
                 (gltf) => {
                     // Cache the original
                     this.modelCache.set(path, gltf);
+
+                    // Attach animations to the scene's userData so they persist on clone
+                    // Note: Standard clone() doesn't clone animations array, but does clone userData
+                    if (gltf.animations && gltf.animations.length > 0) {
+                        gltf.scene.userData.animations = gltf.animations;
+                    }
+
                     // Return a clone
                     resolve(gltf.scene.clone());
                 },
