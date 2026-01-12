@@ -39,7 +39,7 @@ export class DialogueSystem {
         this.processNodeTriggers(this.currentNode);
         this.logOptions();
 
-        // TODO: Emit event to UI to show dialogue
+        window.dispatchEvent(new CustomEvent('RPG_DIALOGUE_START', { detail: this.currentNode }));
     }
 
     /**
@@ -84,6 +84,7 @@ export class DialogueSystem {
                 this.endDialogue();
             } else {
                 this.logOptions();
+                window.dispatchEvent(new CustomEvent('RPG_DIALOGUE_START', { detail: this.currentNode }));
             }
         } else {
             this.endDialogue();
@@ -94,7 +95,7 @@ export class DialogueSystem {
         console.log('[DialogueSystem] Dialogue ended.');
         this.currentDialogue = null;
         this.currentNode = null;
-        // TODO: Emit event to UI to close dialogue
+        window.dispatchEvent(new CustomEvent('RPG_DIALOGUE_END'));
     }
 
     checkRequirement(req) {

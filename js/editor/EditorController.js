@@ -174,8 +174,7 @@ export class EditorController {
      * Save the current level
      */
     saveLevel() {
-        // Update objects data
-        this.currentLevel.objects = this.objectManager.getObjectsData();
+        this._captureCurrentState();
 
         // Save to storage
         if (this.serializer.saveLevel(this.currentLevel)) {
@@ -196,26 +195,89 @@ export class EditorController {
             return;
         }
 
-        this.currentLevel = levelData;
-
-        // Load objects
-        await this.objectManager.loadObjects(levelData.objects || []);
-
-        // Apply environment settings
-        if (levelData.environment) {
-            this._applyEnvironmentSettings(levelData.environment);
-        }
-
-        this._showNotification(`Loaded: ${levelData.meta.name}`, 'success');
+        await this._applyLevelData(levelData);
     }
 
     /**
      * Export current level to file
      */
     exportLevel() {
-        this.currentLevel.objects = this.objectManager.getObjectsData();
+        this._captureCurrentState();
         this.serializer.exportToFile(this.currentLevel);
         this._showNotification('Level exported!', 'success');
+    }
+
+    /**
+     * Capture all runtime state into currentLevel object
+     */
+    _captureCurrentState() {
+        // 1. Objects
+        this.currentLevel.objects = this.objectManager.getObjectsData();
+
+        // 2. Physics
+        // (Already updated via GUI callbacks, but good to ensure)
+        // this.currentLevel.physics is updated in _applyPhysicsChange
+
+        // 3. Terrain
+        // (Already updated in _regenerateTerrain)
+
+        // 4. Sky Settings
+        if (this.game.sky) {
+            const sky = this.game.sky;
+            this.currentLevel.environment.sky = {
+                type: sky.constructor.name,
+                settings: {}
+            };
+
+            if (sky.constructor.name === 'SkySystem') {
+                this.currentLevel.environment.sky.settings = {
+                    day: { ...sky.settings.day },
+                    sunset: { ...sky.settings.sunset },
+                    night: { ...sky.settings.night },
+                    lights: { ...sky.settings.lights },
+                    durations: { ...sky.settings.durations }
+                };
+                if (sky.starfield) {
+                    this.currentLevel.environment.sky.settings.starfield = { ...sky.starfield.settings };
+                }
+            } else if (sky.constructor.name === 'SkyDeepSpace') {
+                this.currentLevel.environment.sky.settings = { ...sky.settings };
+            }
+        }
+
+        // 5. RPG Data (Custom Items/Quests)
+        if (this.rpgEditor) {
+            this.currentLevel.rpgData = this.rpgEditor.getCustomData();
+        }
+    }
+
+    _restoreRPGData(rpgData) {
+        if (!rpgData) return;
+
+        // Restore custom items to local storage so they are available
+        if (rpgData.items) {
+            const current = JSON.parse(localStorage.getItem('ae86_custom_items') || '{}');
+            const merged = { ...current, ...rpgData.items };
+            localStorage.setItem('ae86_custom_items', JSON.stringify(merged));
+        }
+
+        // Restore custom quests
+        if (rpgData.quests) {
+            const current = JSON.parse(localStorage.getItem('ae86_custom_quests') || '[]');
+            // Merge arrays avoiding duplicates by ID
+            const merged = [...current];
+            rpgData.quests.forEach(q => {
+                if (!merged.find(existing => existing.id === q.id)) {
+                    merged.push(q);
+                }
+            });
+            localStorage.setItem('ae86_custom_quests', JSON.stringify(merged));
+        }
+
+        // Refresh RPG editor UI
+        if (this.rpgEditor && this.rpgEditor.refreshItemSpawner) {
+            this.rpgEditor.refreshItemSpawner();
+        }
     }
 
     /**
@@ -231,9 +293,7 @@ export class EditorController {
 
             try {
                 const levelData = await this.serializer.importFromFile(file);
-                this.currentLevel = levelData;
-                await this.objectManager.loadObjects(levelData.objects || []);
-                this._showNotification(`Imported: ${levelData.meta.name}`, 'success');
+                await this._applyLevelData(levelData);
             } catch (error) {
                 console.error('[EditorController] Import failed:', error);
                 this._showNotification('Failed to import level', 'error');
@@ -630,9 +690,11 @@ export class EditorController {
 
         // Physics folder
         const physicsFolder = this.gui.addFolder('Physics');
-        this.guiParams.gravity = 1.0;
-        this.guiParams.friction = 1.0;
-        this.guiParams.airResistance = 0.01;
+        const physics = this.currentLevel.physics || {};
+
+        this.guiParams.gravity = physics.gravity !== undefined ? physics.gravity : 1.0;
+        this.guiParams.friction = physics.friction !== undefined ? physics.friction : 1.0;
+        this.guiParams.airResistance = physics.airResistance !== undefined ? physics.airResistance : 0.01;
 
         physicsFolder.add(this.guiParams, 'gravity', 0.1, 3, 0.1)
             .name('Gravity')
@@ -646,8 +708,10 @@ export class EditorController {
 
         // Environment folder
         const envFolder = this.gui.addFolder('Environment');
-        this.guiParams.timeOfDay = 0.5;
-        this.guiParams.fogDensity = 0.0005;
+        const env = this.currentLevel.environment || {};
+
+        this.guiParams.timeOfDay = env.timeOfDay !== undefined ? env.timeOfDay : 0.5;
+        this.guiParams.fogDensity = env.fogDensity !== undefined ? env.fogDensity : 0.0005;
 
         envFolder.add(this.guiParams, 'timeOfDay', 0, 1, 0.01)
             .name('Time of Day')
@@ -739,9 +803,11 @@ export class EditorController {
         // Car folder (if car exists)
         if (this.game.car) {
             const carFolder = this.gui.addFolder('Car');
-            this.guiParams.suspensionStiffness = 30;
-            this.guiParams.suspensionDamping = 4;
-            this.guiParams.enginePower = 1.0;
+            const physics = this.currentLevel.physics || {};
+
+            this.guiParams.suspensionStiffness = physics.suspensionStiffness !== undefined ? physics.suspensionStiffness : 30;
+            this.guiParams.suspensionDamping = physics.suspensionDamping !== undefined ? physics.suspensionDamping : 4;
+            this.guiParams.enginePower = physics.enginePower !== undefined ? physics.enginePower : 1.0;
 
             carFolder.add(this.guiParams, 'suspensionStiffness', 10, 100, 1)
                 .name('Suspension Stiff')
@@ -929,6 +995,151 @@ export class EditorController {
             this.game.scene.fog.density = env.fogDensity;
             this.guiParams.fogDensity = env.fogDensity;
         }
+
+        // Restore complex sky settings
+        if (env.sky && this.game.sky) {
+            const savedSky = env.sky;
+            const currentSky = this.game.sky;
+
+            // Only apply if types match (e.g. don't apply DeepSpace settings to SkySystem)
+            if (savedSky.type === currentSky.constructor.name) {
+                if (savedSky.type === 'SkySystem') {
+                    // Deep merge settings
+                    Object.assign(currentSky.settings.day, savedSky.settings.day);
+                    Object.assign(currentSky.settings.sunset, savedSky.settings.sunset);
+                    Object.assign(currentSky.settings.night, savedSky.settings.night);
+                    Object.assign(currentSky.settings.lights, savedSky.settings.lights);
+                    Object.assign(currentSky.settings.durations, savedSky.settings.durations);
+
+                    if (currentSky.starfield && savedSky.settings.starfield) {
+                        Object.assign(currentSky.starfield.settings, savedSky.settings.starfield);
+                    }
+                } else if (savedSky.type === 'SkyDeepSpace') {
+                    Object.assign(currentSky.settings, savedSky.settings);
+                }
+
+                // Trigger update
+                if (currentSky.updateSettings) {
+                    currentSky.updateSettings();
+                }
+            }
+        }
+
+        // Apply Terrain Parameters
+        console.log('[Editor] Applying environment parameters:', env.parameters, 'Terrain exists:', !!this.game.terrain);
+        if (env.parameters && this.game.terrain) {
+            const params = env.parameters;
+
+            // Update local GUI params
+            // Map flat params back to gui defaults where needed
+            const terrainP = this.guiParams.terrain;
+
+            // Helper: Update key if exists
+            const setIfExists = (key) => {
+                if (params[key] !== undefined) terrainP[key] = params[key];
+            };
+
+            setIfExists('heightScale');
+            setIfExists('seed');
+            setIfExists('noiseScale');
+            setIfExists('hillScale');
+            setIfExists('detailScale');
+            setIfExists('microScale');
+            setIfExists('maxHeight');
+            setIfExists('baseHeight');
+            setIfExists('baseNoiseHeight');
+            setIfExists('hillNoiseHeight');
+            setIfExists('detailNoiseHeight');
+            setIfExists('waterLevel');
+
+            if (params.colors) {
+                terrainP.colorGrassLow = params.colors.grassLow;
+                terrainP.colorGrassHigh = params.colors.grassHigh;
+                terrainP.colorDirt = params.colors.dirt;
+                terrainP.colorRock = params.colors.rock;
+                terrainP.colorSnow = params.colors.snow;
+                terrainP.colorWater = params.colors.water;
+            }
+
+            // Trigger regeneration
+            this._regenerateTerrain(params);
+        }
+    }
+
+    _applyPhysicsSettings(physics) {
+        if (!physics) return;
+
+        // Update GUI params
+        if (physics.gravity !== undefined) this.guiParams.gravity = physics.gravity;
+        if (physics.friction !== undefined) this.guiParams.friction = physics.friction;
+        if (physics.airResistance !== undefined) this.guiParams.airResistance = physics.airResistance;
+        if (physics.suspensionStiffness !== undefined) this.guiParams.suspensionStiffness = physics.suspensionStiffness;
+        if (physics.suspensionDamping !== undefined) this.guiParams.suspensionDamping = physics.suspensionDamping;
+        if (physics.enginePower !== undefined) this.guiParams.enginePower = physics.enginePower;
+
+        // Apply to engines
+        this._applyPhysicsChange('gravity', this.guiParams.gravity);
+        this._applyPhysicsChange('friction', this.guiParams.friction);
+        this._applyPhysicsChange('airResistance', this.guiParams.airResistance);
+
+        // Car specific
+        this._applyCarChange('suspensionStiffness', this.guiParams.suspensionStiffness);
+        this._applyCarChange('suspensionDamping', this.guiParams.suspensionDamping);
+        this._applyCarChange('enginePower', this.guiParams.enginePower);
+    }
+
+    _refreshGUI() {
+        // Update HTML UI
+        const nameEl = document.getElementById('editor-level-name');
+        if (nameEl && this.currentLevel) {
+            nameEl.textContent = this.currentLevel.meta.name;
+        }
+
+        // Rebuild lil-gui
+        if (this.gui) {
+            this.gui.destroy();
+            this.gui = null;
+        }
+
+        this._createGameParameterPanel();
+
+        // Re-attach RPG editor
+        if (this.rpgEditor) {
+            this.rpgEditor.initialize(this.gui);
+        }
+
+        // Maintain visibility state
+        if (this.gui && this.gui.domElement) {
+            this.gui.domElement.style.display = this.enabled ? '' : 'none';
+        }
+    }
+
+    async _applyLevelData(levelData) {
+        this.currentLevel = levelData;
+
+        // Load objects
+        await this.objectManager.loadObjects(levelData.objects || []);
+
+        // Apply environment settings
+        console.log('[Editor] Loading environment:', levelData.environment);
+        if (levelData.environment) {
+            this._applyEnvironmentSettings(levelData.environment);
+        }
+
+        // Apply physics settings
+        if (levelData.physics) {
+            this._applyPhysicsSettings(levelData.physics);
+        }
+
+        // Restore custom RPG data if present
+        if (levelData.rpgData) {
+            this._restoreRPGData(levelData.rpgData);
+        }
+
+        // Update GUI to match loaded data
+        this._refreshGUI();
+
+        this._showNotification(`Loaded: ${levelData.meta.name}`, 'success');
     }
 
     _showLoadDialog() {

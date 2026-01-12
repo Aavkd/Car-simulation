@@ -177,11 +177,13 @@ export class SceneObjectManager {
             object.position.copy(position);
 
             // Apply scale if provided in metadata (e.g. from asset config)
-            if (metadata.scale) {
+            // Apply scale if provided in metadata (e.g. from asset config)
+            // Note: if metadata.scale is present, it might override path-based scale
+            if (metadata.scale !== undefined) {
                 if (typeof metadata.scale === 'number') {
                     object.scale.setScalar(metadata.scale);
-                } else {
-                    object.scale.set(metadata.scale.x, metadata.scale.y, metadata.scale.z);
+                } else if (metadata.scale && typeof metadata.scale === 'object') {
+                    object.scale.set(metadata.scale.x || 1, metadata.scale.y || 1, metadata.scale.z || 1);
                 }
             }
 
@@ -404,19 +406,31 @@ export class SceneObjectManager {
         // Clear existing objects
         this.clearAllObjects();
 
+        console.log(`[SceneObjectManager] Loading ${objectsData.length} objects...`);
         for (const data of objectsData) {
-            const object = await this.addObject(data.assetPath, new THREE.Vector3(), {
-                id: data.id,
-                name: data.name,
-                type: data.type
-            });
+            try {
+                const object = await this.addObject(data.assetPath, new THREE.Vector3(), {
+                    id: data.id,
+                    name: data.name,
+                    type: data.type,
+                    // Restore RPG attributes
+                    npcId: data.npcId,
+                    dialogueId: data.dialogueId,
+                    behavior: data.behavior,
+                    flags: data.flags,
+                    itemId: data.itemId
+                });
 
-            if (object) {
-                object.position.set(data.position.x, data.position.y, data.position.z);
-                object.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z);
-                object.scale.set(data.scale.x, data.scale.y, data.scale.z);
+                if (object) {
+                    if (data.position) object.position.set(data.position.x || 0, data.position.y || 0, data.position.z || 0);
+                    if (data.rotation) object.rotation.set(data.rotation.x || 0, data.rotation.y || 0, data.rotation.z || 0);
+                    if (data.scale) object.scale.set(data.scale.x || 1, data.scale.y || 1, data.scale.z || 1);
+                }
+            } catch (err) {
+                console.error(`[SceneObjectManager] Failed to load object ${data.name}:`, err);
             }
         }
+        console.log('[SceneObjectManager] Objects loaded.');
 
         // Clear undo stack after load
         this.undoStack = [];
@@ -560,8 +574,6 @@ export class SceneObjectManager {
                 npcId: data.npcId,
                 dialogueId: data.dialogueId,
                 behavior: data.behavior,
-                dialogueId: data.dialogueId,
-                behavior: data.behavior,
                 flags: data.flags,
                 // Restore Item data
                 itemId: data.itemId
@@ -600,11 +612,16 @@ export class SceneObjectManager {
             if (this.placementAsset.procedural) {
                 this.addProceduralObject(this.placementAsset, position);
             } else {
-                this.addObject(this.placementAsset.path, position, {
+                const metadata = {
+                    ...this.placementAsset,
                     name: this.placementAsset.name,
                     type: this.placementAsset.type || 'object',
                     scale: this.placementAsset.scale || 1
-                });
+                };
+                // Remove internal/irrelevant keys if needed, but addObject handles extras fine
+                delete metadata.path;
+
+                this.addObject(this.placementAsset.path, position, metadata);
             }
             // Stay in placement mode for multiple placements (hold ESC to cancel)
             return;

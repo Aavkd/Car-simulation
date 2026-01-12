@@ -111,15 +111,15 @@ This document outlines the step-by-step plan to transform the Racing Simulator i
 
 **Goal**: Visual feedback for the RPG elements.
 
-- [ ] **Dialogue Overlay**:
-    - Create generic HTML/CSS overlay for letterboxed cinematic view.
-    - Typewriter effect for text.
-    - Response buttons.
+- [x] **Dialogue Overlay**:
+    - [x] Create generic HTML/CSS overlay for letterboxed cinematic view.
+    - [x] Typewriter effect for text.
+    - [x] Response buttons.
 
-- [ ] **HUD Extensions**:
-    - Mini-quest tracker (Top Left).
-    - "Interact" Prompt (Center screen when looking at NPC).
-    - Notification toasts ("Quest Accepted", "Item Received").
+- [x] **HUD Extensions**:
+    - [x] Mini-quest tracker (Top Left).
+    - [x] "Interact" Prompt (Center screen when looking at NPC).
+    - [x] Notification toasts ("Quest Accepted", "Item Received").
 
 - [ ] **Menu Screens**:
     - "Journal" tab in the Pause Menu (Quest Log, Inventory).

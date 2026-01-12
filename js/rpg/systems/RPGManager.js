@@ -2,6 +2,7 @@ import { RPGProfile } from '../RPGProfile.js';
 import { InventoryManager } from './InventoryManager.js';
 import { QuestManager } from './QuestManager.js';
 import { DialogueSystem } from './DialogueSystem.js';
+import { RPGUIController } from '../ui/RPGUIController.js';
 
 import { RPGData } from '../RPGData.js';
 
@@ -30,6 +31,7 @@ export class RPGManager {
         this.questManager.rpgManager = this;
 
         this.dialogueSystem = new DialogueSystem(this);
+        this.uiController = new RPGUIController(this);
 
         console.log('[RPGManager] Constructed with all subsystems.');
     }
@@ -48,9 +50,9 @@ export class RPGManager {
 
     update(time, delta) {
         // Only update if we are in a state that supports RPG logic (usually PLAY)
-
-        // Example: Update Quest timers
-        // this.questManager.update(delta);
+        if (this.game && this.game.gameState === 'play') {
+            this.uiController.update(time, delta);
+        }
     }
 
     _loadCustomData() {

@@ -73,6 +73,42 @@
             <div class="time-value">12:00</div>
             <div class="time-status"></div>
         </div>
+        <!-- RPG UI Layer -->
+        <div id="rpg-ui-layer">
+
+            <!-- Dialogue Overlay (Cinematic Mode) -->
+            <div id="dialogue-overlay" class="hidden">
+                <div class="cinematic-bar top"></div>
+                <div class="cinematic-bar bottom"></div>
+
+                <div class="dialogue-box">
+                    <div class="dialogue-speaker">Mechanic Mike</div>
+                    <div class="dialogue-text"></div> <!-- Typewriter effect goes here -->
+                    <div class="dialogue-responses" id="dialogue-responses">
+                        <!-- Buttons injected via JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- HUD Elements -->
+            <div id="quest-tracker" class="hidden">
+                <div class="quest-header">CURRENT OBJECTIVE</div>
+                <div class="quest-title" id="qt-title">Find the Lost Wrench</div>
+                <ul class="quest-objectives" id="qt-objectives">
+                    <!-- li injected via JS -->
+                </ul>
+            </div>
+
+            <div id="interaction-prompt" class="hidden">
+                <div class="key-prompt">E</div>
+                <span class="prompt-text">Talk</span>
+            </div>
+
+            <div id="notification-area">
+                <!-- Toast notifications injected here -->
+            </div>
+
+        </div>
     </div>
 
     <!-- Three.js and dependencies -->

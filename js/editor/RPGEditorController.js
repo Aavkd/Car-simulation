@@ -23,6 +23,13 @@ export class RPGEditorController {
      * @param {GUI} gui - The main lil-gui instance
      */
     initialize(gui) {
+        // Reset UI references to avoid destroying stale controllers
+        this.rpgFolder = null;
+        this.npcFolder = null;
+        this.itemSelector = null;
+        this.questSelector = null;
+        this.spawnerItemSelector = null;
+
         this.gui = gui;
         this.rpgFolder = this.gui.addFolder('🎭 RPG Content');
 
@@ -336,5 +343,11 @@ export class RPGEditorController {
 
         localStorage.setItem('ae86_custom_quests', JSON.stringify(custom));
         alert(`Saved quest: ${params.id}`);
+    }
+    getCustomData() {
+        return {
+            items: this._getCustomItems(),
+            quests: this._getCustomQuests()
+        };
     }
 }

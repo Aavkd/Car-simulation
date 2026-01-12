@@ -39,7 +39,11 @@ export class QuestManager {
 
         console.log(`[QuestManager] Started quest: ${staticDef.title} (${questId})`);
         this.profile.save();
-        // TODO: Emit 'quest_started' event
+
+        window.dispatchEvent(new CustomEvent('RPG_QUEST_START', {
+            detail: { id: questId, title: staticDef.title }
+        }));
+        window.dispatchEvent(new CustomEvent('RPG_QUEST_UPDATE', { detail: { id: questId } }));
     }
 
     /**
@@ -53,7 +57,8 @@ export class QuestManager {
         quest.objectiveIndex++;
         console.log(`[QuestManager] Quest ${questId} objective updated to ${quest.objectiveIndex}.`);
         this.profile.save();
-        // TODO: Emit 'quest_objective_completed' event
+
+        window.dispatchEvent(new CustomEvent('RPG_QUEST_UPDATE', { detail: { id: questId } }));
     }
 
     /**
@@ -69,7 +74,13 @@ export class QuestManager {
 
         console.log(`[QuestManager] Quest completed: ${questId}`);
         this.profile.save();
-        // TODO: Emit 'quest_completed' event (listeners could award XP/money)
+
+        // Find static data for title
+        const staticDef = this.rpgManager.data.QUESTS.find(q => q.id === questId);
+        window.dispatchEvent(new CustomEvent('RPG_QUEST_COMPLETE', {
+            detail: { id: questId, title: staticDef ? staticDef.title : questId }
+        }));
+        window.dispatchEvent(new CustomEvent('RPG_QUEST_UPDATE', { detail: { id: questId } }));
     }
 
     /**
@@ -93,5 +104,30 @@ export class QuestManager {
      */
     getQuestStatus(questId) {
         return this.profile.quests[questId] ? this.profile.quests[questId].status : null;
+    }
+
+    getActiveQuest() {
+        // Find the first ACTIVE quest
+        const activeQuestId = Object.keys(this.profile.quests).find(id => this.profile.quests[id].status === 'ACTIVE');
+        if (!activeQuestId) return null;
+
+        const dynamicData = this.profile.quests[activeQuestId];
+        const staticDef = this.rpgManager.data.QUESTS.find(q => q.id === activeQuestId);
+
+        if (!staticDef) return null;
+
+        // Merge objectives with completion status
+        const objectives = staticDef.objectives.map((desc, index) => ({
+            description: desc,
+            isCompleted: index < dynamicData.objectiveIndex
+        }));
+
+        return {
+            id: activeQuestId,
+            title: staticDef.title,
+            description: staticDef.description,
+            objectives: objectives,
+            dynamicData: dynamicData
+        };
     }
 }
