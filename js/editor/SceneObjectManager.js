@@ -241,6 +241,37 @@ export class SceneObjectManager {
                 proceduralInstance = new BlackHole(options);
                 object = proceduralInstance.mesh;
                 break;
+            case 'TriggerVolume':
+                const trigOpts = { ...assetConfig.options, ...metadata.proceduralOptions };
+                const geometry = new THREE.BoxGeometry(1, 1, 1);
+                const material = new THREE.MeshBasicMaterial({
+                    color: trigOpts.color,
+                    transparent: true,
+                    opacity: trigOpts.opacity,
+                    wireframe: false,
+                    depthWrite: false
+                });
+                object = new THREE.Mesh(geometry, material);
+                object.scale.set(trigOpts.width || 5, trigOpts.height || 5, trigOpts.depth || 5);
+
+                // Add wireframe helper
+                const edges = new THREE.EdgesGeometry(geometry);
+                const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffffff }));
+                object.add(line);
+
+                // Mock instance interface for update loop/config
+                proceduralInstance = {
+                    mesh: object,
+                    update: () => { }, // No animation
+                    getConfig: () => ({
+                        width: object.scale.x,
+                        height: object.scale.y,
+                        depth: object.scale.z,
+                        color: '#' + object.material.color.getHexString(),
+                        opacity: object.material.opacity
+                    })
+                };
+                break;
             default:
                 console.error(`[SceneObjectManager] Unknown procedural generator: ${assetConfig.generator}`);
                 return null;
@@ -303,6 +334,21 @@ export class SceneObjectManager {
         }
 
         console.log(`[SceneObjectManager] Removed object: ${object.userData.name}`);
+    }
+
+    enterPickingMode(callback) {
+        this.isPicking = true;
+        this.onPick = callback;
+        this.renderer.domElement.style.cursor = 'help'; // Indicate picking
+        this.deselectObject();
+        console.log('[SceneObjectManager] Entered picking mode');
+    }
+
+    exitPickingMode() {
+        this.isPicking = false;
+        this.onPick = null;
+        this.renderer.domElement.style.cursor = 'default';
+        console.log('[SceneObjectManager] Exited picking mode');
     }
 
     /**
@@ -409,23 +455,8 @@ export class SceneObjectManager {
         console.log(`[SceneObjectManager] Loading ${objectsData.length} objects...`);
         for (const data of objectsData) {
             try {
-                const object = await this.addObject(data.assetPath, new THREE.Vector3(), {
-                    id: data.id,
-                    name: data.name,
-                    type: data.type,
-                    // Restore RPG attributes
-                    npcId: data.npcId,
-                    dialogueId: data.dialogueId,
-                    behavior: data.behavior,
-                    flags: data.flags,
-                    itemId: data.itemId
-                });
-
-                if (object) {
-                    if (data.position) object.position.set(data.position.x || 0, data.position.y || 0, data.position.z || 0);
-                    if (data.rotation) object.rotation.set(data.rotation.x || 0, data.rotation.y || 0, data.rotation.z || 0);
-                    if (data.scale) object.scale.set(data.scale.x || 1, data.scale.y || 1, data.scale.z || 1);
-                }
+                // Use _restoreObject to handle both standard and procedural objects
+                await this._restoreObject(data);
             } catch (err) {
                 console.error(`[SceneObjectManager] Failed to load object ${data.name}:`, err);
             }
@@ -625,6 +656,25 @@ export class SceneObjectManager {
             }
             // Stay in placement mode for multiple placements (hold ESC to cancel)
             return;
+        }
+
+        // Handle picking mode
+        if (this.isPicking && this.onPick) {
+            this.raycaster.setFromCamera(this.mouse, this.camera);
+            const intersects = this.raycaster.intersectObjects(this.objects, true);
+
+            if (intersects.length > 0) {
+                let target = intersects[0].object;
+                while (target.parent && !this.objects.includes(target)) {
+                    target = target.parent;
+                }
+                if (this.objects.includes(target)) {
+                    // Call callback with object info
+                    this.onPick(target);
+                    this.exitPickingMode();
+                    return;
+                }
+            }
         }
 
         // Handle selection

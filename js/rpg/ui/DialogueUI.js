@@ -71,19 +71,7 @@ export class DialogueUI {
 
             btn.addEventListener('click', () => {
                 if (node.next) {
-                    // Linear progression if next is defined but no choices
-                    // Wait, DialogueSystem usually handles 'choices' or 'next'
-                    // If 'next' exists without choices, we treat it as option 0?
-                    // Actually DialogueSystem.js logic for selectOption uses choices[index].
-                    // If we have linear node with 'next' property but no choices array,
-                    // we need a way to tell system to proceed.
-                    // Let's check DialogueSystem.selectOption implementation...
-                    // It strictly accesses choices[index]. 
-                    // So linear nodes MUST have a choice array of length 1 "Continue" 
-                    // OR we need to add a proceed() method to DialogueSystem.
-                    // For now, let's assume endDialogue() is safe default, 
-                    // but better check if we need to support linear flow without explicit choice.
-                    this.controller.rpgManager.dialogueSystem.endDialogue();
+                    this.controller.rpgManager.dialogueSystem.advance();
                 } else {
                     this.controller.rpgManager.dialogueSystem.endDialogue();
                 }

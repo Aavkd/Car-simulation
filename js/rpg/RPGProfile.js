@@ -60,6 +60,20 @@ export class RPGProfile {
         console.log('[RPGProfile] Profile loaded successfully.');
     }
 
+    setFlag(key, value) {
+        this.flags[key] = value;
+        console.log(`[RPGProfile] Flag set: ${key} = ${value}`);
+        this.save();
+    }
+
+    getFlag(key) {
+        return this.flags[key];
+    }
+
+    hasFlag(key) {
+        return !!this.flags[key];
+    }
+
     save() {
         const data = JSON.stringify(this.serialize());
         localStorage.setItem('ae86_rpg_profile', data);

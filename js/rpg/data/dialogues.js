@@ -179,5 +179,161 @@ export const DIALOGUES = {
                 end: true
             }
         }
-    }
+    },
+    // -------------------------------------------------------------------------
+    // COSMIC ENTITY ENCOUNTER
+    // -------------------------------------------------------------------------
+    'cosmic_encounter': {
+        id: 'cosmic_encounter',
+        nodes: {
+            // ACT 1: THE AWAKENING
+            start: {
+                text: "You return to the quiet place. Or perhaps you never left. Time folds upon itself here, like a map made of skin. Do you know where 'here' is, Struggler?",
+                speaker: "The Observer",
+                choices: [
+                    { text: "It's inside my mind.", next: 'location_mind' },
+                    { text: "It's the space between worlds.", next: 'location_void' },
+                    { text: "It's the grave I crawled out of.", next: 'location_grave' }
+                ]
+            },
+            location_mind: {
+                text: "Your mind is a small room. This... this is the house it sits in. But the walls are made of memory.",
+                speaker: "The Observer",
+                next: 'loop_intro'
+            },
+            location_void: {
+                text: "The Void is empty. This place is full. Full of echoes. Full of the dust of a billion mistakes.",
+                speaker: "The Observer",
+                next: 'loop_intro'
+            },
+            location_grave: {
+                text: "A grave is a final punctuation. You are an ellipses. A sentence that refuses to end.",
+                speaker: "The Observer",
+                next: 'loop_intro'
+            },
+
+            // ACT 2: THE LOOP
+            loop_intro: {
+                text: "Look at your hands. How many times have they held a weapon? How many times have they turned to ash? The Loop tightens around your neck.",
+                speaker: "The Observer",
+                choices: [
+                    { text: "I feel the weight of every death.", next: 'loop_burden' },
+                    { text: "It's a gift. I can try again.", next: 'loop_gift' },
+                    { text: "I don't care. I just want to win.", next: 'loop_pragmatist' }
+                ]
+            },
+            loop_burden: {
+                text: "Pain is data. It accumulates. Be careful you do not drown in the archives of your own suffering.",
+                speaker: "The Observer",
+                next: 'history_segues'
+            },
+            loop_gift: {
+                text: "A gift? No. It is a loan. And the interest rate is your humanity. Every resurrection carves away a piece of what you were.",
+                speaker: "The Observer",
+                next: 'history_segues'
+            },
+            loop_pragmatist: {
+                text: "Effective. Cold. You are becoming like the machines you fight. Perhaps that is necessary.",
+                speaker: "The Observer",
+                next: 'history_segues'
+            },
+
+            // ACT 3: THE HISTORY
+            history_segues: {
+                text: "You walk the Red Plains of Ares. Once, this was a garden. Humanity reached for the stars and burnt its fingers to the bone.",
+                speaker: "The Observer",
+                choices: [
+                    { text: "Who destroyed it?", next: 'history_blame' },
+                    { text: "Can it be restored?", next: 'history_hope' }
+                ]
+            },
+            history_blame: {
+                text: "Everyone. The Old Powers of Earth who pushed the button. The Colonists who turned on each other. The Aliens who watched and waited. Guilt is the only unlimited resource.",
+                speaker: "The Observer",
+                next: 'factions_intro'
+            },
+            history_hope: {
+                text: "Restored? No. A broken glass can be glued, but it will never ring true again. But it can be... repurposed.",
+                speaker: "The Observer",
+                next: 'factions_intro'
+            },
+
+            // ACT 4: FACTIONS & PHILOSOPHY
+            factions_intro: {
+                text: "Now, the survivors cling to the wreckage. The Iron King builds walls of stone to hide from the future. The Technocrat builds walls of wire to hide from the past. Who is right?",
+                speaker: "The Observer",
+                choices: [
+                    { text: "Aethelgard (The Iron King). Strength is honest.", setFlag: { key: 'ideology', value: 'traditional' }, next: 'faction_traditional' },
+                    { text: "Solis (The Technocrat). Progress is survival.", setFlag: { key: 'ideology', value: 'technological' }, next: 'faction_tech' },
+                    { text: "Neither. They are both blind.", setFlag: { key: 'ideology', value: 'neutral' }, next: 'faction_neutral' }
+                ]
+            },
+            faction_traditional: {
+                text: "Honest, yes. But brittle. Iron rusts. Flesh decays. To reject the tool is to die by the hand of those who wield it.",
+                speaker: "The Observer",
+                next: 'the_merging'
+            },
+            faction_tech: {
+                text: "Survival, perhaps. But at what cost? Varia has replaced her heart with a pump. She survives, but does she live?",
+                speaker: "The Observer",
+                next: 'the_merging'
+            },
+            faction_neutral: {
+                text: "Cynicism is a shield, not a sword. It protects you, but it conquers nothing. Eventually, you must choose a side, even if it is your own.",
+                speaker: "The Observer",
+                next: 'the_merging'
+            },
+
+            // ACT 5: THE MERGING & THE FALSE GOD
+            the_merging: {
+                text: "All their wars are children fighting in a sandbox while a tsunami approaches. The Merging. The Order of the Void calls it 'Unity'.",
+                speaker: "The Observer",
+                choices: [
+                    { text: "What is the Merging?", next: 'merging_explanation' },
+                    { text: "I will stop it.", next: 'merging_defiance' }
+                ]
+            },
+            merging_explanation: {
+                text: "The end of the 'I'. The beginning of the 'We'. A universe without conflict, because there is only One Will. It is peace. It is death.",
+                speaker: "The Observer",
+                next: 'final_advice'
+            },
+            merging_defiance: {
+                text: "To stop the tide, you must become the rock. But the rock is worn away, grain by grain. Are you ready to be eroded?",
+                speaker: "The Observer",
+                next: 'final_advice'
+            },
+
+            // ACT 6: CONCLUSION
+            final_advice: {
+                text: "The False God waits. It wears the face of your desires. It will offer you perfection.",
+                speaker: "The Observer",
+                choices: [
+                    { text: "What should I do?", next: 'advice_humanity' },
+                    { text: "I need power.", next: 'advice_power' }
+                ]
+            },
+            advice_humanity: {
+                text: "Hold on to your flaws. Your fear, your anger, your love. They are the jagged edges that prevent you from fitting into their perfect puzzle. Stay broken. Stay free.",
+                speaker: "The Observer",
+                next: 'end_sequence'
+            },
+            advice_power: {
+                text: "Then take it. But know that power fills the vessel by displacing what was there before. You may win the war, but lose the one who fought it.",
+                speaker: "The Observer",
+                next: 'end_sequence'
+            },
+            end_sequence: {
+                text: "The conversation ends. The war continues. Wake up, Struggler.",
+                speaker: "The Observer",
+                choices: [
+                    { text: "Wake up.", next: 'exit' }
+                ]
+            },
+            exit: {
+                text: "...",
+                end: true
+            }
+        }
+    },
 };

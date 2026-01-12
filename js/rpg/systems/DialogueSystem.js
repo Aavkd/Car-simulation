@@ -91,6 +91,37 @@ export class DialogueSystem {
         }
     }
 
+    /**
+     * Advances to the next node defined by the 'next' property of the current node.
+     * Used for linear dialogue segments without choices.
+     */
+    advance() {
+        if (!this.currentNode) return;
+
+        if (this.currentNode.next) {
+            this.currentNode = this.currentDialogue.nodes[this.currentNode.next];
+            if (!this.currentNode) {
+                console.error(`[DialogueSystem] Node ${this.currentNode.next} not found.`);
+                this.endDialogue();
+                return;
+            }
+
+            console.log(`[NPC - ${this.currentNode.speaker || 'Unknown'}]: ${this.currentNode.text}`);
+
+            // Process triggers on the new node
+            this.processNodeTriggers(this.currentNode);
+
+            if (this.currentNode.end) {
+                this.endDialogue();
+            } else {
+                this.logOptions();
+                window.dispatchEvent(new CustomEvent('RPG_DIALOGUE_START', { detail: this.currentNode }));
+            }
+        } else {
+            this.endDialogue();
+        }
+    }
+
     endDialogue() {
         console.log('[DialogueSystem] Dialogue ended.');
         this.currentDialogue = null;

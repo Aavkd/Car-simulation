@@ -21,6 +21,7 @@ import { ShelbyCobra427 } from './core/vehicle-specs/ShelbyCobra427.js';
 import { EditorController } from './editor/EditorController.js';
 import { RPGManager } from './rpg/systems/RPGManager.js';
 import { NPCEntity } from './rpg/entities/NPCEntity.js';
+import { BlackHole } from './environment/BlackHole.js';
 
 /**
  * Available car specifications registry
@@ -557,8 +558,15 @@ class Game {
                     // ... (existing car logic) ...
                     // Start with AE86 as base, but we should really load the specific spec
                     let carSpec = ToyotaAE86;
-                    if (obj.userData.assetPath.includes('RX-7')) carSpec = MazdaRX7;
-                    if (obj.userData.assetPath.includes('cobra')) carSpec = ShelbyCobra427;
+                    // Check asset path or name to determine spec
+                    // Ideally we should store carId in userData
+                    if (obj.userData.assetPath.includes('RX-7') || obj.userData.name.includes('RX-7')) carSpec = MazdaRX7;
+                    if (obj.userData.assetPath.includes('cobra') || obj.userData.name.includes('Cobra')) carSpec = ShelbyCobra427;
+
+                    // Allow simple override via exact asset path match (fallback)
+                    Object.values(CAR_REGISTRY).forEach(reg => {
+                        if (obj.userData.assetPath === reg.model) carSpec = reg.spec;
+                    });
 
                     const carMesh = obj.clone();
                     this.scene.add(carMesh);
@@ -579,10 +587,6 @@ class Game {
                         this.car = carPhysics;
                         this.carMesh = carMesh;
                     }
-
-                    // Vehicles are interactable too (entering them)
-                    // But that logic is currently separate (distance check in toggleVehicleMode).
-                    // We could unify it later, but for now leave as is.
 
                 } else if (obj.userData.type === 'plane') {
                     // ... (existing plane logic) ...
@@ -618,19 +622,42 @@ class Game {
                         npcId: obj.userData.npcId
                     });
 
-                    // Track for cleanup if needed?
-                    // For now just add mesh to scene.
-                    // We should add to a list to remove later if needed, mostly for cleanup.
-                    // Let's reuse spawnedVehicles or make a new list?
-                    // Reusing spawnedVehicles might be confusing but they share lifecycle (removed on exit).
-                    // Actually let's make a generic spawnedObjects list or just add a .dispose method to it if we push to spawnedVehicles.
-                    // NPCEntity doesn't have physics loop requirements yet, so maybe just standard scene removal is enough.
+                    // Add to tracked objects
                     this.spawnedVehicles.push({
                         mesh: npcMesh,
-                        dispose: () => { } // nothing special to dispose yet
+                        dispose: () => { }
                     });
 
                     interactableObjects.push(npcMesh);
+
+                } else if (obj.userData.type === 'procedural') {
+                    // Procedural Objects
+                    if (obj.userData.generator === 'BlackHole') {
+                        console.log(`[Game] Spawning Procedural BlackHole: ${obj.userData.name}`);
+
+                        // Get config from editor instance or metadata
+                        const config = obj.userData.proceduralInstance ?
+                            obj.userData.proceduralInstance.getConfig() :
+                            obj.userData.proceduralOptions;
+
+                        const bh = new BlackHole(config);
+                        bh.mesh.position.copy(obj.position);
+                        bh.mesh.rotation.copy(obj.rotation);
+                        bh.mesh.scale.copy(obj.scale);
+
+                        this.scene.add(bh.mesh);
+                        this.spawnedVehicles.push(bh);
+                    }
+                } else {
+                    // Static Props / Buildings / Other Objects
+                    console.log(`[Game] Spawning Static Object: ${obj.userData.name}`);
+                    const mesh = obj.clone();
+                    this.scene.add(mesh);
+
+                    this.spawnedVehicles.push({
+                        mesh: mesh,
+                        dispose: () => { }
+                    });
                 }
             }
 

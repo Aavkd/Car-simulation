@@ -74,34 +74,82 @@ if (status === 'COMPLETED') {
 }
 
 // 4. Test Dialogue (Basic Logic)
-console.log('\n[TEST 4] Testing Dialogue Logic...');
-// Mock dialogue data
-const mockDialogueData = {
-    'intro': {
-        text: 'Hello, traveler.',
-        options: [
-            { text: 'Hi!', next: 'greet' },
-            { text: 'Bye.', next: null }
-        ]
-    },
-    'greet': {
-        text: 'Welcome to the test.',
-        options: []
+// Mock Window and CustomEvent
+global.window = {
+    dispatchEvent: function (event) { console.log(`[Event Dispatched] ${event.type}`); }
+};
+global.CustomEvent = class CustomEvent {
+    constructor(type, detail) {
+        this.type = type;
+        this.detail = detail;
     }
 };
 
-rpgManager.dialogueSystem.startDialogue('intro', mockDialogueData);
+// ... (existing mocks) ...
+
+// 4. Test Dialogue (Basic Logic)
+console.log('\n[TEST 4] Testing Dialogue Logic...');
+// Mock dialogue data matching the new structure (id, nodes)
+const mockDialogueData = {
+    'intro': {
+        id: 'intro',
+        nodes: {
+            'start': {
+                text: 'Hello, traveler.',
+                choices: [
+                    { text: 'Hi!', next: 'linear_step' },
+                    { text: 'Bye.', next: null }
+                ]
+            },
+            'linear_step': {
+                text: 'No choices here, just listen.',
+                next: 'final_step'
+            },
+            'final_step': {
+                text: 'Goodbye.',
+                end: true
+            }
+        }
+    }
+};
+
+// Force inject the mock data since startDialogue usually looks up from RPGManager.data
+rpgManager.data = { DIALOGUES: mockDialogueData };
+
+rpgManager.dialogueSystem.startDialogue('intro');
 if (rpgManager.dialogueSystem.currentNode && rpgManager.dialogueSystem.currentNode.text === 'Hello, traveler.') {
     console.log('✅ Dialogue started successfully.');
 } else {
     console.error('❌ Dialogue start failed.');
 }
 
-rpgManager.dialogueSystem.selectOption(0); // Select "Hi!"
-if (rpgManager.dialogueSystem.currentNode && rpgManager.dialogueSystem.currentNode.text === 'Welcome to the test.') {
-    console.log('✅ Dialogue navigation successful.');
+rpgManager.dialogueSystem.selectOption(0); // Select "Hi!" -> goes to 'linear_step'
+if (rpgManager.dialogueSystem.currentNode && rpgManager.dialogueSystem.currentNode.text === 'No choices here, just listen.') {
+    console.log('✅ Dialogue navigation (Choice) successful.');
 } else {
-    console.error('❌ Dialogue navigation failed.');
+    console.error('❌ Dialogue navigation (Choice) failed.');
+}
+
+// Test advance()
+rpgManager.dialogueSystem.advance(); // Should go to 'final_step'
+if (rpgManager.dialogueSystem.currentNode && rpgManager.dialogueSystem.currentNode.text === 'Goodbye.') {
+    console.log('✅ Dialogue advance() (Linear) successful.');
+} else {
+    console.error(`❌ Dialogue advance() failed. Current Node: ${JSON.stringify(rpgManager.dialogueSystem.currentNode)}`);
+}
+
+// 5. Test Profile Flags
+console.log('\n[TEST 5] Testing Profile Flags...');
+rpgManager.profile.setFlag('test_flag', 'foobar');
+if (rpgManager.profile.getFlag('test_flag') === 'foobar') {
+    console.log('✅ Flag set/get successful.');
+} else {
+    console.error(`❌ Flag set/get failed. Value: ${rpgManager.profile.getFlag('test_flag')}`);
+}
+if (rpgManager.profile.hasFlag('test_flag')) {
+    console.log('✅ hasFlag successful.');
+} else {
+    console.error('❌ hasFlag failed.');
 }
 
 console.log('\n--- VERIFICATION COMPLETE: ALL SYSTEMS GO ---');

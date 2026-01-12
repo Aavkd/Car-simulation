@@ -75,10 +75,29 @@ export class QuestManager {
         console.log(`[QuestManager] Quest completed: ${questId}`);
         this.profile.save();
 
-        // Find static data for title
+        // Find static data for title and rewards
         const staticDef = this.rpgManager.data.QUESTS.find(q => q.id === questId);
+
+        if (staticDef && staticDef.rewards) {
+            const rewards = staticDef.rewards;
+            if (rewards.xp) this.profile.addXp(rewards.xp);
+            if (rewards.gold || rewards.money) this.profile.addMoney(rewards.gold || rewards.money);
+
+            if (rewards.items && this.rpgManager.inventory) {
+                rewards.items.forEach(item => {
+                    // Handle both string ID and object {id, count} formats
+                    if (typeof item === 'string') {
+                        this.rpgManager.inventory.addItem(item, 1);
+                    } else if (item.id) {
+                        this.rpgManager.inventory.addItem(item.id, item.count || 1);
+                    }
+                });
+            }
+            console.log(`[QuestManager] Awarded rewards for ${questId}`, rewards);
+        }
+
         window.dispatchEvent(new CustomEvent('RPG_QUEST_COMPLETE', {
-            detail: { id: questId, title: staticDef ? staticDef.title : questId }
+            detail: { id: questId, title: staticDef ? staticDef.title : questId, rewards: staticDef ? staticDef.rewards : null }
         }));
         window.dispatchEvent(new CustomEvent('RPG_QUEST_UPDATE', { detail: { id: questId } }));
     }
@@ -117,8 +136,8 @@ export class QuestManager {
         if (!staticDef) return null;
 
         // Merge objectives with completion status
-        const objectives = staticDef.objectives.map((desc, index) => ({
-            description: desc,
+        const objectives = staticDef.objectives.map((obj, index) => ({
+            description: obj.text || obj.description || obj,
             isCompleted: index < dynamicData.objectiveIndex
         }));
 

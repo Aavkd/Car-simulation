@@ -171,6 +171,23 @@ export class AssetLibrary {
                 icon: '👤',
                 type: 'npc',
                 scale: 1.0
+            },
+            // === Triggers ===
+            {
+                id: 'trigger_volume',
+                name: 'Trigger Volume',
+                path: null,
+                category: 'triggers',
+                icon: '🔲',
+                procedural: true,
+                generator: 'TriggerVolume',
+                options: {
+                    color: '#ffff00',
+                    opacity: 0.3,
+                    width: 5,
+                    height: 5,
+                    depth: 5
+                }
             }
         ];
 
