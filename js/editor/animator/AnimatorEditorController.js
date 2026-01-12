@@ -15,12 +15,18 @@ export class AnimatorEditorController {
         // Playback state
         this.isScrubbing = false;
 
-        // Pose Mode state
         this.isPoseMode = false;
         this.transformControls = null;
         this.selectedBone = null;
         this.skeletonHelper = null;
         this.capturedPoses = []; // For keyframing later
+        this.isPreviewing = false;
+
+        // Direct interpolation preview state
+        this.previewTime = 0;
+        this.previewDuration = 0;
+        this.boneRefs = new Map(); // name -> bone object reference
+
 
         // Bind events
         this._onMouseDownBound = (e) => this._onMouseDown(e);
@@ -171,7 +177,15 @@ export class AnimatorEditorController {
 
         if (this.isPoseMode) {
             this._updateBoneHelpers();
+
+            // Manual preview update using direct bone interpolation
+            if (this.isPreviewing && this.capturedPoses.length >= 2) {
+                this._updateDirectPreview(dt);
+            }
+
+
         }
+
 
         // Update Camera Orbit
         if (this.selectedEntity && this.game.cameraController) {
@@ -478,7 +492,9 @@ export class AnimatorEditorController {
                 </div>
 
                 <div style="display: flex; gap: 10px;">
-                    <button onclick="window.game.animator.playPreview()" style="flex:1; padding: 10px; background: #2980b9; border: none; color: white; cursor: pointer; font-weight: bold; border-radius: 4px;">▶ Preview</button>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="window.game.animator.playPreview()" style="flex:1; padding: 10px; background: ${this.isPreviewing ? '#c0392b' : '#2980b9'}; border: none; color: white; cursor: pointer; font-weight: bold; border-radius: 4px;">${this.isPreviewing ? '⏹ Stop' : '▶ Preview'}</button>
+
                     <button onclick="window.game.animator.exportAnimation()" style="flex:1; padding: 10px; background: #8e44ad; border: none; color: white; cursor: pointer; font-weight: bold; border-radius: 4px;">💾 Export</button>
                 </div>
             </div>
@@ -488,25 +504,36 @@ export class AnimatorEditorController {
     captureKeyframe() {
         if (!this.selectedEntity) return;
 
+        // On first capture, populate bone references from the mesh
+        if (this.boneRefs.size === 0) {
+            this.selectedEntity.mesh.traverse(child => {
+                if (child.isBone) {
+                    // Only store first bone found with each name
+                    if (!this.boneRefs.has(child.name)) {
+                        this.boneRefs.set(child.name, child);
+                    }
+                }
+            });
+            console.log(`[Animator] Indexed ${this.boneRefs.size} unique bones`);
+        }
+
+        // Capture quaternions from the stored bone references (not from traverse)
         const pose = {
             id: Date.now(),
             bones: []
         };
 
-        this.selectedEntity.mesh.traverse(child => {
-            if (child.isBone) {
-                pose.bones.push({
-                    name: child.name,
-                    pos: child.position.toArray(),
-                    rot: child.quaternion.toArray(),
-                    scl: child.scale.toArray()
-                });
-            }
-        });
+        // Iterate the bone refs we already have - this ensures we capture from the same bones each time
+        for (const [boneName, bone] of this.boneRefs) {
+            pose.bones.push({
+                name: boneName,
+                rot: bone.quaternion.clone()
+            });
+        }
 
         this.capturedPoses.push(pose);
-        console.log(`[Animator] Captured Keyframe #${this.capturedPoses.length}`);
-        this._buildUI(); // Update UI to show keyframe count
+        console.log(`[Animator] Captured Keyframe #${this.capturedPoses.length} (${pose.bones.length} bones)`);
+        this._buildUI();
     }
 
     deleteKeyframe(index) {
@@ -517,61 +544,119 @@ export class AnimatorEditorController {
     }
 
     playPreview() {
+        if (this.isPreviewing) {
+            this.stopPreview();
+            return;
+        }
+
         if (this.capturedPoses.length < 2) {
             console.warn('[Animator] Need at least 2 poses to play animation.');
             return;
         }
 
-        const clip = this._createPreviewClip();
-        if (clip) {
-            // Play using a temporary action or layer
-            // We can use the main mixer
-            if (this.selectedEntity.animator) {
-                // Stop current
-                this.selectedEntity.animator.stopAll();
+        // Direct bone interpolation approach - no AnimationMixer needed
+        this.isPreviewing = true;
+        this.previewTime = 0;
+        this.previewDuration = (this.capturedPoses.length - 1) * 1.0; // 1 second per pose transition
 
-                // Play new clip
-                const action = this.selectedEntity.animator.mixer.clipAction(clip);
-                action.setLoop(THREE.LoopRepeat);
-                action.reset();
-                action.play();
-                this.selectedEntity.animator.currentAction = action; // Hack to show in UI
-
-                console.log('[Animator] Playing Preview Clip');
+        // Pause entity animator if exists
+        if (this.selectedEntity && this.selectedEntity.animator) {
+            this.selectedEntity.animator.paused = true;
+            if (this.selectedEntity.animator.mixer) {
+                this.selectedEntity.animator.mixer.timeScale = 0;
             }
         }
+
+        console.log(`[Animator] Playing Preview - Direct Interpolation (${this.capturedPoses.length} keyframes, ${this.previewDuration}s)`);
+        this._buildUI();
     }
+
+    /**
+     * Update preview using direct bone quaternion interpolation
+     */
+    _updateDirectPreview(dt) {
+        this.previewTime += dt;
+
+        // Loop the animation
+        if (this.previewTime >= this.previewDuration) {
+            this.previewTime = this.previewTime % Math.max(this.previewDuration, 0.001);
+        }
+
+        // Calculate which two poses to blend between
+        const poseIndex = this.previewTime; // 1 second per pose
+        const fromIndex = Math.floor(poseIndex);
+        const toIndex = Math.min(fromIndex + 1, this.capturedPoses.length - 1);
+        const alpha = poseIndex - fromIndex; // 0-1 blend factor
+
+        const fromPose = this.capturedPoses[fromIndex];
+        const toPose = this.capturedPoses[toIndex];
+
+        if (!fromPose || !toPose) return;
+
+        // Debug: Log once per second
+        if (!this._lastDebugLog || Date.now() - this._lastDebugLog > 1000) {
+            console.log(`[Preview] time=${this.previewTime.toFixed(2)}, from=${fromIndex}, to=${toIndex}, alpha=${alpha.toFixed(2)}, boneRefs=${this.boneRefs.size}`);
+            this._lastDebugLog = Date.now();
+        }
+
+        let bonesUpdated = 0;
+        // Interpolate each bone's quaternion
+        for (const fromBone of fromPose.bones) {
+            const bone = this.boneRefs.get(fromBone.name);
+            if (!bone) continue;
+
+            // Find matching bone in destination pose
+            const toBone = toPose.bones.find(b => b.name === fromBone.name);
+            if (!toBone) continue;
+
+            // Spherical interpolation between quaternions
+            bone.quaternion.slerpQuaternions(fromBone.rot, toBone.rot, alpha);
+            bonesUpdated++;
+        }
+    }
+
+    stopPreview() {
+        this.isPreviewing = false;
+        this.previewTime = 0;
+
+        // Restore to first captured pose (or leave as-is)
+        if (this.capturedPoses.length > 0) {
+            const firstPose = this.capturedPoses[0];
+            for (const boneData of firstPose.bones) {
+                const bone = this.boneRefs.get(boneData.name);
+                if (bone) {
+                    bone.quaternion.copy(boneData.rot);
+                }
+            }
+        }
+
+        this._buildUI();
+    }
+
 
     _createPreviewClip() {
         const tracks = [];
         const durationPerPose = 1.0; // 1 second between poses
         const times = this.capturedPoses.map((_, i) => i * durationPerPose);
 
-        // Group data by bone
-        const boneMap = new Map(); // name -> { positions: [], quaternions: [], scales: [] }
+        // Group quaternion data by bone name
+        const boneMap = new Map(); // name -> { quaternions: [] }
 
         this.capturedPoses.forEach(pose => {
             pose.bones.forEach(b => {
                 if (!boneMap.has(b.name)) {
-                    boneMap.set(b.name, { positions: [], quaternions: [], scales: [] });
+                    boneMap.set(b.name, { quaternions: [] });
                 }
                 const data = boneMap.get(b.name);
-                data.positions.push(...b.pos);
-                data.quaternions.push(...b.rot);
-                data.scales.push(...b.scl);
+                // b.rot is now a Quaternion object, convert to array
+                data.quaternions.push(b.rot.x, b.rot.y, b.rot.z, b.rot.w);
             });
         });
 
         boneMap.forEach((data, boneName) => {
-            // Create tracks
-            const trackName = boneName + '.position';
-            tracks.push(new THREE.VectorKeyframeTrack(trackName, times, data.positions));
-
-            const trackNameRot = boneName + '.quaternion';
-            tracks.push(new THREE.QuaternionKeyframeTrack(trackNameRot, times, data.quaternions));
-
-            const trackNameScl = boneName + '.scale';
-            tracks.push(new THREE.VectorKeyframeTrack(trackNameScl, times, data.scales));
+            // Use bone name directly - THREE.js PropertyBinding will traverse scene graph to find objects by name
+            const trackName = boneName + '.quaternion';
+            tracks.push(new THREE.QuaternionKeyframeTrack(trackName, times, data.quaternions));
         });
 
         if (tracks.length === 0) return null;
@@ -848,7 +933,13 @@ export class AnimatorEditorController {
     }
 
     disablePoseMode() {
+        if (this.isPreviewing) {
+            this.stopPreview(); // Handles cleanup
+        }
+
         this.isPoseMode = false;
+
+
 
         // Update Button UI
         if (this.container) {

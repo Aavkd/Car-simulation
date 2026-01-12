@@ -62,8 +62,9 @@ This roadmap outlines the implementation of a AAA-quality animation system for t
     - [x] **Visual Pose Editor**:
         - Select bones (FK) or effectors (IK) to create key poses.
         - "Ghosting" / Onion skinning to see previous frames.
-    - **Timeline & Keyframing**:
-        - Linear interpolation between captured poses.
+    - [x] **Timeline & Keyframing**:
+        - [x] Capture keyframes with bone quaternion data.
+        - [x] Direct bone interpolation preview (slerp between poses).
         - Dope-sheet view for adjusting timing.
     - **JSON Persistence System**:
         - [x] **Export**: Serialize `THREE.AnimationClip` data to `.anim.json` files.
