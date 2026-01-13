@@ -20,6 +20,10 @@ import { TransitionInspector } from './graph/TransitionInspector.js';
 // Phase 3: Timeline Components
 import { TimelinePanel } from './timeline/TimelinePanel.js';
 
+// Phase 4: IK Components
+import { IKSolver } from './ik/IKSolver.js';
+import { IKHandle } from './ik/IKHandle.js';
+
 export class AnimatorEditorController {
     constructor(game) {
         this.game = game;
@@ -65,7 +69,14 @@ export class AnimatorEditorController {
 
         // ==================== Phase 3: Timeline Components ====================
         this.timelinePanel = new TimelinePanel(this.uiManager, this);
+        // ==================== Phase 3: Timeline Components ====================
+        this.timelinePanel = new TimelinePanel(this.uiManager, this);
         this.isTimelineVisible = false;
+
+        // ==================== Phase 4: IK Components ====================
+        this.ikSolver = new IKSolver();
+        this.ikHandles = []; // Store active IK handles
+
 
         // Track bone transform state for undo
         this._transformStartQuaternion = null;
@@ -339,6 +350,11 @@ export class AnimatorEditorController {
 
         }
 
+        // Phase 4: Update IK Solver
+        if (this.isPoseMode && this.ikSolver) {
+            this.ikSolver.update();
+        }
+
 
         // Update Camera Orbit
         if (this.selectedEntity && this.game.cameraController) {
@@ -414,18 +430,35 @@ export class AnimatorEditorController {
 
         this.raycaster.setFromCamera(this.mouse, this.game.camera);
 
-        // POSE MODE: Select Bones
-        if (this.isPoseMode && this.boneHelpers) {
-            // Priority: If using the Transform Gizmo, ignore bone selection
-            if (this.transformControls && this.transformControls.axis) {
-                return;
+        // POSE MODE: Select Bones or IK Handles
+        if (this.isPoseMode) {
+            // 1. Check IK Handles
+            const ikIntersects = this.raycaster.intersectObjects(this.game.scene.children, true);
+            for (const hit of ikIntersects) {
+                let target = hit.object;
+                while (target) {
+                    if (target.userData && target.userData.type === 'ik_handle') {
+                        this._selectIKHandle(target.userData.handle);
+                        return;
+                    }
+                    target = target.parent;
+                    if (target === this.game.scene) break;
+                }
             }
 
-            const intersects = this.raycaster.intersectObjects(this.boneHelperGroup ? this.boneHelperGroup.children : this.boneHelpers, false);
-            if (intersects.length > 0) {
-                const bone = intersects[0].object.userData.bone;
-                this._selectBone(bone);
-                return;
+            // 2. Check Bone Helpers
+            if (this.boneHelpers) {
+                // Priority: If using the Transform Gizmo, ignore bone selection
+                if (this.transformControls && this.transformControls.axis) {
+                    return;
+                }
+
+                const boneIntersects = this.raycaster.intersectObjects(this.boneHelperGroup ? this.boneHelperGroup.children : this.boneHelpers, false);
+                if (boneIntersects.length > 0) {
+                    const bone = boneIntersects[0].object.userData.bone;
+                    this._selectBone(bone);
+                    return;
+                }
             }
         }
 
@@ -618,6 +651,17 @@ export class AnimatorEditorController {
                 <div style="font-size: 10px; text-transform: uppercase; color: #e67e22; margin-bottom: 5px;">Pose Mode</div>
                 <div style="font-size: 16px; font-weight: bold; color: #fff;">${this.selectedEntity.name}</div>
             </div>
+
+            <!-- IK Tools -->
+            <div style="margin-bottom: 20px;">
+                <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: #888;">Inverse Kinematics</div>
+                <div style="display: flex; gap: 5px;">
+                     <button onclick="window.game.animator.createIKChain()" ${this.selectedBone ? '' : 'disabled'} style="flex:1; padding: 8px; background: #8e44ad; border: none; color: white; cursor: pointer; border-radius: 4px; opacity: ${this.selectedBone ? 1 : 0.5};">
+                        Creating IK Chain (2-Bone)
+                     </button>
+                </div>
+            </div>
+
 
             <div style="margin-bottom: 20px;">
                 <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: #888;">Tools</div>
@@ -1173,6 +1217,15 @@ export class AnimatorEditorController {
             this.boneHelpers = [];
         }
 
+        // Cleanup IK Handles (Phase 4)
+        if (this.ikHandles) {
+            this.ikHandles.forEach(h => h.dispose());
+            this.ikHandles = [];
+        }
+        if (this.ikSolver) {
+            this.ikSolver.clear();
+        }
+
         // Disable Controls
         if (this.transformControls) {
             this.transformControls.detach();
@@ -1199,5 +1252,63 @@ export class AnimatorEditorController {
         }
 
         this._buildUI(); // Return to main menu
+    }
+
+    // ==================== Phase 4: IK Methods ====================
+
+    createIKChain() {
+        if (!this.selectedBone) {
+            console.warn('Select a bone to create IK handle');
+            return;
+        }
+
+        const effector = this.selectedBone;
+        let root = effector;
+        let depth = 2; // Default 2-bone chain (standard limb)
+
+        // Walk up to find root
+        for (let i = 0; i < depth; i++) {
+            if (root.parent && root.parent.isBone) {
+                root = root.parent;
+            } else {
+                break;
+            }
+        }
+
+        if (root === effector) {
+            console.warn('Cannot create chain: Bone has no parent bones');
+            return;
+        }
+
+        console.log(`[Animator] Creating IK Chain: ${root.name} -> ${effector.name}`);
+
+        // Create Handle
+        const handleName = `IK_${effector.name}`;
+        const handle = new IKHandle(handleName, effector.getWorldPosition(new THREE.Vector3()), this.game.scene);
+        this.ikHandles.push(handle);
+
+        // Add to Solver
+        this.ikSolver.addChain({
+            root: root,
+            effector: effector,
+            target: handle.target,
+            joints: [] // Will be auto-populated
+        });
+
+        // Select the new handle
+        this._selectIKHandle(handle);
+    }
+
+    _selectIKHandle(handle) {
+        this.selectedBone = null; // Deselect bone
+
+        // Attach transform controls to handle target
+        if (this.transformControls) {
+            this.transformControls.attach(handle.target);
+            this.transformControls.enabled = true;
+        }
+
+        console.log(`[Animator] Selected IK Handle: ${handle.name}`);
+        this._buildUI(); // Refresh UI
     }
 }
