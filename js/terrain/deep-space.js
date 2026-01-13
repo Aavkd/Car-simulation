@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { BasePhysicsProvider, SurfaceTypes } from '../physics/physics-provider.js';
+import { BlackHole } from '../environment/BlackHole.js';
+import { SpatialAnomaly } from '../environment/SpatialAnomaly.js';
 
 /**
  * Deep Space Generator
@@ -12,7 +14,16 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
             starCount: 2000,      // Per chunk
             galaxyCount: 1,       // Per chunk (avg)
             nebulaCount: 2,       // Per chunk (avg)
-            universeSize: 20000   // Chunk Size
+            universeSize: 20000,  // Chunk Size
+            blackHoleChance: 0.2, // 5% chance per chunk
+            anomalyChance: 2,    // 10% chance per chunk
+            // Visual Tweaks
+            blackHoleBloom: 0.1,       // Multiplier for black hole glow
+            blackHoleDistortion: 0.15, // Lensing strength
+            blackHoleDiskSize: 5.0,    // Accretion disk scale
+            anomalyBloom: 0.1,         // Multiplier for anomaly glow
+            anomalySpeed: 1.0,         // Rotation speed multiplier
+            anomalyDistortion: 0.5     // Max glitch distortion
         }, params);
 
         this.mesh = new THREE.Group();
@@ -31,21 +42,30 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
         return this.mesh;
     }
 
-    update(playerPos, skySystem) {
-        const deltaTime = 1 / 60;
-
+    update(playerPos, skySystem, deltaTime = 1 / 60) {
         if (playerPos) {
             this._updateChunks(playerPos);
         }
 
         // Animate everything
         this.objects.forEach(obj => {
-            if (obj.type === 'stars' || obj.type === 'supernova') {
+            if (obj.instance && obj.instance.update) {
+                // Class instance based (BlackHole, Anomaly)
+                obj.instance.update(deltaTime);
+            } else if (obj.type === 'stars' || obj.type === 'supernova') {
                 if (obj.material.uniforms) {
                     obj.material.uniforms.time.value += deltaTime;
                 }
             } else if (obj.type === 'galaxy') {
                 obj.mesh.rotation.y += obj.rotSpeed * deltaTime;
+
+                // Update shader uniforms
+                if (obj.material && obj.material.uniforms) {
+                    obj.material.uniforms.time.value += deltaTime;
+                    if (playerPos) {
+                        obj.material.uniforms.camPos.value.copy(playerPos);
+                    }
+                }
             }
         });
     }
@@ -76,13 +96,19 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
         for (const [key, group] of this.chunks) {
             if (!neededChunks.has(key)) {
                 this.mesh.remove(group);
-                // Dispose resources if needed (skip for now for perf)
-                this.chunks.delete(key);
 
-                // Also remove objects from this.objects list? 
-                // This is O(N) but necessary to stop animating invisible things
-                // For optimal perf we should bucket objects by chunk, but simple filter is ok logic wise
-                this.objects = this.objects.filter(obj => obj.chunkKey !== key);
+                // Dispose resources if needed
+                this.objects = this.objects.filter(obj => {
+                    if (obj.chunkKey === key) {
+                        if (obj.instance && obj.instance.dispose) {
+                            obj.instance.dispose();
+                        }
+                        return false;
+                    }
+                    return true;
+                });
+
+                this.chunks.delete(key);
             }
         }
 
@@ -137,7 +163,10 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
             this._generateNebulae(chunkGroup, center, key);
         }
 
-        // 4. Landmarks (Special hardcoded chunks?)
+        // 4. Exotic Objects (Black Holes, Anomalies)
+        this._generateExoticObjects(chunkGroup, center, key);
+
+        // 5. Landmarks (Special hardcoded chunks?)
         // If near origin (0,0,0), spawn the big ones
         if (cx === 0 && cy === 0 && cz === 0) {
             this._generateLandmarks(chunkGroup);
@@ -262,46 +291,218 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
     }
 
     _createSpiralGalaxy(opts = {}) {
-        const starCount = 2000;
-        const arms = 3 + Math.floor(Math.random() * 3);
-        const radius = opts.radius || (2000 + Math.random() * 3000);
+        const starCount = 4000; // Increased count
+        const arms = opts.arms || (3 + Math.floor(Math.random() * 4)); // 3 to 6 arms
+        const radius = opts.radius || (3000 + Math.random() * 4000);
+        const coreSize = radius * 0.15; // Bright core
+
         const geometry = new THREE.BufferGeometry();
         const positions = [];
         const colors = [];
-        const insideColor = opts.colorInside || new THREE.Color(Math.random(), Math.random(), Math.random());
-        const outsideColor = opts.colorOutside || new THREE.Color(Math.random(), Math.random(), Math.random());
+        const sizes = [];
+        const phases = []; // For animation offset
 
-        for (let i = 0; i < starCount; i++) {
-            const r = Math.random() * radius;
-            const spinAngle = r * 0.002;
-            const branchAngle = (i % arms) / arms * Math.PI * 2;
-            const x = Math.cos(branchAngle + spinAngle) * r + (Math.random() - 0.5) * r * 0.2;
-            const y = (Math.random() - 0.5) * 200;
-            const z = Math.sin(branchAngle + spinAngle) * r + (Math.random() - 0.5) * r * 0.2;
+        const insideColor = opts.colorInside || new THREE.Color().setHSL(Math.random(), 0.8, 0.6);
+        const outsideColor = opts.colorOutside || new THREE.Color().setHSL(Math.random(), 0.8, 0.4);
+
+        // Core Stars (Dense ball)
+        const coreStars = Math.floor(starCount * 0.2);
+        for (let i = 0; i < coreStars; i++) {
+            // Uniform sphere distribution
+            const r = Math.pow(Math.random(), 3) * coreSize; // Concentrate in center
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+
+            const x = r * Math.sin(phi) * Math.cos(theta);
+            const y = r * Math.sin(phi) * Math.sin(theta) * 0.5; // Flattened y
+            const z = r * Math.cos(phi);
+
             positions.push(x, y, z);
+
+            // Core colors are bright/white-hot
+            const color = insideColor.clone().lerp(new THREE.Color(1, 1, 1), 0.5);
+            colors.push(color.r, color.g, color.b);
+            sizes.push(2.0 + Math.random() * 3.0);
+            phases.push(Math.random() * Math.PI * 2);
+        }
+
+        // Arm Stars
+        const armStars = starCount - coreStars;
+        for (let i = 0; i < armStars; i++) {
+            const rNormal = Math.random();
+            const r = rNormal * radius;
+
+            const spinFactor = 5.0; // How many turns
+            const spinAngle = (r / radius) * spinFactor;
+
+            const branchAngle = (Math.floor(Math.random() * arms) / arms) * Math.PI * 2;
+
+            // Random scatter from arm center
+            // Wider spread, but concentrated at center
+            const spread = (r / radius) * 800 + 100;
+
+            // Gaussian-like distribution (dense at center, sparse at edges)
+            const gaussian = (Math.random() - 0.5) + (Math.random() - 0.5); // Range -1 to 1, biased to 0
+            const randomOffset = gaussian * spread;
+            const randomOffsetZ = ((Math.random() - 0.5) + (Math.random() - 0.5)) * spread;
+
+            const thickness = (1.0 - (r / radius)) * 200 + 50; // Thicker at center
+
+            const totalAngle = branchAngle + spinAngle;
+
+            const x = Math.cos(totalAngle) * r + randomOffset;
+            const y = (Math.random() - 0.5) * thickness;
+            const z = Math.sin(totalAngle) * r + randomOffsetZ;
+
+            positions.push(x, y, z);
+
             const mixedColor = insideColor.clone().lerp(outsideColor, r / radius);
+            mixedColor.offsetHSL(0, 0, (Math.random() - 0.5) * 0.2);
             colors.push(mixedColor.r, mixedColor.g, mixedColor.b);
+            sizes.push(1.0 + Math.random() * 2.5);
+            phases.push(Math.random() * Math.PI * 2);
+        }
+
+        // Gas/Dust Clouds (Volumetric fill)
+        // Gas/Dust Clouds (Volumetric fill)
+        const gasCount = starCount * 2; // Lots of gas particles
+        for (let i = 0; i < gasCount; i++) {
+            const rNormal = Math.random();
+            const r = rNormal * radius;
+
+            const spinFactor = 5.0;
+            const spinAngle = (r / radius) * spinFactor;
+
+            const branchAngle = (Math.floor(Math.random() * arms) / arms) * Math.PI * 2;
+
+            // Gas is much more spread out
+            // Increased multiplier for wider clouds
+            const spread = (r / radius) * 1200 + 300;
+
+            // Biased distribution (less particles at edges of spread)
+            const gaussian = (Math.random() - 0.5) + (Math.random() - 0.5);
+            const randomOffset = gaussian * spread;
+            const randomOffsetZ = ((Math.random() - 0.5) + (Math.random() - 0.5)) * spread;
+
+            const thickness = (1.0 - (r / radius)) * 500 + 100;
+
+            const totalAngle = branchAngle + spinAngle;
+
+            const x = Math.cos(totalAngle) * r + randomOffset;
+            const y = (Math.random() - 0.5) * thickness;
+            const z = Math.sin(totalAngle) * r + randomOffsetZ;
+
+            positions.push(x, y, z);
+
+            const param = r / radius;
+            const gasColor = insideColor.clone().lerp(outsideColor, param);
+            gasColor.offsetHSL(0, 0.2, -0.2);
+
+            // Varied intensity
+            const intensity = 0.1 + Math.random() * 0.2;
+            colors.push(gasColor.r * intensity, gasColor.g * intensity, gasColor.b * intensity);
+
+            sizes.push(50.0 + Math.random() * 100.0);
+            phases.push(Math.random() * Math.PI * 2);
         }
 
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        geometry.setAttribute('starColor', new THREE.Float32BufferAttribute(colors, 3));
+        geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+        geometry.setAttribute('phase', new THREE.Float32BufferAttribute(phases, 1));
 
-        const material = new THREE.PointsMaterial({
-            size: 15, sizeAttenuation: true, depthWrite: false, blending: THREE.AdditiveBlending,
-            vertexColors: true, map: this._getStarTexture(), transparent: true
+        // Custom Shader Material for Bloom and Twinkle
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                pixelRatio: { value: window.devicePixelRatio },
+                camPos: { value: new THREE.Vector3() },
+                bloomDist: { value: 50.0 }, // Distance where bloom starts maxing out
+                baseSize: { value: 0.5 }
+            },
+            vertexShader: `
+                uniform float time;
+                uniform float pixelRatio;
+                uniform vec3 camPos;
+                uniform float bloomDist;
+                uniform float baseSize;
+                
+                attribute float size;
+                attribute vec3 starColor;
+                attribute float phase;
+                
+                varying vec3 vColor;
+                varying float vAlpha;
+                
+                void main() {
+                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                    
+                    // Distance to camera
+                    float distToCam = distance(worldPosition.xyz, camPos);
+                    
+                    // Bloom/Intensity Logic
+                    // 1. Boost brightness when VERY close (bloomDist = ~50)
+                    float proximityBoost = clamp((bloomDist - distToCam) / bloomDist, 0.0, 1.0) * 4.0;
+                    
+                    // 2. DAMPEN brightness when far away to prevent bloom
+                    // As distance increases beyond 2000, fade intensity down to 0.05 (no bloom)
+                    float distanceDim = clamp(1.0 - (distToCam - 9000.0) / 10000.0, 0.05, 1.0);
+                    
+                    float finalIntensity = (1.0 + proximityBoost) * distanceDim;
+
+                    vColor = starColor * finalIntensity;
+                    
+                    // Twinkle
+                    float twinkle = sin(time * 3.0 + phase) * 0.3 + 0.7;
+                    
+                    gl_PointSize = size * baseSize * pixelRatio * (1000.0 / -mvPosition.z) * twinkle;
+                    gl_Position = projectionMatrix * mvPosition;
+                    
+                    // Fade distant stars
+                    vAlpha = 1.0; 
+                }
+            `,
+            fragmentShader: `
+                // Remove manual precision to avoid conflicts with Three.js defaults
+                
+                varying vec3 vColor;
+                varying float vAlpha;
+                
+                void main() {
+                    vec2 coord = gl_PointCoord - vec2(0.5);
+                    float dist = length(coord);
+                    
+                    if (dist > 0.5) discard;
+                    
+                    // Soft particle
+                    float strength = 1.0 - (dist * 2.0);
+                    strength = pow(max(0.0, strength), 1.5); // Safe pow
+                    
+                    gl_FragColor = vec4(vColor, vAlpha * strength);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
         });
 
         const galaxy = new THREE.Points(geometry, material);
         if (opts.position) galaxy.position.copy(opts.position);
+
+        // Random initial rotation
         if (opts.rotation) galaxy.rotation.set(opts.rotation.x, opts.rotation.y, opts.rotation.z);
-        else galaxy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+        else galaxy.rotation.set(Math.random() * 0.5, Math.random() * Math.PI * 2, Math.random() * 0.5);
 
         // Add to specific group (chunk or main)
         (opts.group || this.mesh).add(galaxy);
 
         this.objects.push({
-            type: 'galaxy', mesh: galaxy, chunkKey: opts.chunkKey,
-            rotSpeed: (Math.random() * 0.05 + 0.01) * (Math.random() < 0.5 ? 1 : -1)
+            type: 'galaxy',
+            mesh: galaxy,
+            material: material, // Store material ref for updates
+            chunkKey: opts.chunkKey,
+            rotSpeed: (Math.random() * 0.02 + 0.005) * (Math.random() < 0.5 ? 1 : -1)
         });
     }
 
@@ -324,7 +525,8 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
         const texture = this._getCloudTexture();
         const material = new THREE.SpriteMaterial({
             map: texture, transparent: true, opacity: 0.4,
-            color: opts.color || 0x8800ff, blending: THREE.AdditiveBlending, depthWrite: false
+            color: opts.color || 0x8800ff, blending: THREE.AdditiveBlending, depthWrite: false,
+            fog: false
         });
         const sprite = new THREE.Sprite(material);
         sprite.scale.set(opts.scale, opts.scale, 1);
@@ -355,20 +557,98 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
     }
 
     _createCloudTexture() {
+        const size = 512;
         const canvas = document.createElement('canvas');
-        canvas.width = 128; canvas.height = 128;
+        canvas.width = size; canvas.height = size;
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, 128, 128);
-        for (let i = 0; i < 20; i++) {
-            const x = Math.random() * 128, y = Math.random() * 128, r = 20 + Math.random() * 40;
+
+        ctx.clearRect(0, 0, size, size);
+
+        // Draw cloud puffs
+        for (let i = 0; i < 40; i++) {
+            const x = (0.2 + 0.6 * Math.random()) * size; // Keep somewhat centered
+            const y = (0.2 + 0.6 * Math.random()) * size;
+            const r = (0.1 + 0.2 * Math.random()) * size;
+
             const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-            grad.addColorStop(0, 'rgba(255,255,255,0.1)'); grad.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+            grad.addColorStop(0, 'rgba(255,255,255,0.15)');
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
         }
+
+        // Force fade out at edges
+        ctx.globalCompositeOperation = 'destination-in';
+        const maskGrad = ctx.createRadialGradient(size / 2, size / 2, size * 0.25, size / 2, size / 2, size * 0.5);
+        maskGrad.addColorStop(0, 'rgba(0,0,0,1)');
+        maskGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = maskGrad;
+        ctx.fillRect(0, 0, size, size);
+
         return new THREE.CanvasTexture(canvas);
     }
 
-    _generateExoticObjects() { } // Skipped for now in chunks
+    _generateExoticObjects(group, center, key) {
+        // Black Hole Generation
+        if (Math.random() < this.params.blackHoleChance) {
+            const pos = new THREE.Vector3(
+                center.x + (Math.random() - 0.5) * this.chunkSize * 0.7,
+                center.y + (Math.random() - 0.5) * this.chunkSize * 0.7,
+                center.z + (Math.random() - 0.5) * this.chunkSize * 0.7
+            );
+
+            // 50% chance of being a Pulsar
+            const isPulsar = Math.random() < 0.5;
+
+            const blackHole = new BlackHole({
+                scale: 500 + Math.random() * 1000,
+                colorInner: isPulsar ? '#88ccff' : '#ffc880',
+                colorOuter: isPulsar ? '#ff44ff' : '#ff5050',
+                isPulsar: isPulsar,
+                distortion: this.params.blackHoleDistortion, // Configurable
+                diskRadius: this.params.blackHoleDiskSize,   // Configurable
+                bloomIntensity: this.params.blackHoleBloom   // Configurable
+            });
+
+            blackHole.mesh.position.copy(pos);
+            group.add(blackHole.mesh);
+
+            this.objects.push({
+                type: 'blackhole',
+                instance: blackHole,
+                chunkKey: key
+            });
+        }
+
+        // Spatial Anomaly Generation
+        if (Math.random() < this.params.anomalyChance) {
+            const pos = new THREE.Vector3(
+                center.x + (Math.random() - 0.5) * this.chunkSize * 0.8,
+                center.y + (Math.random() - 0.5) * this.chunkSize * 0.8,
+                center.z + (Math.random() - 0.5) * this.chunkSize * 0.8
+            );
+
+            const anomaly = new SpatialAnomaly({
+                radius: 100 + Math.random() * 300,
+                color: new THREE.Color().setHSL(Math.random(), 1.0, 0.5),
+                bloomIntensity: this.params.anomalyBloom,    // Configurable
+                speed: this.params.anomalySpeed,             // Configurable
+                maxDistortion: this.params.anomalyDistortion // Configurable
+            });
+
+            anomaly.mesh.position.copy(pos);
+            group.add(anomaly.mesh);
+
+            this.objects.push({
+                type: 'anomaly',
+                instance: anomaly,
+                chunkKey: key
+            });
+        }
+    }
 
     getHeightAt() { return -100000; }
     getNormalAt() { return new THREE.Vector3(0, 1, 0); }

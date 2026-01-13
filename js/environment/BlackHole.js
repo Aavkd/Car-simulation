@@ -33,6 +33,7 @@ uniform float uNoiseScale;
 uniform float uDistortion; // Controls bending strength
 uniform float uDiskRadius; // Controls disk size
 uniform bool uIsPulsar;    // Toggle for pulsar jets
+uniform float uBloomIntensity; // [NEW] Bloom emission multiplier
 
 // Simplex 3D Noise 
 // (Adapted from standard implementations for GLSL)
@@ -225,6 +226,7 @@ void main() {
                 float diskR = length(p.xy);
                 vec3 emission = mix(uColorInner, uColorOuter, smoothstep(1.5, uDiskRadius, diskR));
                 emission *= (1.0 + 3.0 / (diskR * diskR)); // Bright inner edge
+                emission *= uBloomIntensity; // [NEW] Apply bloom intensity
                 
                 float alpha = d * stepSize * 0.6;
                 color.rgb += emission * alpha * (1.0 - color.a);
@@ -245,7 +247,7 @@ void main() {
                     vec3 jetColor = mix(baseColor, tipColor, smoothstep(2.0, 12.0, h));
                     
                     // Boost intensity for glow
-                    jetColor *= 2.5; 
+                    jetColor *= 2.5 * uBloomIntensity; // [NEW] Apply bloom intensity
                     
                     float jetAlpha = jetD * stepSize * 0.5;
                     color.rgb += jetColor * jetAlpha * (1.0 - color.a);
@@ -285,7 +287,9 @@ export class BlackHole {
         this.distortion = options.distortion ?? 0.1;
         this.diskRadius = options.diskRadius ?? 4.0;
         this.isPulsar = options.isPulsar ?? false;
+        this.isPulsar = options.isPulsar ?? false;
         this.baseScale = options.scale ?? 1.0;
+        this.bloomIntensity = options.bloomIntensity ?? 1.0; // [NEW]
 
         // Tilt angle (default matches reference: tilted towards viewer)
         this.tilt = options.tilt || new THREE.Euler(-Math.PI / 2.5, 0, 0);
@@ -321,7 +325,8 @@ export class BlackHole {
                 uNoiseScale: { value: 2.0 },
                 uDistortion: { value: this.distortion },
                 uDiskRadius: { value: this.diskRadius },
-                uIsPulsar: { value: this.isPulsar }
+                uIsPulsar: { value: this.isPulsar },
+                uBloomIntensity: { value: this.bloomIntensity }
             },
             transparent: true,
             side: THREE.BackSide,
@@ -357,7 +362,9 @@ export class BlackHole {
         material.uniforms.uColorOuter.value.set(this.colorOuter);
         material.uniforms.uDistortion.value = this.distortion;
         material.uniforms.uDiskRadius.value = this.diskRadius;
+        material.uniforms.uDiskRadius.value = this.diskRadius;
         material.uniforms.uIsPulsar.value = this.isPulsar;
+        material.uniforms.uBloomIntensity.value = this.bloomIntensity;
     }
 
     /**

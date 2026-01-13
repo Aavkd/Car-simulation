@@ -154,9 +154,10 @@ Access via `F8`. A dedicated tool for character animation.
 ### 📦 Asset Library
 - **Structures**: Ancient Temples, Castles, Sci-Fi Towers.
 - **Cosmic**:
-    - **Black Holes**: Customizable Accretion Disk RAdius, Event Horizon Color, and Distortion strength.
-    - **Pulsars**: Emitting relativistic jets.
-- **Vehicles**: Spawn drivable cars or static props.
+    -   **Black Holes**: Raymarched volumetric rendering with gravitational lensing and accretion disk.
+    -   **Pulsars**: High-energy variant emitting relativistic jets.
+    -   **Spatial Anomalies**: Glitching, crystal-like structures with procedural noise shaders.
+-   **Vehicles**: Spawn drivable cars or static props.
 - **NPCs**: Place quest givers or ambient characters directly into the world.
 
 ---
@@ -268,7 +269,7 @@ Racing/
 1.  **Grasslands**: Rolling procedural hills. Good for testing suspension.
 2.  **Desert Dunes**: Large-scale sand simulation with high friction drag.
 3.  **The Everest**: 10km² map starting at 800m elevation. Extreme downhill physics.
-4.  **Deep Space**: Zero-gravity feel (visual only), infinite void. Features galaxies and nebulae.
+4.  **Deep Space**: Zero-gravity feel (visual only), infinite void. Features volumetric galaxies, nebulae, black holes, and spatial anomalies.
 5.  **Vaporwave**: "Neon Horizon". Infinite highway with synthwave aesthetics.
 6.  **City**: Procedural urban grid with skyscrapers by "Procedural City Generator".
 
