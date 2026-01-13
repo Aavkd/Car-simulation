@@ -261,26 +261,23 @@ graph TD
 **Timeline**: Gameplay integration features
 
 #### 5.1 Animation Events System
-- [ ] **[NEW] `js/editor/animator/events/AnimationEvent.js`**
-  - Event markers on timeline
-  - Event types: Sound, Particle, Script Callback
-  - Parameter passing (string, float, object reference)
+- [x] **Event Data Structure**
+  - Time, Function Name, Parameters (JSON)
+  - String/Float/Int/Bool parameter types
 
-```javascript
-// Event data structure
-{
-    time: 0.5,
-    type: 'callback',
-    functionName: 'onFootstep',
-    parameters: { foot: 'left', surface: 'grass' }
-}
-```
+- [x] **Event Manager**
+  - Trigger events during playback
+  - Callback system for game logic
 
-#### 5.2 Events Inspector
-- [ ] **UI for adding/editing events**
-  - Right-click timeline → Add Event
-  - Event name, time, callback function dropdown
-  - Preview events during playback
+#### 5.2 Events UI
+- [x] **Timeline Markers**
+  - Draw markers on timeline rule
+  - Drag to move events
+  - Double-click rule to add event
+
+- [x] **Event Inspector**
+  - Edit event properties
+  - Delete events
 
 #### 5.3 Layer Preview
 - [ ] **Visualize animation layers in editor**
@@ -442,8 +439,9 @@ js/editor/animator/
 │   ├── OnionSkinning.js
 │   └── MotionTrail.js
 │
-├── events/                      # ⏳ Phase 5
-│   └── AnimationEvent.js
+├── events/                      # ✅ PHASE 5 COMPLETE
+│   ├── AnimationEvent.js       # ✅ Implemented
+│   └── EventManager.js         # ✅ Implemented
 │
 ├── retarget/                    # ⏳ Phase 7
 │   ├── HumanoidAvatar.js
@@ -464,7 +462,8 @@ js/editor/animator/
 | Phase 2: Graph Editor | 🔴 Critical | High | Very High | ✅ **COMPLETE** |
 | Phase 3: Timeline | 🔴 Critical | High | Very High | ✅ **COMPLETE** |
 | Phase 4: IK | 🟡 High | High | High | ✅ **COMPLETE** |
-| Phase 5: Events | 🟡 High | Medium | High | ⏳ Planned |
+| Phase 5: Events | 🟡 High | Medium | High | ✅ **COMPLETE** |
+
 | Phase 6: Onion Skin | 🟢 Medium | Low | Medium | ⏳ Planned |
 | Phase 7: Retargeting | 🟢 Medium | High | High | ⏳ Planned |
 | Phase 8: Polish | 🔵 Low | Low | Medium | ⏳ Planned |

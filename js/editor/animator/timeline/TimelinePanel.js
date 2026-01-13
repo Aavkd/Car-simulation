@@ -30,8 +30,12 @@ export class TimelinePanel {
         this.viewOffset = 0;                // Horizontal scroll offset in pixels
         this.playheadTime = 0;              // Current playhead position in seconds
 
+        this.selectedEvent = null;          // Currently selected event
+        this.isDraggingEvent = false;       // Dragging state for events
+
         // Dimensions
-        this.headerHeight = 30;             // Time ruler height
+        this.headerHeight = 45;             // Time ruler height (increased for events)
+        this.eventTrackHeight = 15;         // Event marker track
         this.trackHeight = 24;              // Height per bone track
         this.leftPanelWidth = 180;          // Bone list panel width
 
@@ -454,6 +458,9 @@ export class TimelinePanel {
         // Draw time ruler
         this._drawTimeRuler(ctx, width);
 
+        // Draw Events Track
+        this._drawEvents(ctx, width);
+
         if (this.viewMode === 'dopesheet') {
             // Draw grid lines
             this._drawGrid(ctx, width, height);
@@ -475,74 +482,102 @@ export class TimelinePanel {
     _drawTimeRuler(ctx, width) {
         const rulerHeight = this.headerHeight;
 
-        // Background
-        ctx.fillStyle = '#222';
-        ctx.fillRect(0, 0, width, rulerHeight);
+        // Dimensions
+        const timeHeight = rulerHeight - 15; // Top 30px for time
+        const eventHeight = 15; // Bottom 15px for events
 
-        // Calculate time markers
+        // 1. Draw Time Ruler Background (Top)
+        ctx.fillStyle = '#222222';
+        ctx.fillRect(0, 0, width, timeHeight);
+
+        // 2. Draw Events Track Background (Bottom)
+        ctx.fillStyle = '#2a2a2a';
+        ctx.fillRect(0, timeHeight, width, eventHeight);
+
+        // 3. Draw Separator Line
+        ctx.beginPath();
+        ctx.strokeStyle = '#444';
+        ctx.moveTo(0, timeHeight);
+        ctx.lineTo(width, timeHeight);
+        ctx.stroke();
+
+        // 4. Draw Track Labels (Left side)
+        ctx.fillStyle = '#666';
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        // ctx.fillText('TIME', 5, timeHeight / 2); // Optional, maybe too cluttered
+        // ctx.fillText('EVENTS', 5, timeHeight + (eventHeight / 2));
+
+        // 5. Draw Time Markers
         const pixelsPerSecond = this.zoom;
         const startTime = this.viewOffset / pixelsPerSecond;
         const endTime = startTime + (width / pixelsPerSecond);
 
-        // Determine step size based on zoom
-        let majorStep = 1;      // seconds
+        // Determine step size
+        let majorStep = 1;
         let minorDivisions = 4;
 
-        if (pixelsPerSecond < 30) {
-            majorStep = 5;
-            minorDivisions = 5;
-        } else if (pixelsPerSecond < 60) {
-            majorStep = 2;
-            minorDivisions = 4;
-        } else if (pixelsPerSecond > 200) {
-            majorStep = 0.5;
-            minorDivisions = 5;
-        }
+        if (pixelsPerSecond < 30) { majorStep = 5; minorDivisions = 5; }
+        else if (pixelsPerSecond < 60) { majorStep = 2; minorDivisions = 4; }
+        else if (pixelsPerSecond > 200) { majorStep = 0.5; minorDivisions = 5; }
 
         const minorStep = majorStep / minorDivisions;
 
-        // Draw markers
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
         ctx.font = '10px monospace';
 
         let time = Math.floor(startTime / majorStep) * majorStep;
+
+        // Loop for ticks
         while (time <= endTime) {
             const x = (time * pixelsPerSecond) - this.viewOffset;
 
-            // Major tick
-            ctx.strokeStyle = '#555';
+            // Major Tick
+            ctx.strokeStyle = '#777';
             ctx.beginPath();
-            ctx.moveTo(x, rulerHeight - 10);
-            ctx.lineTo(x, rulerHeight);
+            ctx.moveTo(x, timeHeight - 6);
+            ctx.lineTo(x, timeHeight);
             ctx.stroke();
 
             // Label
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#eee';
             const label = this.showSeconds ? `${time.toFixed(1)}s` : `${Math.round(time * this.fps)}f`;
-            ctx.fillText(label, x, rulerHeight - 12);
+            ctx.fillText(label, x, timeHeight - 8);
 
-            // Minor ticks
+            // Minor Ticks
             for (let i = 1; i < minorDivisions; i++) {
                 const minorTime = time + (i * minorStep);
                 const minorX = (minorTime * pixelsPerSecond) - this.viewOffset;
 
-                ctx.strokeStyle = '#333';
+                ctx.strokeStyle = '#444';
                 ctx.beginPath();
-                ctx.moveTo(minorX, rulerHeight - 5);
-                ctx.lineTo(minorX, rulerHeight);
+                ctx.moveTo(minorX, timeHeight - 3);
+                ctx.lineTo(minorX, timeHeight);
                 ctx.stroke();
             }
 
             time += majorStep;
         }
 
-        // Bottom border
-        ctx.strokeStyle = '#444';
+        // 6. Draw Bottom Border
+        ctx.strokeStyle = '#555';
         ctx.beginPath();
         ctx.moveTo(0, rulerHeight);
         ctx.lineTo(width, rulerHeight);
         ctx.stroke();
+
+        // 7. Visual Hint for Events Track
+        // Draw a faint "EVENTS" text repeated or just once? 
+        // Let's just draw a small icon or text at the start if viewed
+        if (this.viewOffset < 50) {
+            ctx.fillStyle = '#555';
+            ctx.font = '9px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('▼ EVENTS', 10, timeHeight + (eventHeight / 2));
+        }
     }
 
     /**
@@ -616,6 +651,47 @@ export class TimelinePanel {
     }
 
     /**
+     * Draw Animation Events
+     * @private
+     */
+    _drawEvents(ctx, width) {
+        if (!this.editor.eventManager) return;
+
+        const events = this.editor.eventManager.events;
+        const y = this.headerHeight - 8; // Just above the ruler bottom
+        const pixelsPerSecond = this.zoom;
+
+        for (const event of events) {
+            const x = (event.time * pixelsPerSecond) - this.viewOffset;
+
+            // Skip off-screen
+            if (x < -10 || x > width + 10) continue;
+
+            // Draw event marker (Pentagon pointer)
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + 6, y - 6);
+            ctx.lineTo(x + 6, y - 12);
+            ctx.lineTo(x - 6, y - 12);
+            ctx.lineTo(x - 6, y - 6);
+            ctx.closePath();
+
+            // Fill
+            if (event === this.selectedEvent) {
+                ctx.fillStyle = '#f1c40f'; // Active Gold
+            } else {
+                ctx.fillStyle = '#95a5a6'; // Inactive Gray
+            }
+            ctx.fill();
+
+            // Stroke
+            ctx.strokeStyle = '#2c3e50';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+    }
+
+    /**
      * Draw a diamond-shaped keyframe marker
      * @private
      */
@@ -677,8 +753,19 @@ export class TimelinePanel {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
-        // Click in ruler area - set playhead
+        // Click in ruler area - set playhead or select event
         if (y < this.headerHeight) {
+            // Check event selection first
+            const eventHit = this._checkEventHit(x, y);
+            if (eventHit) {
+                this.selectedEvent = eventHit;
+                this.isDraggingEvent = true;
+                this._updateInspector();
+                return;
+            }
+
+            this.selectedEvent = null; // Deselect
+            this._updateInspector();
             this.isDraggingPlayhead = true;
             this._setPlayheadFromX(x);
             return;
@@ -712,6 +799,15 @@ export class TimelinePanel {
         const rect = this.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
 
+        if (this.isDraggingEvent && this.selectedEvent) {
+            const time = (x + this.viewOffset) / this.zoom;
+            // Snap to frame
+            const frame = Math.round(time * this.fps);
+            this.selectedEvent.time = Math.max(0, frame / this.fps);
+            this.editor.eventManager.sortEvents();
+            return;
+        }
+
         if (this.isDraggingPlayhead) {
             this._setPlayheadFromX(x);
         }
@@ -732,6 +828,7 @@ export class TimelinePanel {
      */
     _onMouseUp(e) {
         this.isDraggingPlayhead = false;
+        this.isDraggingEvent = false;
         this.isPanning = false;
 
         if (this.viewMode === 'curve') {
@@ -772,6 +869,20 @@ export class TimelinePanel {
         const rect = this.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
+
+        if (y < this.headerHeight) {
+            // Add Event on double click in ruler
+            const time = (x + this.viewOffset) / this.zoom;
+            const snappedTime = Math.round(time * this.fps) / this.fps;
+
+            if (this.editor.eventManager) {
+                const newEvent = this.editor.eventManager.addEvent(snappedTime, 'OnEvent');
+                this.selectedEvent = newEvent;
+                console.log(`[TimelinePanel] Added event at ${snappedTime}s`);
+                this._updateInspector();
+            }
+            return;
+        }
 
         if (y > this.headerHeight) {
             const time = (x + this.viewOffset) / this.zoom;
@@ -828,6 +939,48 @@ export class TimelinePanel {
         if (!addToSelection) {
             this.timelineData.clearSelection();
             this.dopeSheet.clearSelection();
+        }
+    }
+
+    _checkEventHit(mouseX, mouseY) {
+        if (!this.editor.eventManager) return null;
+
+        const events = this.editor.eventManager.events;
+        const y = this.headerHeight - 8;
+        const pixelsPerSecond = this.zoom;
+        const hitRadius = 8;
+
+        for (const event of events) {
+            const x = (event.time * pixelsPerSecond) - this.viewOffset;
+
+            // Check distance
+            // Marker is at (x, y) approx
+            if (Math.abs(mouseX - x) < hitRadius && Math.abs(mouseY - (y - 6)) < hitRadius) {
+                return event;
+            }
+        }
+        return null;
+    }
+
+    _updateInspector() {
+        // Find if we have an inspector panel exposed to edit the event
+        // This relies on the AnimatorEditorController having public access or methods
+        // For now we just log
+        if (this.selectedEvent) {
+            console.log('Selected Event:', this.selectedEvent);
+            // Trigger UI update in main controller if needed
+            if (this.editor) {
+                // If the method exists on the editor, call it
+                if (typeof this.editor._updateEventInspector === 'function') {
+                    this.editor._updateEventInspector(this.selectedEvent);
+                }
+            }
+        } else {
+            if (this.editor) {
+                if (typeof this.editor._updateEventInspector === 'function') {
+                    this.editor._updateEventInspector(null);
+                }
+            }
         }
     }
 

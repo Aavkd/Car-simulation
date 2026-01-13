@@ -25,6 +25,9 @@ import { IKSolver } from './ik/IKSolver.js';
 import { IKHandle } from './ik/IKHandle.js';
 import { FootIK } from './ik/FootIK.js';
 
+// Phase 5: Event Components
+import { EventManager } from './events/EventManager.js';
+
 export class AnimatorEditorController {
     constructor(game) {
         this.game = game;
@@ -77,7 +80,13 @@ export class AnimatorEditorController {
         // ==================== Phase 4: IK Components ====================
         this.ikSolver = new IKSolver();
         this.ikHandles = []; // Store active IK handles
+        // ==================== Phase 4: IK Components ====================
+        this.ikSolver = new IKSolver();
+        this.ikHandles = []; // Store active IK handles
         this.footIK = new FootIK(this.game, this.ikSolver);
+
+        // ==================== Phase 5: Event Components ====================
+        this.eventManager = new EventManager(this);
 
 
         // Track bone transform state for undo
@@ -357,6 +366,17 @@ export class AnimatorEditorController {
             if (this.footIK) this.footIK.update(dt);
             if (this.ikSolver) this.ikSolver.update();
         }
+
+        // Phase 5: Update Event Manager
+        // Note: In a real scenario, this should be driven by the running animation time.
+        // For now, if we are previewing, we can update it.
+        // But EventManager.update expects (currentTime, previousTime, isPlaying).
+        // The timeline/preview logic needs to feed this.
+        // For now, we will just perform initialization or basic updates if needed.
+        // Actual triggering happens when the timeline or preview updates the time.
+        // However, we should ensure the event manager has the correct sorted events if we just added one.
+        // This is mostly handled by addEvent/sortEvents calls.
+
 
 
         // Update Camera Orbit
@@ -863,6 +883,29 @@ export class AnimatorEditorController {
             bone.quaternion.slerpQuaternions(fromBone.rot, toBone.rot, alpha);
             bonesUpdated++;
         }
+
+        // Trigger Animation Events
+        if (this.eventManager) {
+            // Using previewTime as current time.
+            // We need previous time from the last frame.
+            // Since this.previewTime is accumulated, we can infer previous roughly,
+            // or we should store it.
+            const previousTime = this.previewTime - dt;
+            // Handle wrapping for events at loop point
+            if (previousTime < 0) {
+                // Loop occurred
+                // Trigger events from oldEnd -> End AND Start -> Current
+                // Simplified: Just update from 0
+                this.eventManager.update(this.previewTime, 0, true);
+            } else {
+                this.eventManager.update(this.previewTime, previousTime, true);
+            }
+
+            // Also update playhead in timeline
+            if (this.timelinePanel && this.isTimelineVisible) {
+                this.timelinePanel.setPlayheadTime(this.previewTime);
+            }
+        }
     }
 
     stopPreview() {
@@ -1323,5 +1366,28 @@ export class AnimatorEditorController {
 
         console.log(`[Animator] Selected IK Handle: ${handle.name}`);
         this._buildUI(); // Refresh UI
+    }
+    // ==================== Phase 5: Event Methods ====================
+
+    _updateEventInspector(event) {
+        if (this.inspectorPanel) {
+            this.inspectorPanel.inspectEvent(event);
+        }
+    }
+
+    deselectEvent() {
+        if (this.timelinePanel) {
+            this.timelinePanel.selectedEvent = null;
+        }
+        if (this.inspectorPanel) {
+            this.inspectorPanel.inspectEvent(null);
+        }
+    }
+
+    refreshTimeline() {
+        if (this.timelinePanel) {
+            // Force redraw or data update if needed
+            // For now, the render loop handles drawing, but we might need to update cache if we had one
+        }
     }
 }

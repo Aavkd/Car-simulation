@@ -11,6 +11,7 @@ export class InspectorPanel {
         this.editor = animatorEditor;
         this.container = null;
         this.contentContainer = null;
+        this.selectedEvent = null; // Track selected event for editing
     }
 
     build() {
@@ -161,9 +162,73 @@ export class InspectorPanel {
     }
 
     refresh() {
+        if (this.selectedEvent) {
+            this.buildEventUI();
+            return;
+        }
+
         if (this.editor.isPoseMode && this.editor.selectedEntity) this.buildPoseUI();
         else if (this.editor.selectedEntity) this.buildInspectUI();
         else this._buildEmptyState();
+    }
+
+    /**
+     * Set the event to inspect
+     * @param {AnimationEvent|null} event 
+     */
+    inspectEvent(event) {
+        this.selectedEvent = event;
+        this.refresh();
+    }
+
+    buildEventUI() {
+        if (!this.selectedEvent) return;
+        const e = this.selectedEvent;
+
+        this.contentContainer.innerHTML = `
+            <div class="animator-section" style="background:#f1c40f22; border:1px solid #f1c40f; border-radius:6px; padding:15px;">
+                <div style="font-size:10px;text-transform:uppercase;color:#f1c40f;margin-bottom:5px;">Animation Event</div>
+                <div style="font-size:16px;font-weight:bold;color:var(--anim-text);">Event Selection</div>
+            </div>
+            
+            <div class="animator-section">
+                <div class="animator-section-title">Properties</div>
+                
+                <!-- Time -->
+                <div style="margin-bottom:10px;">
+                    <div style="font-size:11px;color:var(--anim-text-secondary);margin-bottom:4px;">Time (s)</div>
+                    <input type="number" step="0.01" value="${e.time.toFixed(3)}" 
+                        onchange="if(window.game.animator.eventManager){ const ev = window.game.animator.eventManager.getEventById('${e.id}'); if(ev) { ev.time = parseFloat(this.value); window.game.animator.eventManager.sortEvents(); window.game.animator.refreshTimeline(); } }"
+                        style="width:100%; padding:6px; background:#222; border:1px solid #444; color:#eee; border-radius:4px;">
+                </div>
+
+                <!-- Function Name -->
+                <div style="margin-bottom:10px;">
+                    <div style="font-size:11px;color:var(--anim-text-secondary);margin-bottom:4px;">Function Name</div>
+                    <input type="text" value="${e.functionName}" 
+                        onchange="if(window.game.animator.eventManager){ const ev = window.game.animator.eventManager.getEventById('${e.id}'); if(ev) { ev.functionName = this.value; } }"
+                        style="width:100%; padding:6px; background:#222; border:1px solid #444; color:#eee; border-radius:4px;">
+                </div>
+
+                <!-- Parameters (JSON for now) -->
+                <div style="margin-bottom:10px;">
+                    <div style="font-size:11px;color:var(--anim-text-secondary);margin-bottom:4px;">Parameters (JSON)</div>
+                    <textarea 
+                        onchange="if(window.game.animator.eventManager){ const ev = window.game.animator.eventManager.getEventById('${e.id}'); if(ev) { try { ev.parameters = JSON.parse(this.value); } catch(err){ console.error('Invalid JSON'); } } }"
+                        style="width:100%; height:80px; padding:6px; background:#222; border:1px solid #444; color:#eee; border-radius:4px; font-family:monospace;">${JSON.stringify(e.parameters, null, 2)}</textarea>
+                </div>
+            </div>
+
+            <div class="animator-section">
+                <button onclick="if(window.game.animator.eventManager){ const ev = window.game.animator.eventManager.getEventById('${e.id}'); if(ev){ window.game.animator.eventManager.removeEvent(ev); window.game.animator.deselectEvent(); } }" 
+                    class="animator-btn danger" style="width:100%; font-weight:bold;">🗑️ Delete Event</button>
+            </div>
+            
+            <div class="animator-section" style="margin-top:20px;">
+                <button onclick="window.game.animator.deselectEvent()" 
+                    class="animator-btn" style="width:100%;">← Back to Character</button>
+            </div>
+        `;
     }
 }
 
