@@ -60,6 +60,9 @@ export class HotkeyManager {
         // View
         this.register('f', () => this._focusSelected(), 'Focus on Selected');
         this.register('Numpad0', () => this._resetCamera(), 'Reset Camera');
+
+        // Phase 2: Graph View
+        this.register('g', () => this._toggleGraphView(), 'Toggle State Machine Graph');
     }
 
     /**
@@ -265,6 +268,13 @@ export class HotkeyManager {
     _resetCamera() {
         // TODO: Reset camera to default view
         console.log('[Hotkey] Reset Camera');
+    }
+
+    _toggleGraphView() {
+        // Phase 2: Toggle state machine graph visibility
+        if (this.editor.toolbar) {
+            this.editor.toolbar._toggleGraphView();
+        }
     }
 
     /**

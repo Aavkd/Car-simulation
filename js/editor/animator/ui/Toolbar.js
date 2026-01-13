@@ -256,6 +256,12 @@ export class Toolbar {
         group.className = 'animator-toolbar-group';
         group.style.cssText = 'display: flex; gap: 4px;';
 
+        // Phase 2: Toggle Graph View
+        this.graphToggleBtn = this._createToolButton('📊', 'Toggle State Machine Graph (G)',
+            () => this._toggleGraphView());
+        this.graphToggleBtn.id = 'btn-graph';
+        group.appendChild(this.graphToggleBtn);
+
         // Toggle Skeleton View
         const skeletonBtn = this._createToolButton('🦴', 'Toggle Skeleton',
             () => this._toggleSkeleton());
@@ -449,6 +455,36 @@ export class Toolbar {
         // Toggle skeleton helper visibility
         if (this.editor.skeletonHelper) {
             this.editor.skeletonHelper.visible = !this.editor.skeletonHelper.visible;
+        }
+    }
+
+    _toggleGraphView() {
+        // Phase 2: Toggle state machine graph visibility
+        if (!this.editor.graphEditor) return;
+
+        this.editor.isGraphVisible = !this.editor.isGraphVisible;
+
+        if (this.editor.isGraphVisible) {
+            // Load appropriate data based on mode
+            if (this.editor.isPoseMode) {
+                // In Pose Mode, show keyframe timeline
+                this.editor.graphEditor.loadKeyframes(this.editor.capturedPoses, this.currentFrame);
+            } else if (this.editor.selectedEntity) {
+                // Otherwise show FSM (or placeholder if no FSM)
+                this.editor.graphEditor.loadFromAnimator(this.editor.selectedEntity.animator);
+
+                if (this.editor.selectedEntity.animator) {
+                    this.editor.parameterWidget.loadFromAnimator(this.editor.selectedEntity.animator);
+                    this.editor.parameterWidget.show();
+                }
+            }
+
+            this.editor.graphEditor.show();
+            this.graphToggleBtn?.classList.add('active');
+        } else {
+            this.editor.graphEditor.hide();
+            this.editor.parameterWidget.hide();
+            this.graphToggleBtn?.classList.remove('active');
         }
     }
 

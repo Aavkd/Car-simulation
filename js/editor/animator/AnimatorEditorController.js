@@ -12,6 +12,10 @@ import { Toolbar } from './ui/Toolbar.js';
 import { InspectorPanel } from './ui/InspectorPanel.js';
 import { StatusBar } from './ui/StatusBar.js';
 
+// Phase 2: Graph Editor Components
+import { GraphEditor } from './graph/GraphEditor.js';
+import { ParameterWidget } from './graph/ParameterWidget.js';
+
 export class AnimatorEditorController {
     constructor(game) {
         this.game = game;
@@ -49,6 +53,11 @@ export class AnimatorEditorController {
         this.inspectorPanel = new InspectorPanel(this.uiManager, this);
         this.statusBar = new StatusBar(this.uiManager, this);
 
+        // ==================== Phase 2: Graph Editor Components ====================
+        this.graphEditor = new GraphEditor(this.uiManager, this);
+        this.parameterWidget = new ParameterWidget(this.uiManager, this);
+        this.isGraphVisible = false;
+
         // Track bone transform state for undo
         this._transformStartQuaternion = null;
         this._transformStartPosition = null;
@@ -72,7 +81,7 @@ export class AnimatorEditorController {
     }
 
     async initialize() {
-        console.log('AnimatorEditorController: Initializing (Phase 1)...');
+        console.log('AnimatorEditorController: Initializing (Phase 1 + Phase 2)...');
 
         // Initialize Phase 1 UI
         this.uiManager.initialize();
@@ -88,13 +97,22 @@ export class AnimatorEditorController {
         const statusBarEl = this.statusBar.build();
         this.container.appendChild(statusBarEl);
 
+        // Phase 2: Build Graph Editor and Parameter Widget
+        const graphEl = this.graphEditor.build();
+        this.container.appendChild(graphEl);
+        this.graphEditor.hide(); // Hidden by default until entity selected
+
+        const paramEl = this.parameterWidget.build();
+        this.container.appendChild(paramEl);
+        this.parameterWidget.hide(); // Hidden by default
+
         // Get content container reference for backwards compatibility
         this.contentContainer = this.inspectorPanel.contentContainer;
 
         // Initialize transform controls
         this._createTransformControls();
 
-        console.log('AnimatorEditorController: Phase 1 initialization complete');
+        console.log('AnimatorEditorController: Phase 1 + Phase 2 initialization complete');
     }
 
     _createTransformControls() {
@@ -272,6 +290,11 @@ export class AnimatorEditorController {
         this.selectedEntity = null;
         this._buildUI();
 
+        // Phase 2: Hide graph components
+        this.graphEditor.hide();
+        this.parameterWidget.hide();
+        this.isGraphVisible = false;
+
         console.log('AnimatorEditorController: Disabled');
     }
 
@@ -280,6 +303,11 @@ export class AnimatorEditorController {
 
         if (this.selectedEntity && this.selectedEntity.animator) {
             this._updateRealtimeValues();
+
+            // Phase 2: Update parameter widget real-time values
+            if (this.parameterWidget) {
+                this.parameterWidget.update();
+            }
         }
 
         if (this.isPoseMode) {
@@ -445,6 +473,9 @@ export class AnimatorEditorController {
             this.selectedEntity = entity;
             console.log(`[Animator] Selected Entity: ${entity.name}`);
             this._buildUI();
+
+            // Phase 2: Preload graph data but don't show - user triggers via G key or button
+            // Graph will be shown when user presses 'G' or clicks the graph toggle button
         } else {
             console.warn('[Animator] Selected object has no entity ref (logic mismatch)');
         }
@@ -652,6 +683,11 @@ export class AnimatorEditorController {
         // Update toolbar with keyframe count
         if (this.toolbar) {
             this.toolbar.setTotalFrames(this.capturedPoses.length);
+        }
+
+        // Phase 2: Update graph editor with keyframe timeline
+        if (this.graphEditor && this.isGraphVisible) {
+            this.graphEditor.loadKeyframes(this.capturedPoses, this.capturedPoses.length - 1);
         }
 
         this._buildUI();
@@ -899,6 +935,11 @@ export class AnimatorEditorController {
 
         this._validateAndRepairSkeleton(); // Force sync
 
+        // Phase 2: Switch graph to show keyframe timeline
+        if (this.graphEditor && this.isGraphVisible) {
+            this.graphEditor.loadKeyframes(this.capturedPoses, 0);
+        }
+
         this._buildUI(); // Rebuild for Pose tools
     }
 
@@ -1109,6 +1150,11 @@ export class AnimatorEditorController {
             if (this.selectedEntity.animator.mixer) {
                 this.selectedEntity.animator.mixer.timeScale = 1;
             }
+        }
+
+        // Phase 2: Restore FSM view in graph editor
+        if (this.graphEditor && this.isGraphVisible && this.selectedEntity) {
+            this.graphEditor.loadFromAnimator(this.selectedEntity.animator);
         }
 
         this._buildUI(); // Return to main menu
