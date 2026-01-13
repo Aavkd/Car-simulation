@@ -17,6 +17,9 @@ import { GraphEditor } from './graph/GraphEditor.js';
 import { ParameterWidget } from './graph/ParameterWidget.js';
 import { TransitionInspector } from './graph/TransitionInspector.js';
 
+// Phase 3: Timeline Components
+import { TimelinePanel } from './timeline/TimelinePanel.js';
+
 export class AnimatorEditorController {
     constructor(game) {
         this.game = game;
@@ -59,6 +62,10 @@ export class AnimatorEditorController {
         this.parameterWidget = new ParameterWidget(this.uiManager, this);
         this.transitionInspector = new TransitionInspector(this.uiManager, this);
         this.isGraphVisible = false;
+
+        // ==================== Phase 3: Timeline Components ====================
+        this.timelinePanel = new TimelinePanel(this.uiManager, this);
+        this.isTimelineVisible = false;
 
         // Track bone transform state for undo
         this._transformStartQuaternion = null;
@@ -112,13 +119,18 @@ export class AnimatorEditorController {
         this.container.appendChild(transInspEl);
         // TransitionInspector hidden by default, shown when edge selected
 
+        // Phase 3: Build Timeline Panel
+        const timelineEl = this.timelinePanel.build();
+        this.container.appendChild(timelineEl);
+        this.timelinePanel.hide(); // Hidden by default until Pose Mode
+
         // Get content container reference for backwards compatibility
         this.contentContainer = this.inspectorPanel.contentContainer;
 
         // Initialize transform controls
         this._createTransformControls();
 
-        console.log('AnimatorEditorController: Phase 1 + Phase 2 initialization complete');
+        console.log('AnimatorEditorController: Phase 1 + Phase 2 + Phase 3 initialization complete');
     }
 
     _createTransformControls() {
@@ -696,6 +708,11 @@ export class AnimatorEditorController {
             this.graphEditor.loadKeyframes(this.capturedPoses, this.capturedPoses.length - 1);
         }
 
+        // Phase 3: Update timeline panel with new keyframe
+        if (this.timelinePanel && this.isTimelineVisible) {
+            this.timelinePanel.loadKeyframes(this.capturedPoses, this.capturedPoses.length - 1);
+        }
+
         this._buildUI();
     }
 
@@ -708,6 +725,11 @@ export class AnimatorEditorController {
             // Update toolbar with keyframe count
             if (this.toolbar) {
                 this.toolbar.setTotalFrames(this.capturedPoses.length);
+            }
+
+            // Phase 3: Update timeline panel after deletion
+            if (this.timelinePanel && this.isTimelineVisible) {
+                this.timelinePanel.loadKeyframes(this.capturedPoses, Math.max(0, index - 1));
             }
 
             this._buildUI();
@@ -946,6 +968,13 @@ export class AnimatorEditorController {
             this.graphEditor.loadKeyframes(this.capturedPoses, 0);
         }
 
+        // Phase 3: Show and initialize timeline panel
+        if (this.timelinePanel) {
+            this.timelinePanel.loadKeyframes(this.capturedPoses, 0);
+            this.timelinePanel.show();
+            this.isTimelineVisible = true;
+        }
+
         this._buildUI(); // Rebuild for Pose tools
     }
 
@@ -1161,6 +1190,12 @@ export class AnimatorEditorController {
         // Phase 2: Restore FSM view in graph editor
         if (this.graphEditor && this.isGraphVisible && this.selectedEntity) {
             this.graphEditor.loadFromAnimator(this.selectedEntity.animator);
+        }
+
+        // Phase 3: Hide timeline panel
+        if (this.timelinePanel) {
+            this.timelinePanel.hide();
+            this.isTimelineVisible = false;
         }
 
         this._buildUI(); // Return to main menu

@@ -268,6 +268,12 @@ export class Toolbar {
         skeletonBtn.id = 'btn-skeleton';
         group.appendChild(skeletonBtn);
 
+        // Phase 3: Toggle Timeline View
+        this.timelineToggleBtn = this._createToolButton('🎞️', 'Toggle Timeline (T)',
+            () => this._toggleTimelineView());
+        this.timelineToggleBtn.id = 'btn-timeline';
+        group.appendChild(this.timelineToggleBtn);
+
         // Focus on Selected
         group.appendChild(this._createToolButton('🎯', 'Focus Selected (F)',
             () => this._focusSelected()));
@@ -485,6 +491,26 @@ export class Toolbar {
             this.editor.graphEditor.hide();
             this.editor.parameterWidget.hide();
             this.graphToggleBtn?.classList.remove('active');
+        }
+    }
+
+    _toggleTimelineView() {
+        // Phase 3: Toggle timeline visibility
+        if (!this.editor.timelinePanel) return;
+
+        if (this.editor.isTimelineVisible) {
+            this.editor.timelinePanel.hide();
+            this.editor.isTimelineVisible = false;
+            this.timelineToggleBtn?.classList.remove('active');
+        } else {
+            this.editor.timelinePanel.show();
+            this.editor.isTimelineVisible = true;
+            this.timelineToggleBtn?.classList.add('active');
+
+            // Load current keyframes if in Pose Mode
+            if (this.editor.isPoseMode) {
+                this.editor.timelinePanel.loadKeyframes(this.editor.capturedPoses, this.currentFrame);
+            }
         }
     }
 

@@ -63,6 +63,11 @@ export class HotkeyManager {
 
         // Phase 2: Graph View
         this.register('g', () => this._toggleGraphView(), 'Toggle State Machine Graph');
+
+        // Phase 3: Timeline
+        this.register('t', () => this._toggleTimelineView(), 'Toggle Timeline');
+        this.register('i', () => this._setLoopInPoint(), 'Set Loop In Point');
+        this.register('o', () => this._setLoopOutPoint(), 'Set Loop Out Point');
     }
 
     /**
@@ -190,13 +195,21 @@ export class HotkeyManager {
     }
 
     _frameForward() {
-        // TODO: Implement frame stepping
-        console.log('[Hotkey] Frame Forward');
+        // Phase 3: Use toolbar for frame stepping if available
+        if (this.editor.toolbar) {
+            this.editor.toolbar._frameForward();
+        } else {
+            console.log('[Hotkey] Frame Forward');
+        }
     }
 
     _frameBackward() {
-        // TODO: Implement frame stepping  
-        console.log('[Hotkey] Frame Backward');
+        // Phase 3: Use toolbar for frame stepping if available
+        if (this.editor.toolbar) {
+            this.editor.toolbar._frameBack();
+        } else {
+            console.log('[Hotkey] Frame Backward');
+        }
     }
 
     _goToStart() {
@@ -274,6 +287,41 @@ export class HotkeyManager {
         // Phase 2: Toggle state machine graph visibility
         if (this.editor.toolbar) {
             this.editor.toolbar._toggleGraphView();
+        }
+    }
+
+    _toggleTimelineView() {
+        // Phase 3: Toggle timeline visibility
+        if (this.editor.timelinePanel) {
+            if (this.editor.isTimelineVisible) {
+                this.editor.timelinePanel.hide();
+                this.editor.isTimelineVisible = false;
+            } else {
+                this.editor.timelinePanel.show();
+                this.editor.isTimelineVisible = true;
+                // Load current keyframes
+                if (this.editor.isPoseMode) {
+                    this.editor.timelinePanel.loadKeyframes(this.editor.capturedPoses, 0);
+                }
+            }
+        }
+    }
+
+    _setLoopInPoint() {
+        // Phase 3: Set loop in point
+        if (this.editor.timelinePanel) {
+            const time = this.editor.timelinePanel.playheadTime;
+            this.editor.timelinePanel.timelineData.loopIn = time;
+            console.log(`[Hotkey] Loop In Point set to ${time.toFixed(2)}s`);
+        }
+    }
+
+    _setLoopOutPoint() {
+        // Phase 3: Set loop out point
+        if (this.editor.timelinePanel) {
+            const time = this.editor.timelinePanel.playheadTime;
+            this.editor.timelinePanel.timelineData.loopOut = time;
+            console.log(`[Hotkey] Loop Out Point set to ${time.toFixed(2)}s`);
         }
     }
 
