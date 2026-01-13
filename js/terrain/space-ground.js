@@ -219,6 +219,14 @@ export class SpaceGroundGenerator extends TerrainGenerator {
     }
 
     /**
+     * Check if this is a hybrid terrain (Space Station)
+     * Used for physics transitions
+     */
+    isHybrid() {
+        return true;
+    }
+
+    /**
      * Update terrain parameters for ground
      * Properly handles the combined mesh structure
      * @param {Object} params - New parameters

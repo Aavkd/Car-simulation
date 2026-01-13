@@ -123,28 +123,35 @@ export class PlanePhysics {
     setSpaceTransitionFactor(factor) {
         factor = THREE.MathUtils.clamp(factor, 0, 1);
 
-        if (Math.abs(this.spaceTransitionFactor - factor) > 0.001) {
-            this.spaceTransitionFactor = factor;
-            this.atmosphereMode = (factor < 0.5); // Keep boolean for UI/Logging
+        // Always update state to ensure thrust multipliers are applied correctly
+        this.spaceTransitionFactor = factor;
+        this.atmosphereMode = (factor < 0.5); // Keep boolean for UI/Logging
 
-            // Interpolate Thrust Multiplier
-            // Unscaled (Atmosphere): 1.0
-            // Scaled (Space): provider.multiplier (e.g. 100)
+        // Interpolate Thrust Multiplier
+        // Unscaled (Atmosphere): 1.0
+        // Scaled (Space): provider.multiplier (e.g. 100)
 
-            let maxMultiplier = 1.0;
-            if (this.physicsProvider && this.physicsProvider.getThrustMultiplier) {
-                maxMultiplier = this.physicsProvider.getThrustMultiplier();
-            }
-
-            // Use Exponential Interpolation for thrust feels better than linear
-            // f=0 -> 1
-            // f=0.5 -> sqrt(max)  (100 -> 10)
-            // f=1 -> max (100 -> 100)
-            const currentMultiplier = Math.pow(maxMultiplier, factor);
-
-            this.activeThrustMultiplier = currentMultiplier;
-            this._applyThrustMultiplier(currentMultiplier);
+        let maxMultiplier = 1.0;
+        if (this.physicsProvider && this.physicsProvider.getThrustMultiplier) {
+            maxMultiplier = this.physicsProvider.getThrustMultiplier();
         }
+
+        // Use Exponential Interpolation for thrust feels better than linear
+        // f=0 -> 1
+        // f=0.5 -> sqrt(max)  (100 -> 10)
+        // f=1 -> max (100 -> 100)
+
+        // Only scale thrust for Hybrid terrains (Space Station)
+        // For pure Deep Space, we always want max thrust regardless of atmosphere mode
+        let currentMultiplier = maxMultiplier;
+
+        if (this.physicsProvider && this.physicsProvider.isHybrid && this.physicsProvider.isHybrid()) {
+            currentMultiplier = Math.pow(maxMultiplier, factor);
+        }
+
+        this.activeThrustMultiplier = currentMultiplier;
+        this._applyThrustMultiplier(currentMultiplier);
+
     }
 
     /**
@@ -167,7 +174,12 @@ export class PlanePhysics {
         if (this.physicsProvider?.isDeepSpace?.()) {
             this.atmosphereMode = true; // Start in atmosphere mode by default
             this.spaceTransitionFactor = 0.0;
-            console.log(`[PlanePhysics] Deep Space detected - defaulting to ATMOSPHERE mode (toggle O/Circle for Space mode)`);
+
+            if (this.physicsProvider.isHybrid && this.physicsProvider.isHybrid()) {
+                console.log(`[PlanePhysics] Space Station detected - starting in ATMOSPHERE mode (1x Thrust)`);
+            } else {
+                console.log(`[PlanePhysics] Deep Space detected - defaulting to ATMOSPHERE mode (High Thrust + Drag)`);
+            }
         } else {
             this.spaceTransitionFactor = 0.0;
         }

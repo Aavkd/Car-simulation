@@ -190,6 +190,7 @@ State-of-the-art rigid body simulation tailored for arcade-simulation balance.
     *   *Drag*: $D = 0.5 \cdot \rho \cdot v^2 \cdot C_D \cdot A$
 -   **Thrust Vectoring**: Allows for VTOL-like maneuvers (Hover Mode).
 -   **Ground Effect**: simulated "cushion" when flying close to terrain.
+-   **Hybrid Atmospheric System**: Automatically blends between standard atmospheric flight (Drag/Lift) and Newtonian space physics (Zero-Drag/Reaction Control) as the vehicle leaves the atmosphere.
 
 ---
 
@@ -275,6 +276,7 @@ Racing/
 4.  **Deep Space**: Zero-gravity feel (visual only), infinite void. Features volumetric galaxies, nebulae, black holes, and spatial anomalies.
 5.  **Vaporwave**: "Neon Horizon". Infinite highway with synthwave aesthetics.
 6.  **City**: Procedural urban grid with skyscrapers by "Procedural City Generator".
+7.  **Space Station**: Hybrid environment featuring a procedurally generated planet surface that continuously transitions into a full deep-space simulation with zero-gravity physics at high altitudes.
 
 ### Vehicles
 -   **Toyota AE86**: The drift king. RWD, lightweight, loose rear end.

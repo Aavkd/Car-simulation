@@ -1263,7 +1263,7 @@ class Game {
         this.input.onTimePreset = (preset) => this._setTimePreset(preset);
         this.input.onHeadlightsToggle = () => this._toggleHeadlights();
         this.input.onFlightModeToggle = () => {
-            if (this.plane) {
+            if (this.plane && this.activeVehicle === 'plane') {
                 this.plane.toggleFlightMode();
             }
         };
