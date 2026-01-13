@@ -353,6 +353,7 @@ graph TD
   - Bone length compensation
   - Rotation offset handling
   - Preview retargeted motion before applying
+  - [Design Document](./animation_import_design.md)
 
 #### 7.3 Import Enhancements
 - [ ] **Support additional formats**
@@ -441,7 +442,7 @@ js/editor/animator/
 ├── ik/                          # ✅ PHASE 4 COMPLETE
 │   ├── IKSolver.js             # ✅ Implemented
 │   ├── IKHandle.js             # ✅ Implemented
-│   └── FootIK.js               # ⏳ Planned
+│   └── FootIK.js               # ✅ Implemented
 │
 ├── viz/                         # ⏳ Phase 6
 │   ├── OnionSkinning.js

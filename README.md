@@ -153,6 +153,7 @@ Access via `F8`. A dedicated tool for character animation.
     - select bones and rotate them with Gizmos.
     - Capture keyframes to create new animations.
     - Export to JSON.
+    - **Import**: Retarget external animations (Mixamo/GLB) to your characters (Planned).
 
 ### 📦 Asset Library
 - **Structures**: Ancient Temples, Castles, Sci-Fi Towers.
