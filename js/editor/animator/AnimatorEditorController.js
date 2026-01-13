@@ -1,6 +1,17 @@
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
+// Phase 1: Core Systems
+import { UndoManager, BoneRotationCommand, BonePositionCommand, KeyframeAddCommand, KeyframeDeleteCommand } from './core/UndoManager.js';
+import { SelectionManager } from './core/SelectionManager.js';
+import { HotkeyManager } from './core/HotkeyManager.js';
+
+// Phase 1: UI Components
+import { UIManager } from './ui/UIManager.js';
+import { Toolbar } from './ui/Toolbar.js';
+import { InspectorPanel } from './ui/InspectorPanel.js';
+import { StatusBar } from './ui/StatusBar.js';
+
 export class AnimatorEditorController {
     constructor(game) {
         this.game = game;
@@ -27,25 +38,102 @@ export class AnimatorEditorController {
         this.previewDuration = 0;
         this.boneRefs = new Map(); // name -> bone object reference
 
+        // ==================== Phase 1: Core Systems ====================
+        this.undoManager = new UndoManager(50);
+        this.selectionManager = new SelectionManager(this);
+        this.hotkeyManager = new HotkeyManager(this);
+
+        // ==================== Phase 1: UI Components ====================
+        this.uiManager = new UIManager(this);
+        this.toolbar = new Toolbar(this.uiManager, this);
+        this.inspectorPanel = new InspectorPanel(this.uiManager, this);
+        this.statusBar = new StatusBar(this.uiManager, this);
+
+        // Track bone transform state for undo
+        this._transformStartQuaternion = null;
+        this._transformStartPosition = null;
 
         // Bind events
         this._onMouseDownBound = (e) => this._onMouseDown(e);
         this._onKeyDownBound = (e) => this._onKeyDown(e); // Added keydown for shortcuts
+
+        // Setup undo manager callbacks
+        this.undoManager.onHistoryChange = (state) => {
+            if (this.toolbar) {
+                this.toolbar.updateUndoState(state);
+            }
+            if (this.statusBar) {
+                this.statusBar.setMessage(state.canUndo ? `Undo: ${state.undoName}` : 'Ready');
+            }
+        };
 
         // Expose to global scope for UI interactions
         window.game.animator = this;
     }
 
     async initialize() {
-        console.log('AnimatorEditorController: Initializing...');
-        this._createUI();
+        console.log('AnimatorEditorController: Initializing (Phase 1)...');
+
+        // Initialize Phase 1 UI
+        this.uiManager.initialize();
+        this.container = this.uiManager.getRoot();
+
+        // Build UI components
+        const inspectorEl = this.inspectorPanel.build();
+        this.container.appendChild(inspectorEl);
+
+        const toolbarEl = this.toolbar.build();
+        this.container.appendChild(toolbarEl);
+
+        const statusBarEl = this.statusBar.build();
+        this.container.appendChild(statusBarEl);
+
+        // Get content container reference for backwards compatibility
+        this.contentContainer = this.inspectorPanel.contentContainer;
+
+        // Initialize transform controls
         this._createTransformControls();
+
+        console.log('AnimatorEditorController: Phase 1 initialization complete');
     }
 
     _createTransformControls() {
         if (this.transformControls) return;
 
         this.transformControls = new TransformControls(this.game.camera, this.game.renderer.domElement);
+
+        // Track drag start for undo
+        this.transformControls.addEventListener('mouseDown', () => {
+            if (this.selectedBone) {
+                this._transformStartQuaternion = this.selectedBone.quaternion.clone();
+                this._transformStartPosition = this.selectedBone.position.clone();
+            }
+        });
+
+        // Create undo command when drag ends
+        this.transformControls.addEventListener('mouseUp', () => {
+            if (this.selectedBone && this._transformStartQuaternion) {
+                const mode = this.transformControls.mode;
+                if (mode === 'rotate') {
+                    const cmd = new BoneRotationCommand(
+                        this.selectedBone,
+                        this._transformStartQuaternion,
+                        this.selectedBone.quaternion.clone()
+                    );
+                    this.undoManager.addToHistory(cmd);
+                } else if (mode === 'translate') {
+                    const cmd = new BonePositionCommand(
+                        this.selectedBone,
+                        this._transformStartPosition,
+                        this.selectedBone.position.clone()
+                    );
+                    this.undoManager.addToHistory(cmd);
+                }
+            }
+            this._transformStartQuaternion = null;
+            this._transformStartPosition = null;
+        });
+
         this.transformControls.addEventListener('dragging-changed', (event) => {
             // Disable camera controls while dragging
             if (this.game.cameraController) {
@@ -132,28 +220,41 @@ export class AnimatorEditorController {
     enable() {
         if (this.isEnabled) return;
         this.isEnabled = true;
-        this.container.style.display = 'block';
+
+        // Show UI
+        this.uiManager.show();
 
         // Add Input Listeners
         window.addEventListener('mousedown', this._onMouseDownBound);
-        window.addEventListener('keydown', this._onKeyDownBound);
+
+        // Enable hotkey manager (handles keydown)
+        this.hotkeyManager.enable();
 
         // Add Controls to Scene
         if (this.transformControls) {
             this.game.scene.add(this.transformControls);
         }
 
-        console.log('AnimatorEditorController: Enabled');
+        // Update status bar
+        if (this.statusBar) {
+            this.statusBar.setMessage('Ready');
+        }
+
+        console.log('AnimatorEditorController: Enabled (Phase 1)');
     }
 
     disable() {
         if (!this.isEnabled) return;
         this.isEnabled = false;
-        this.container.style.display = 'none';
+
+        // Hide UI
+        this.uiManager.hide();
 
         // Remove Input Listeners
         window.removeEventListener('mousedown', this._onMouseDownBound);
-        window.removeEventListener('keydown', this._onKeyDownBound);
+
+        // Disable hotkey manager
+        this.hotkeyManager.disable();
 
         // Cleanup
         this.disablePoseMode();
@@ -161,6 +262,12 @@ export class AnimatorEditorController {
             this.transformControls.detach();
             this.game.scene.remove(this.transformControls);
         }
+
+        // Clear undo history when exiting
+        this.undoManager.clear();
+
+        // Clear selection
+        this.selectionManager.clearSelection();
 
         this.selectedEntity = null;
         this._buildUI();
@@ -448,6 +555,11 @@ export class AnimatorEditorController {
             ${timelineHTML}
             <div style="font-size: 10px; color: #555; text-align: center; margin-top: 20px;">Changes apply instantly. Use F8 to exit.</div>
         `;
+
+        // Update inspector panel pose mode button
+        if (this.inspectorPanel) {
+            this.inspectorPanel.updatePoseModeButton(this.isPoseMode);
+        }
     }
 
     _buildPoseUI() {
@@ -531,14 +643,31 @@ export class AnimatorEditorController {
             });
         }
 
-        this.capturedPoses.push(pose);
+        // Use undo manager for keyframe addition
+        const cmd = new KeyframeAddCommand(this.capturedPoses, pose);
+        this.undoManager.executeCommand(cmd);
+
         console.log(`[Animator] Captured Keyframe #${this.capturedPoses.length} (${pose.bones.length} bones)`);
+
+        // Update toolbar with keyframe count
+        if (this.toolbar) {
+            this.toolbar.setTotalFrames(this.capturedPoses.length);
+        }
+
         this._buildUI();
     }
 
     deleteKeyframe(index) {
         if (index >= 0 && index < this.capturedPoses.length) {
-            this.capturedPoses.splice(index, 1);
+            // Use undo manager for keyframe deletion
+            const cmd = new KeyframeDeleteCommand(this.capturedPoses, index);
+            this.undoManager.executeCommand(cmd);
+
+            // Update toolbar with keyframe count
+            if (this.toolbar) {
+                this.toolbar.setTotalFrames(this.capturedPoses.length);
+            }
+
             this._buildUI();
         }
     }

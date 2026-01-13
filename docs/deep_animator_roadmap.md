@@ -8,10 +8,10 @@
 
 ### What We Have Now
 
-![Current Inspect Mode](../uploaded_image_0_1768330843590.png)
+![Current Inspect Mode](../images/animator_inspect.png)
 *Inspect Mode: Entity selection, State Machine display, Parameters, Active Clip scrubber*
 
-![Current Pose Mode](../uploaded_image_1_1768330843590.png)
+![Current Pose Mode](../images/animator_pose.png)
 *Pose Mode: Bone helpers (green boxes), Move/Rotate tools, Keyframe capture, Preview, Export*
 
 ### Current Feature Inventory
@@ -27,6 +27,11 @@
 | Keyframe Capture | ✅ Basic | Stores quaternion snapshots |
 | Preview (Direct) | ✅ Basic | Slerp interpolation between poses |
 | JSON Export | ✅ Basic | `AnimationClip.toJSON()` export |
+| **Modular UI System** | ✅ **NEW** | UIManager, Toolbar, InspectorPanel, StatusBar |
+| **Undo/Redo** | ✅ **NEW** | Command pattern, Ctrl+Z/Ctrl+Shift+Z |
+| **Selection Manager** | ✅ **NEW** | Multi-bone selection, hierarchy select |
+| **Hotkey Manager** | ✅ **NEW** | W/E/R tools, Space play, S keyframe |
+| **Frame Navigation** | ✅ **NEW** | Step through keyframes with ⏪/⏩ buttons |
 
 ### Critical Gaps (vs Unity Animator)
 
@@ -39,7 +44,7 @@
 7. **No Retargeting** - Animations tied to specific skeletons
 8. **No Animation Blending Preview** - Can't visualize blend trees in editor
 9. **No Additive Layer Preview** - Can't test layer masks
-10. **No Undo/Redo** - Destructive editing
+10. ~~**No Undo/Redo** - Destructive editing~~ ✅ **FIXED in Phase 1**
 
 ---
 
@@ -78,33 +83,33 @@ graph TD
 
 ---
 
-### Phase 1: Editor Foundation & UI Overhaul
+### Phase 1: Editor Foundation & UI Overhaul ✅ COMPLETED
 **Timeline**: Core infrastructure that enables all future features
 
 #### 1.1 Modular UI System
-- [ ] **[NEW] `js/editor/animator/ui/UIManager.js`**
+- [x] **[NEW] `js/editor/animator/ui/UIManager.js`**
   - Panel management (dock, undock, resize)
   - Theme system (dark mode by default)
   - Responsive layout (inspector left, timeline bottom, graph center)
 
-- [ ] **Refactor `AnimatorEditorController.js`**
+- [x] **Refactor `AnimatorEditorController.js`**
   - Extract `_buildUI()` / `_buildPoseUI()` into dedicated panel classes
   - Implement proper separation of concerns
 
-- [ ] **[NEW] `js/editor/animator/ui/Toolbar.js`**
+- [x] **[NEW] `js/editor/animator/ui/Toolbar.js`**
   - Tool buttons: Select, Move, Rotate, Scale, IK Handle
   - Play/Pause/Stop controls
   - Frame navigation (|◀ ◀ ▶ ▶|)
   - Snap settings (time, rotation)
 
 #### 1.2 Undo/Redo System
-- [ ] **[NEW] `js/editor/animator/core/UndoManager.js`**
+- [x] **[NEW] `js/editor/animator/core/UndoManager.js`**
   - Command pattern for all bone/keyframe modifications
   - History stack with configurable depth (default: 50)
   - Keyboard shortcuts: `Ctrl+Z` / `Ctrl+Shift+Z`
 
 #### 1.3 Selection System Improvements
-- [ ] **[NEW] `js/editor/animator/core/SelectionManager.js`**
+- [x] **[NEW] `js/editor/animator/core/SelectionManager.js`**
   - Multi-bone selection (`Shift+Click`)
   - Hierarchy selection (`Ctrl+Click` selects children)
   - Selection groups/sets
@@ -398,49 +403,49 @@ graph TD
 
 ```
 js/editor/animator/
-├── AnimatorEditorController.js  # Main orchestrator (refactored)
+├── AnimatorEditorController.js  # Main orchestrator (✅ refactored in Phase 1)
 │
-├── core/
-│   ├── UndoManager.js
-│   ├── SelectionManager.js
-│   ├── ClipboardManager.js
-│   └── HotkeyManager.js
+├── core/                        # ✅ PHASE 1 COMPLETE
+│   ├── UndoManager.js          # ✅ Implemented
+│   ├── SelectionManager.js     # ✅ Implemented
+│   ├── ClipboardManager.js     # ⏳ Planned
+│   └── HotkeyManager.js        # ✅ Implemented
 │
-├── ui/
-│   ├── UIManager.js
-│   ├── Toolbar.js
-│   ├── InspectorPanel.js
-│   └── StatusBar.js
+├── ui/                          # ✅ PHASE 1 COMPLETE
+│   ├── UIManager.js            # ✅ Implemented
+│   ├── Toolbar.js              # ✅ Implemented
+│   ├── InspectorPanel.js       # ✅ Implemented
+│   └── StatusBar.js            # ✅ Implemented
 │
-├── graph/
+├── graph/                       # ⏳ Phase 2
 │   ├── GraphEditor.js
 │   ├── StateNode.js
 │   ├── TransitionEdge.js
 │   └── ParameterWidget.js
 │
-├── timeline/
+├── timeline/                    # ⏳ Phase 3
 │   ├── TimelinePanel.js
 │   ├── DopeSheet.js
 │   ├── CurveEditor.js
 │   └── KeyframeData.js
 │
-├── ik/
+├── ik/                          # ⏳ Phase 4
 │   ├── IKSolver.js
 │   ├── IKHandle.js
 │   └── FootIK.js
 │
-├── viz/
+├── viz/                         # ⏳ Phase 6
 │   ├── OnionSkinning.js
 │   └── MotionTrail.js
 │
-├── events/
+├── events/                      # ⏳ Phase 5
 │   └── AnimationEvent.js
 │
-├── retarget/
+├── retarget/                    # ⏳ Phase 7
 │   ├── HumanoidAvatar.js
 │   └── Retargeter.js
 │
-└── utils/
+└── utils/                       # ⏳ As needed
     ├── BoneUtils.js
     └── MathUtils.js
 ```
@@ -449,16 +454,16 @@ js/editor/animator/
 
 ## 🎯 Priority Matrix
 
-| Phase | Priority | Complexity | User Value |
-|-------|----------|------------|------------|
-| Phase 1: Foundation | 🔴 Critical | Medium | High |
-| Phase 2: Graph Editor | 🔴 Critical | High | Very High |
-| Phase 3: Timeline | 🔴 Critical | High | Very High |
-| Phase 4: IK | 🟡 High | High | High |
-| Phase 5: Events | 🟡 High | Medium | High |
-| Phase 6: Onion Skin | 🟢 Medium | Low | Medium |
-| Phase 7: Retargeting | 🟢 Medium | High | High |
-| Phase 8: Polish | 🔵 Low | Low | Medium |
+| Phase | Priority | Complexity | User Value | Status |
+|-------|----------|------------|------------|--------|
+| Phase 1: Foundation | 🔴 Critical | Medium | High | ✅ **COMPLETE** |
+| Phase 2: Graph Editor | 🔴 Critical | High | Very High | ⏳ Next Up |
+| Phase 3: Timeline | 🔴 Critical | High | Very High | ⏳ Planned |
+| Phase 4: IK | 🟡 High | High | High | ⏳ Planned |
+| Phase 5: Events | 🟡 High | Medium | High | ⏳ Planned |
+| Phase 6: Onion Skin | 🟢 Medium | Low | Medium | ⏳ Planned |
+| Phase 7: Retargeting | 🟢 Medium | High | High | ⏳ Planned |
+| Phase 8: Polish | 🔵 Low | Low | Medium | ⏳ Planned |
 
 ---
 
