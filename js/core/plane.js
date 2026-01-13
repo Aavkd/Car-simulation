@@ -15,22 +15,27 @@ export class PlanePhysics {
         this._initTrailSystem();
 
         // ==================== PHYSICS CONSTANTS ====================
-        this.MASS = 2000.0;             // kg
-        this.MAX_THRUST = 60000.0;      // Newtons
+        // ==================== PHYSICS CONSTANTS (BASE) ====================
+        this.BASE_MASS = 2000.0;             // kg
+        this.BASE_THRUST = 60000.0;          // Newtons
+        this.BASE_HOVER = 35000.0;           // Vertical lift force
+        this.BASE_REVERSE = 50000.0;         // Reverse thrust
+
+        // Active Physics Parameters
+        this.MASS = this.BASE_MASS;
+        this.MAX_THRUST = this.BASE_THRUST;
+        this.HOVER_FORCE = this.BASE_HOVER;
+        this.REVERSE_THRUST = this.BASE_REVERSE;
+
         this.LIFT_COEFFICIENT = 0.05;   // Base lift factor
         this.DRAG_COEFFICIENT = 0.02;   // Base drag factor
         this.WING_AREA = 25.0;          // m^2
         this.AIR_DENSITY = 1.225;       // kg/m^3 (sea level)
         this.GRAVITY = 9.81;
 
-        // NEW: Special Flight Controls
-        this.HOVER_FORCE = 35000.0;      // Vertical lift force (Newtons) when hovering
-        this.REVERSE_THRUST = 50000.0;   // Reverse/brake thrust (Newtons)
-
         // Handling Characteristics
         this.PITCH_SPEED = 1.5;
         this.ROLL_SPEED = 2.5;
-
         this.YAW_SPEED = 1.2;
 
         // Smoothing / Inertia
@@ -75,6 +80,8 @@ export class PlanePhysics {
         this.GROUND_BOUNCE = 0.2;        // Bounce damping on impact
 
         // ==================== SPEED EFFECT SYSTEM ====================
+        this.speedLineDistance = 0;
+        this.activeThrustMultiplier = 1.0;
         this._initSpeedEffect();
 
 
@@ -94,6 +101,65 @@ export class PlanePhysics {
             this.GRAVITY = this.physicsProvider.getGravity();
         } else {
             this.GRAVITY = 9.81;
+        }
+
+        // Update thrust multipliers
+        let multiplier = 1.0;
+        if (this.physicsProvider && this.physicsProvider.getThrustMultiplier) {
+            multiplier = this.physicsProvider.getThrustMultiplier();
+        }
+
+        this.activeThrustMultiplier = multiplier;
+
+        // Apply to forces
+        this.MAX_THRUST = this.BASE_THRUST * multiplier;
+        this.HOVER_FORCE = this.BASE_HOVER * multiplier;
+        this.REVERSE_THRUST = this.BASE_REVERSE * multiplier;
+
+        if (multiplier !== 1.0) {
+            console.log(`[PlanePhysics] Applied thrust multiplier: ${multiplier}x`);
+
+            // Adjust speed effect thresholds to match new speed
+            if (this.speedEffectConfig) {
+                // Base thresholds (hardcoded backup or read from initial config if preserved)
+                // We'll assume the current config is the base if not already scaled.
+                // Ideally, we should reset to base values first. 
+                // Since this might be called multiple times, let's look at defining base values in init or just scaling relative to base constants.
+                // Base thresholds (Based on user tuning for 1x)
+                const baseMin = 100;
+                const baseMax = 2200;
+                const baseWidthBoost = this.speedEffectConfig.widthBoost || 1.0; // Assuming default 1.0 if not set
+                const baseBloomBoost = this.speedEffectConfig.bloomBoost || 1.0; // Assuming default 1.0 if not set
+
+                // Physics Correction:
+                // Plane top speed is limited by Drag = k * v^2 + Linear Friction.
+                // Observed Top Speeds: 1x -> ~700, 50x -> ~9700 (Ratio ~14x)
+                // 50^0.7 ~= 15.4x, which aligns well with the observed ratio.
+                const speedScale = Math.pow(multiplier, 0.7);
+
+                this.speedEffectConfig.minSpeed = baseMin * speedScale;
+                this.speedEffectConfig.maxSpeed = baseMax * speedScale;
+                this.speedEffectConfig.widthBoost = baseWidthBoost * speedScale;
+                this.speedEffectConfig.bloomBoost = baseBloomBoost * speedScale;
+            }
+
+            // Update shader uniform if it exists
+            if (this.speedEffectMaterial && this.speedEffectMaterial.uniforms.multiplier) {
+                this.speedEffectMaterial.uniforms.multiplier.value = multiplier;
+            }
+        } else {
+            // Reset to base
+            if (this.speedEffectConfig) {
+                this.speedEffectConfig.minSpeed = 100;
+                this.speedEffectConfig.maxSpeed = 2200;
+                // Reset widthBoost and bloomBoost to their base values (assuming 1.0 if not explicitly stored)
+                this.speedEffectConfig.widthBoost = 1.0;
+                this.speedEffectConfig.bloomBoost = 1.0;
+            }
+
+            if (this.speedEffectMaterial && this.speedEffectMaterial.uniforms.multiplier) {
+                this.speedEffectMaterial.uniforms.multiplier.value = 1.0;
+            }
         }
     }
 
@@ -247,7 +313,18 @@ export class PlanePhysics {
             // This allows banking to turn (Lift vector tilts)
             const forwardSpeed = this.velocity.dot(forward);
             if (forwardSpeed > 0) {
-                const liftMag = 0.5 * this.AIR_DENSITY * (forwardSpeed * forwardSpeed) * this.LIFT_COEFFICIENT * this.WING_AREA;
+                let liftMag = 0.5 * this.AIR_DENSITY * (forwardSpeed * forwardSpeed) * this.LIFT_COEFFICIENT * this.WING_AREA;
+
+                // Fix for High Speed: Clamp lift to prevent uncontrollable upward push
+                // At 6000 km/h, uncapped lift generates hundreds of Gs.
+                // We clamp it to something reasonable (e.g. 15 Gs) so you can still turn but don't fly into space.
+                const maxGFactor = 15.0;
+                const maxLift = this.MASS * 9.81 * maxGFactor;
+
+                if (liftMag > maxLift) {
+                    liftMag = maxLift;
+                }
+
                 forces.add(up.clone().multiplyScalar(liftMag));
             }
         }
@@ -753,10 +830,10 @@ export class PlanePhysics {
      */
     _initSpeedEffect() {
         this.speedEffectConfig = {
-            count: 200,             // Number of lines
-            boxSize: new THREE.Vector3(40, 20, 60), // Volume size around plane
-            minSpeed: 100,          // Speed (km/h) where effect starts
-            maxSpeed: 800,          // Speed where effect is maxed
+            count: 2000,            // Increased density for larger volume
+            boxSize: new THREE.Vector3(40, 20, 1000), // Larger box to prevent strobing at high speeds
+            minSpeed: 300,          // Speed (km/h) where effect starts
+            maxSpeed: 2000,          // Speed where effect is maxed
             maxStretch: 20.0,       // Maximum line length stretch
             color: new THREE.Color(0xaaccff), // Light blueish white
             lineWidth: 0.05         // Thickness of the lines
@@ -837,60 +914,56 @@ export class PlanePhysics {
                 color: { value: this.speedEffectConfig.color },
                 boxLength: { value: box.z },
                 opacity: { value: 0 },
-                lineWidth: { value: this.speedEffectConfig.lineWidth }
+                lineWidth: { value: this.speedEffectConfig.lineWidth },
+                multiplier: { value: 1.0 }, // Thrust multiplier
+                travelDistance: { value: 0 } // Accumulated distance
             },
             vertexShader: `
                 uniform float time;
                 uniform float speedFactor;
                 uniform float boxLength;
                 uniform float lineWidth;
+                uniform float multiplier;
+                uniform float travelDistance;
                 
                 attribute float aOffset;
                 attribute float aEnd; // 0 = head, 1 = tail
                 attribute float aSide; // -1 or 1
                 
                 varying float vAlpha;
+                varying float vMultiplier;
 
                 void main() {
+                    vMultiplier = multiplier;
                     vec3 pos = position;
                     
-                    // Animate Z movement: push everything back based on time
-                    // "Speed" of particles is illusionary, we just cycle them
-                    // Higher speedFactor = faster cycling
-                    float flightSpeed = 100.0 * (1.0 + speedFactor * 5.0); 
-                    float zOffset = -mod(time * flightSpeed + aOffset, boxLength);
+                    // Animate Z movement using accumulated distance
+                    // This prevents jumps when speed changes
+                    // travelDistance is already accumulated and modulo'd on CPU
+                    float zOffset = -mod(travelDistance + aOffset, boxLength);
                     
-                    // Wrap around centered at 0
                     pos.z = pos.z + zOffset;
                     if (pos.z < -boxLength/2.0) pos.z += boxLength;
                     
                     // Stretch logic
-                    // If this is the tail (aEnd == 1.0), stretch it forward (or backward?)
                     if (aEnd > 0.5) {
-                        pos.z -= speedFactor * 20.0; // Max stretch
+                        float stretch = 20.0 * (1.0 + log(multiplier) * 1.5);
+                        pos.z -= speedFactor * stretch; 
                     }
                     
-                    // Billboard expansion
-                    // Calculate view position for the center of the line
                     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-
-                    // Direction of the line in View Space (it moves along Z axis)
-                    vec3 lineDirView = (modelViewMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xyz;
-                    lineDirView = normalize(lineDirView);
-
-                    // Vector to camera (in view space, from vertex to origin)
-                    // mvPosition is the point in view space. Camera is at (0,0,0).
-                    // So vector TO camera is -mvPosition.
+                    vec3 lineDirView = normalize((modelViewMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xyz);
                     vec3 viewDir = normalize(-mvPosition.xyz);
-
-                    // Side vector perpendicular to both line direction and view direction
                     vec3 sideDir = normalize(cross(lineDirView, viewDir));
 
-                    // Expand perpendicular to the line
-                    mvPosition.xyz += sideDir * aSide * lineWidth;
+                    // Boost line width with multiplier so they don't become invisible thin threads
+                    // Dampened Logarithmic scaling
+                    // Combined with SpeedFactor: Use speedFactor to ensure they start thin and grow appropriately
+                    // REMOVED: User wants exact 1x visuals. No width boost.
+                    float dynamicWidthBoost = 1.0;
+                    mvPosition.xyz += sideDir * aSide * lineWidth * dynamicWidthBoost;
                     
-                    // Calculate alpha fade based on Z position relative to box
-                    float zNorm = 2.0 * pos.z / boxLength; // -1 to 1 aprox
+                    float zNorm = 2.0 * pos.z / boxLength; 
                     vAlpha = 1.0 - smoothstep(0.8, 1.0, abs(zNorm)); 
                     
                     gl_Position = projectionMatrix * mvPosition;
@@ -900,10 +973,23 @@ export class PlanePhysics {
                 uniform vec3 color;
                 uniform float opacity;
                 varying float vAlpha;
+                varying float vMultiplier;
                 
                 void main() {
                     if (opacity <= 0.01) discard;
-                    gl_FragColor = vec4(color, opacity * vAlpha);
+                    
+                    // Boost Brightness for Bloom
+                    // REMOVED: User wants exact 1x visuals. No bloom boost.
+                    float currentBoost = 1.0;
+                    
+                    vec3 finalColor = color * currentBoost;
+                    
+                    // Boost Opacity
+                    // Ensure it stays solid at high speeds
+                    float finalOpacity = opacity * vAlpha;
+                    // REMOVED: No opacity boost for high multipliers.
+                    
+                    gl_FragColor = vec4(finalColor, finalOpacity);
                 }
             `,
             transparent: true,
@@ -940,6 +1026,25 @@ export class PlanePhysics {
         // Pass uniforms
         this.speedEffectMaterial.uniforms.time.value += dt;
         this.speedEffectMaterial.uniforms.speedFactor.value = factor;
+
+        // Accumulate distance for smooth scrolling
+        // Calculate instantaneous flight speed (logic moved from shader)
+        const mult = this.activeThrustMultiplier || 1.0;
+        const flightSpeed = 100.0 * (1.0 + factor * 5.0 * Math.sqrt(mult));
+
+        // Accumulate and modulo on CPU to prevent float precision issues (jitter) often seen at high values
+        // Box length is now 1000
+        const boxLength = this.speedEffectConfig.boxSize.z;
+        this.speedLineDistance += flightSpeed * dt;
+        this.speedLineDistance = this.speedLineDistance % boxLength;
+
+        this.speedEffectMaterial.uniforms.travelDistance.value = this.speedLineDistance;
+
+        // Debug scaling
+        if (this.mesh.visible && Math.random() < 0.01) {
+            const mult = this.activeThrustMultiplier || 1.0;
+            // console.log(`[PlanePhysics] Speed: ${Math.round(speed)} / ${Math.round(cfg.maxSpeed)} (Mult: ${mult.toFixed(1)})`);
+        }
     }
 
     disposeSpeedEffect() {

@@ -18,12 +18,14 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
             blackHoleChance: 0.2, // 5% chance per chunk
             anomalyChance: 2,    // 10% chance per chunk
             // Visual Tweaks
-            blackHoleBloom: 0.1,       // Multiplier for black hole glow
+            blackHoleBloom: 0.2,       // Multiplier for black hole glow
             blackHoleDistortion: 0.15, // Lensing strength
             blackHoleDiskSize: 5.0,    // Accretion disk scale
             anomalyBloom: 0.1,         // Multiplier for anomaly glow
             anomalySpeed: 1.0,         // Rotation speed multiplier
-            anomalyDistortion: 0.5     // Max glitch distortion
+            anomalyDistortion: 0.5,     // Max glitch distortion
+            // Physics Tweaks
+            thrustMultiplier: 50     // Multiplier for plane speed/thrust (default 2x)
         }, params);
 
         this.mesh = new THREE.Group();
@@ -655,4 +657,5 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
     getSurfaceType() { return SurfaceTypes.TARMAC; }
     getSpawnPosition() { return new THREE.Vector3(0, 500, 0); }
     getGravity() { return 0; }
+    getThrustMultiplier() { return this.params.thrustMultiplier; }
 }
