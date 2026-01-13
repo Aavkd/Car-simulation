@@ -12,6 +12,7 @@ export class InspectorPanel {
         this.container = null;
         this.contentContainer = null;
         this.selectedEvent = null; // Track selected event for editing
+        this.showAddLayerForm = false; // Toggle for Add Layer form
     }
 
     build() {
@@ -100,33 +101,68 @@ export class InspectorPanel {
     }
 
     _buildLayers(animator) {
+        let html = '';
         if (!animator || !animator.layers || animator.layers.size === 0) {
-            return '<div style="color:var(--anim-text-muted);font-style:italic;">No layers defined.</div>';
+            html += '<div style="color:var(--anim-text-muted);font-style:italic; margin-bottom:10px;">No layers defined.</div>';
+        } else {
+            for (const [name, layer] of animator.layers) {
+                html += `
+                    <div style="margin-bottom:12px; border-bottom:1px solid #333; padding-bottom:8px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                            <span style="font-size:12px; font-weight:600; color:#ddd;">${name}</span>
+                            <button onclick="window.game.animator.toggleLayerMask('${name}')" title="Visualize Mask" 
+                                style="background:none; border:none; cursor:pointer; font-size:14px; opacity:${this.editor.visualizedLayer === name ? '1' : '0.4'}">
+                                👁️
+                            </button>
+                        </div>
+                        <div style="font-size:10px; color:#aaa; margin-bottom:4px;">
+                            Mask: ${layer.rootBoneName || 'Full Body'}
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span style="font-size:10px; color:#aaa; width:40px;">W: ${(layer.weight || 0).toFixed(2)}</span>
+                            <input type="range" class="animator-slider" min="0" max="1" step="0.01" value="${layer.weight || 0}" 
+                                oninput="window.game.animator.setLayerWeight('${name}', parseFloat(this.value)); this.previousElementSibling.textContent='W: '+parseFloat(this.value).toFixed(2)"
+                                style="flex:1; accent-color:var(--anim-accent);">
+                        </div>
+                    </div>
+                `;
+            }
         }
 
-        let html = '';
-        for (const [name, layer] of animator.layers) {
+        // Add Layer Button / Form
+        if (!this.showAddLayerForm) {
             html += `
-                <div style="margin-bottom:12px; border-bottom:1px solid #333; padding-bottom:8px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                        <span style="font-size:12px; font-weight:600; color:#ddd;">${name}</span>
-                        <button onclick="window.game.animator.toggleLayerMask('${name}')" title="Visualize Mask" 
-                            style="background:none; border:none; cursor:pointer; font-size:14px; opacity:${this.editor.visualizedLayer === name ? '1' : '0.4'}">
-                            👁️
-                        </button>
+                <button onclick="window.game.animator.inspectorPanel.toggleAddLayerForm()" 
+                    class="animator-btn" style="width:100%; border:1px dashed var(--anim-border); color:var(--anim-text-secondary);">
+                    + Add New Layer
+                </button>
+            `;
+        } else {
+            const bones = this.editor.getSkeletonBoneNames();
+            const options = bones.map(b => `<option value="${b}">${b}</option>`).join('');
+
+            html += `
+                <div style="background:var(--anim-surface); border:1px solid var(--anim-accent); padding:10px; border-radius:4px; margin-top:10px;">
+                    <div style="margin-bottom:8px;">
+                        <div style="font-size:10px; color:var(--anim-text-secondary); margin-bottom:2px;">Layer Name</div>
+                        <input type="text" id="new-layer-name" placeholder="e.g. UpperBody" 
+                            style="width:100%; background:#222; border:1px solid #444; color:#fff; padding:4px;">
                     </div>
-                    <div style="font-size:10px; color:#aaa; margin-bottom:4px;">
-                        Mask: ${layer.rootBoneName || 'Full Body'}
+                    <div style="margin-bottom:8px;">
+                        <div style="font-size:10px; color:var(--anim-text-secondary); margin-bottom:2px;">Mask Root Bone</div>
+                        <select id="new-layer-bone" style="width:100%; background:#222; border:1px solid #444; color:#fff; padding:4px;">
+                            <option value="">(None - Full Body)</option>
+                            ${options}
+                        </select>
                     </div>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span style="font-size:10px; color:#aaa; width:40px;">W: ${(layer.weight || 0).toFixed(2)}</span>
-                        <input type="range" class="animator-slider" min="0" max="1" step="0.01" value="${layer.weight || 0}" 
-                            oninput="window.game.animator.setLayerWeight('${name}', parseFloat(this.value)); this.previousElementSibling.textContent='W: '+parseFloat(this.value).toFixed(2)"
-                            style="flex:1; accent-color:var(--anim-accent);">
+                    <div style="display:flex; gap:5px;">
+                        <button onclick="window.game.animator.inspectorPanel.confirmAddLayer()" class="animator-btn primary" style="flex:1; font-size:11px;">Create</button>
+                        <button onclick="window.game.animator.inspectorPanel.toggleAddLayerForm()" class="animator-btn" style="flex:1; font-size:11px;">Cancel</button>
                     </div>
                 </div>
             `;
         }
+
         return html;
     }
 
@@ -278,6 +314,29 @@ export class InspectorPanel {
                     class="animator-btn" style="width:100%;">← Back to Character</button>
             </div>
         `;
+    }
+    toggleAddLayerForm() {
+        this.showAddLayerForm = !this.showAddLayerForm;
+        this.refresh();
+    }
+
+    confirmAddLayer() {
+        const nameInput = this.contentContainer.querySelector('#new-layer-name');
+        const boneInput = this.contentContainer.querySelector('#new-layer-bone');
+
+        if (nameInput && this.editor) {
+            const name = nameInput.value;
+            const bone = boneInput ? boneInput.value : null; // Handle null if not selected
+            this.editor.createLayer(name, bone);
+
+            // Reset form if successful (refresh calls helper, but if we want to close it:
+            // The createLayer calls _buildUI which calls refresh.
+            // But we should reset showAddLayerForm if success.
+            // Since createLayer works by side effect, we can assume success if we check layers.
+            // Or just close it always.
+            this.showAddLayerForm = false;
+            this.refresh();
+        }
     }
 }
 

@@ -48,7 +48,9 @@ js/editor/animator/
 ### 🍰 Layer Blending
 *   **Real-time Controls:** Adjust layer weights instantly using sliders.
 *   **Mask Visualization:** Visual debug tool to verify which bones are included in a layer mask.
-*   **Dynamic Creation (Design Phase):** *Planned feature to allow creating new layers at runtime.*
+*   **Dynamic Creation:** UI to define new layers (Name + Root Bone) at runtime.
+    *   **Add Layer Button:** Available in the Layers inspector.
+    *   **Bone Selector:** Dropdown populated from the entity's skeleton.
 
 ---
 
@@ -63,8 +65,10 @@ js/editor/animator/
     Mask: Spine
     Weight: [======|====] 0.60
     ```
+*   **Dynamic Creation:** Inline form to add new layers with validation.
 
 ### AnimatorEditorController
+*   **`createLayer(name, rootBone)`**: Handles validation and calls `animator.addLayer()`.
 *   **`_updateMaskVisualization()`**:
     *   Iterates through `boneHelpers`.
     *   Checks if bone name exists in the active layer's mask logic.
@@ -75,5 +79,4 @@ js/editor/animator/
 
 ## 📝 Future Improvements
 *   **Layer-specific playback:** Ability to selectively play an animation *only* on a specific layer for testing.
-*   **Dynamic Layer Creation:** UI to define new layers (Name + Root Bone) at runtime (See `docs/feature_design_layer_creation.md`).
 *   **Additive Blending:** Support for additive layers (e.g., breathing, recoil) in the previewer.

@@ -293,6 +293,13 @@ graph TD
   - Weight curves for layers
   - Common use: Breathing, Hit reactions
 
+#### 5.5 Dynamic Layer Creation
+- [x] **Run-time layer management**
+  - [x] Support creating new layers in Inspector
+  - [x] Defining masks via bone selection
+  - [x] [Design Document](./feature_design_layer_creation.md)
+
+
 ---
 
 ### Phase 6: Onion Skinning & Motion Trails

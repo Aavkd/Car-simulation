@@ -586,6 +586,48 @@ export class AnimatorEditorController {
         }
     }
 
+    /**
+     * Create a new animation layer
+     * @param {string} name 
+     * @param {string} rootBoneName 
+     */
+    createLayer(name, rootBoneName) {
+        if (!this.selectedEntity || !this.selectedEntity.animator) return;
+
+        if (!name || name.trim() === '') {
+            console.warn('[Animator] Layer name cannot be empty');
+            return;
+        }
+
+        const animator = this.selectedEntity.animator;
+        if (animator.layers.has(name)) {
+            console.warn(`[Animator] Layer '${name}' already exists`);
+            return;
+        }
+
+        animator.addLayer(name, rootBoneName);
+        console.log(`[Animator] Created layer '${name}' with root '${rootBoneName}'`);
+
+        // Refresh UI
+        this._buildUI();
+    }
+
+    /**
+     * Get list of all bone names in the selected entity's skeleton
+     * @returns {string[]}
+     */
+    getSkeletonBoneNames() {
+        const names = [];
+        if (this.selectedEntity && this.selectedEntity.mesh) {
+            this.selectedEntity.mesh.traverse(child => {
+                if (child.isBone) {
+                    names.push(child.name);
+                }
+            });
+        }
+        return names.sort(); // Sort alphabetically for easier searching
+    }
+
     captureKeyframe() {
         if (!this.selectedEntity) return;
 

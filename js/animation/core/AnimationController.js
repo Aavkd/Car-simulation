@@ -181,6 +181,10 @@ export class AnimationController {
      * @param {string} rootBoneName 
      */
     addLayer(name, rootBoneName) {
+        if (this.layers.has(name)) {
+            console.warn(`[AnimationController] Layer '${name}' already exists. Skipping.`);
+            return;
+        }
         const layer = new AnimationLayer(this, name, rootBoneName);
         this.layers.set(name, layer);
     }
