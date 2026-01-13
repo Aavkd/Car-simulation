@@ -63,6 +63,21 @@
 - **Edge visualization**: Transitions from active state are highlighted
 - **Real-time synchronization**: Updates with FSM state changes
 
+### 2.6 Transition Inspector (`TransitionInspector.js`)
+
+- **Condition editing**: Add, edit, and remove transition conditions
+  - Parameter name input
+  - Operator select (>, <, >=, <=, ==, !=)
+  - Value input (number, boolean, or string)
+- **Blend settings**:
+  - Duration slider (0-2 seconds)
+  - Offset slider (0-1 normalized time)
+  - Interruption source dropdown
+- **Exit time**: 
+  - Has Exit Time checkbox
+  - Exit Time slider (0-1 normalized)
+- **Visual feedback**: Purple highlight on selected edge
+
 ---
 
 ## File Structure
@@ -73,6 +88,7 @@ js/editor/animator/
 │   ├── GraphEditor.js          # Canvas rendering, pan/zoom, node management
 │   ├── StateNode.js            # Visual state representation
 │   ├── TransitionEdge.js       # Bezier transition lines
+│   ├── TransitionInspector.js  # Transition condition and settings editor
 │   └── ParameterWidget.js      # FSM parameter controls
 ```
 
@@ -150,7 +166,7 @@ When in Pose Mode, the graph editor displays a **keyframe timeline** instead of 
 ### Limitations
 
 - Transitions are currently inferred, not read from state code
-- No visual transition editing yet (planned for future)
+- Transition Inspector edits are stored in-memory (not persisted to code yet)
 - No animation layer visualization yet
 
 ---

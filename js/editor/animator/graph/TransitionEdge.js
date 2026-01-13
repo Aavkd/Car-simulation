@@ -10,10 +10,18 @@ export class TransitionEdge {
         this.fromNode = fromNode;
         this.toNode = toNode;
 
+        // Aliases for TransitionInspector compatibility
+        this.source = fromNode;
+        this.target = toNode;
+
         this.condition = options.condition || '';
+        this.conditions = options.conditions || null; // Parsed conditions array
         this.duration = options.duration || 0.25;
         this.hasExitTime = options.hasExitTime ?? false;
         this.exitTime = options.exitTime || 0;
+
+        // Settings storage for inspector
+        this.settings = options.settings || {};
 
         this.lineWidth = 2;
         this.arrowSize = 8;
@@ -74,14 +82,26 @@ export class TransitionEdge {
         return false;
     }
 
-    render(ctx, activeStateName, isHovered = false) {
+    render(ctx, activeStateName, isHovered = false, isSelected = false) {
         const { start, cp1, cp2, end } = this.getControlPoints();
         const isActive = activeStateName === this.fromNode.name;
 
         ctx.save();
 
-        let color = isHovered ? this.hoverColor : isActive ? this.activeColor : this.color;
-        let lw = isHovered ? 3 : isActive ? 2.5 : this.lineWidth;
+        // Determine styling based on state
+        let color = this.color;
+        let lw = this.lineWidth;
+
+        if (isSelected) {
+            color = 'rgba(155, 89, 182, 1)'; // Purple for selected
+            lw = 3.5;
+        } else if (isHovered) {
+            color = this.hoverColor;
+            lw = 3;
+        } else if (isActive) {
+            color = this.activeColor;
+            lw = 2.5;
+        }
 
         ctx.strokeStyle = color;
         ctx.lineWidth = lw;
@@ -104,19 +124,19 @@ export class TransitionEdge {
         ctx.closePath();
         ctx.fill();
 
-        // Condition label
-        if (this.condition && (isHovered || isActive)) {
+        // Condition label - show when hovered, active, or selected
+        if (this.condition && (isHovered || isActive || isSelected)) {
             const lbl = this.getPointOnCurve(0.5);
             ctx.font = '10px "Segoe UI", sans-serif';
             const tw = ctx.measureText(this.condition).width;
             const pw = tw + 12, ph = 16;
 
-            ctx.fillStyle = isHovered ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.85)';
+            ctx.fillStyle = isSelected ? 'rgba(155, 89, 182, 0.95)' : isHovered ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.85)';
             ctx.beginPath();
             ctx.roundRect(lbl.x - pw / 2, lbl.y - ph / 2, pw, ph, ph / 2);
             ctx.fill();
 
-            ctx.fillStyle = isHovered ? '#2c3e50' : '#ecf0f1';
+            ctx.fillStyle = isSelected || isHovered ? '#ffffff' : '#ecf0f1';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(this.condition, lbl.x, lbl.y);

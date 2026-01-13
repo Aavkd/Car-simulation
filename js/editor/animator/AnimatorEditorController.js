@@ -15,6 +15,7 @@ import { StatusBar } from './ui/StatusBar.js';
 // Phase 2: Graph Editor Components
 import { GraphEditor } from './graph/GraphEditor.js';
 import { ParameterWidget } from './graph/ParameterWidget.js';
+import { TransitionInspector } from './graph/TransitionInspector.js';
 
 export class AnimatorEditorController {
     constructor(game) {
@@ -56,6 +57,7 @@ export class AnimatorEditorController {
         // ==================== Phase 2: Graph Editor Components ====================
         this.graphEditor = new GraphEditor(this.uiManager, this);
         this.parameterWidget = new ParameterWidget(this.uiManager, this);
+        this.transitionInspector = new TransitionInspector(this.uiManager, this);
         this.isGraphVisible = false;
 
         // Track bone transform state for undo
@@ -105,6 +107,10 @@ export class AnimatorEditorController {
         const paramEl = this.parameterWidget.build();
         this.container.appendChild(paramEl);
         this.parameterWidget.hide(); // Hidden by default
+
+        const transInspEl = this.transitionInspector.build();
+        this.container.appendChild(transInspEl);
+        // TransitionInspector hidden by default, shown when edge selected
 
         // Get content container reference for backwards compatibility
         this.contentContainer = this.inspectorPanel.contentContainer;

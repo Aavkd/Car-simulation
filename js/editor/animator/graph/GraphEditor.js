@@ -42,6 +42,7 @@ export class GraphEditor {
         this.isPanning = false;
         this.dragStart = { x: 0, y: 0 };
         this.selectedNode = null;
+        this.selectedEdge = null;
         this.hoveredNode = null;
         this.hoveredEdge = null;
 
@@ -307,7 +308,9 @@ export class GraphEditor {
 
         // Draw edges first (behind nodes)
         for (const edge of this.edges) {
-            edge.render(ctx, this.activeStateName, this.hoveredEdge === edge);
+            const isSelected = this.selectedEdge === edge;
+            const isHovered = this.hoveredEdge === edge;
+            edge.render(ctx, this.activeStateName, isHovered, isSelected);
         }
 
         // Draw nodes
@@ -613,15 +616,41 @@ export class GraphEditor {
 
             if (node) {
                 this.selectedNode = node;
+                this.selectedEdge = null;
                 this.isDragging = true;
                 this.dragStart = { x: graphPos.x - node.x, y: graphPos.y - node.y };
                 this.canvas.style.cursor = 'move';
+
+                // Hide transition inspector when node selected
+                if (this.editor.transitionInspector) {
+                    this.editor.transitionInspector.hide();
+                }
             } else {
-                this.selectedNode = null;
-                // Start panning with left click on empty space
-                this.isPanning = true;
-                this.dragStart = { x: event.clientX, y: event.clientY };
-                this.canvas.style.cursor = 'grabbing';
+                // Check if clicking on an edge
+                const edge = this._findEdgeAt(graphPos.x, graphPos.y);
+
+                if (edge) {
+                    this.selectedNode = null;
+                    this.selectedEdge = edge;
+
+                    // Show transition inspector for this edge
+                    if (this.editor.transitionInspector) {
+                        this.editor.transitionInspector.show(edge);
+                    }
+                } else {
+                    this.selectedNode = null;
+                    this.selectedEdge = null;
+
+                    // Hide transition inspector
+                    if (this.editor.transitionInspector) {
+                        this.editor.transitionInspector.hide();
+                    }
+
+                    // Start panning with left click on empty space
+                    this.isPanning = true;
+                    this.dragStart = { x: event.clientX, y: event.clientY };
+                    this.canvas.style.cursor = 'grabbing';
+                }
             }
         }
     }

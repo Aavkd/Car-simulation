@@ -152,10 +152,11 @@ graph TD
   - Arrow heads indicating direction
   - Click to select and edit conditions
 
-- [ ] **Transition Inspector** (partial - conditions shown, editing planned)
+- [x] **[NEW] `js/editor/animator/graph/TransitionInspector.js`**
   - Condition list: `Parameter`, `Operator`, `Value`
   - Blend settings: Duration, Offset, Interruption source
   - Has Exit Time checkbox
+  - Click transition edge to edit
 
 #### 2.4 Parameters Panel (Enhanced)
 - [x] **[NEW] `js/editor/animator/graph/ParameterWidget.js`**
@@ -421,6 +422,7 @@ js/editor/animator/
 │   ├── GraphEditor.js          # ✅ Implemented
 │   ├── StateNode.js            # ✅ Implemented
 │   ├── TransitionEdge.js       # ✅ Implemented
+│   ├── TransitionInspector.js  # ✅ Implemented
 │   └── ParameterWidget.js      # ✅ Implemented
 │
 ├── timeline/                    # ⏳ Phase 3
