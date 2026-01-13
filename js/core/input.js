@@ -36,7 +36,9 @@ export class InputHandler {
             exitPlayMode: false, // Escape key
             interact: false, // Interaction key (E / Square)
             editorToggle: false, // F9 key
-            animatorToggle: false // F8 key
+            animatorToggle: false, // F8 key
+            airbrake: false, // Space brake (B key / Square button) - Deep Space only
+            flightModeToggle: false // Toggle flight mode (O key / Circle button) - Deep Space only
         };
 
         // Smoothed input values (0-1 range)
@@ -179,6 +181,15 @@ export class InputHandler {
             case 'KeyX':
                 this.keys.hover = true;
                 break;
+            case 'KeyB':
+                this.keys.airbrake = true;
+                break;
+            case 'KeyO':
+                if (!this.keys.flightModeToggle) {
+                    this.keys.flightModeToggle = true;
+                    this.onFlightModeToggle?.();
+                }
+                break;
             case 'F8':
                 if (!this.keys.animatorToggle) {
                     this.keys.animatorToggle = true;
@@ -272,6 +283,12 @@ export class InputHandler {
             case 'KeyX':
                 this.keys.hover = false;
                 break;
+            case 'KeyB':
+                this.keys.airbrake = false;
+                break;
+            case 'KeyO':
+                this.keys.flightModeToggle = false;
+                break;
             case 'Escape':
                 this.keys.exitPlayMode = false;
                 break;
@@ -351,7 +368,8 @@ export class InputHandler {
                 yawLeft: false,
                 yawRight: false,
                 hover: false,  // Hover toggle (Cross/A button) for plane
-                interact: false // Square/X button
+                interact: false, // Square/X button
+                airbrake: false // Space brake (Square button) - Deep Space only
             };
             console.log("Gamepad connected:", gp.id);
         }
@@ -381,13 +399,34 @@ export class InputHandler {
         // Brake (L2 - Button 6)
         this.gamepad.brake = gp.buttons[6].value;
 
-        // Handbrake (X/A Button - Button 0 or Square - Button 2? Let's use Cross/A for handbrake usually, or maybe Circle)
-        // Request didn't specify, but space is handbrake. Let's map Button 0 (X/Cross on DS, A on Xbox) or Button 1 (Circle/B)
-        // Let's use Button 1 (Circle/B) for Handbrake as it's common in racing (or R1, but R1 is Gear Up requested)
-        this.gamepad.handbrake = gp.buttons[5].pressed; // Circle
+        // Handbrake (R1/RB - Button 5)
+        this.gamepad.handbrake = gp.buttons[5].pressed;
+
+        // Square/X (Button 2): Flight Mode Toggle (Deep Space) AND Interact (On Foot)
+        if (gp.buttons[2].pressed) {
+            if (!this._squarePressed) {
+                this._squarePressed = true;
+                this.onFlightModeToggle?.();
+                this.onInteract?.();
+            }
+            this.gamepad.interact = true;
+        } else {
+            this._squarePressed = false;
+            this.gamepad.interact = false;
+        }
 
         // Hover (Cross/A - Button 0) for plane vertical lift
         this.gamepad.hover = gp.buttons[0].pressed;
+
+        // Camera (Right Stick - Axes 2, 3)
+        // ... (lines skipped)
+
+        // Circle/B (Button 1): Airbrake (Deep Space)
+        if (gp.buttons[1].pressed) {
+            this.gamepad.airbrake = true;
+        } else {
+            this.gamepad.airbrake = false;
+        }
 
         // Sprint (L3 - Left Stick Press - Button 10) for on-foot mode
         this.gamepad.sprint = gp.buttons[10].pressed; // L3
@@ -434,18 +473,7 @@ export class InputHandler {
             this._trianglePressed = false;
         }
 
-        // Interact (Square/X - Button 2)
-        // Note: On DualSense this is Square. On Xbox this is X.
-        if (gp.buttons[2].pressed) {
-            if (!this._squarePressed) {
-                this._squarePressed = true;
-                this.gamepad.interact = true;
-                this.onInteract?.();
-            }
-        } else {
-            this._squarePressed = false;
-            this.gamepad.interact = false;
-        }
+
     }
 
     _lerp(current, target, rate) {

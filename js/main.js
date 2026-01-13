@@ -901,6 +901,11 @@ class Game {
                 this.player.interact();
             }
         };
+        this.input.onFlightModeToggle = () => {
+            if (this.plane) {
+                this.plane.toggleFlightMode();
+            }
+        };
 
         // Hide Cockpit Overlay
         if (this.cockpitOverlay) this.cockpitOverlay.classList.add('hidden');
@@ -1211,6 +1216,11 @@ class Game {
         this.input.onTimePause = () => this._toggleTimePause();
         this.input.onTimePreset = (preset) => this._setTimePreset(preset);
         this.input.onHeadlightsToggle = () => this._toggleHeadlights();
+        this.input.onFlightModeToggle = () => {
+            if (this.plane) {
+                this.plane.toggleFlightMode();
+            }
+        };
 
         // Set Spawn Position
         let startX = 0;

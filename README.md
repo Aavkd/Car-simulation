@@ -92,6 +92,9 @@ The game handles seamless switching between **Driving**, **Flying**, **On-Foot**
 | **Thrust** | `Shift` | `R2` |
 | **Air Brake** | `S` | `L2` |
 | **Hover Mode** | `X` | `Cross` / `A` |
+| **Interact** | `E` | `Square` / `X` |
+| **Airbrake** (Deep Space) | `B` | `Circle` / `B` |
+| **Flight Mode Toggle** (Deep Space) | `O` | `Square` / `X` |
 
 ### 🛠️ Editor & System
 | Action | Key | Description |

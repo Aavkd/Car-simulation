@@ -12,10 +12,10 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
         super();
         this.params = Object.assign({
             starCount: 2000,      // Per chunk
-            galaxyCount: 1,       // Per chunk (avg)
+            galaxyCount: 2,       // Per chunk (avg)
             nebulaCount: 2,       // Per chunk (avg)
             universeSize: 20000,  // Chunk Size
-            blackHoleChance: 0.2, // 5% chance per chunk
+            blackHoleChance: 0.1, // 5% chance per chunk
             anomalyChance: 2,    // 10% chance per chunk
             // Visual Tweaks
             blackHoleBloom: 0.2,       // Multiplier for black hole glow
@@ -25,17 +25,30 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
             anomalySpeed: 1.0,         // Rotation speed multiplier
             anomalyDistortion: 0.5,     // Max glitch distortion
             // Physics Tweaks
-            thrustMultiplier: 100     // Multiplier for plane speed/thrust (default 2x)
+            thrustMultiplier: 100,     // Multiplier for plane speed/thrust (default 2x)
+            gravityScale: 1000         // Overall gravity strength multiplier (adjust this to tune attraction)
         }, params);
 
         this.mesh = new THREE.Group();
         this.objects = []; // Store references to update animations
+        this.gravityAttractors = []; // {position: Vector3, mass: number, type: string, chunkKey: string}
 
         // Chunk System
         this.chunks = new Map(); // "x,y,z" -> THREE.Group
         this.chunkSize = this.params.universeSize;
         this.renderDistance = 1; // Increased from 2 for further visibility
         this.lastChunkKey = null;
+
+        // Gravity Constants (tuned for 100x thrust high-speed flight)
+        // With gravityScale=1000, these give:
+        // - Black hole at 3000 units: ~500 m/s² (capped), at 5000 units: ~200 m/s², at 10000: ~50 m/s²
+        // - Proper inverse-square falloff beyond ~3500 units
+        this.GRAVITY_CONSTANT = 4;  // Base constant
+        this.BLACK_HOLE_MASS = 1e6;   // Black hole mass (strong for high-speed orbits)
+        this.GALAXY_MASS = 2.5e5;     // Galaxy mass (moderate pull)
+        this.MAX_GRAVITY_DISTANCE = 70000; // Pull range
+        this.MAX_ATTRACTORS = 3;      // Only consider closest N attractors
+        this.MIN_GRAVITY_DISTANCE = 500;  // Soft minimum distance
     }
 
     generate() {
@@ -109,6 +122,9 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
                     }
                     return true;
                 });
+
+                // Remove gravity attractors from this chunk
+                this.gravityAttractors = this.gravityAttractors.filter(a => a.chunkKey !== key);
 
                 this.chunks.delete(key);
             }
@@ -499,12 +515,22 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
         // Add to specific group (chunk or main)
         (opts.group || this.mesh).add(galaxy);
 
-        this.objects.push({
+        const galaxyData = {
             type: 'galaxy',
             mesh: galaxy,
             material: material, // Store material ref for updates
             chunkKey: opts.chunkKey,
             rotSpeed: (Math.random() * 0.02 + 0.005) * (Math.random() < 0.5 ? 1 : -1)
+        };
+        this.objects.push(galaxyData);
+
+        // Register galaxy as gravity attractor
+        const worldPos = opts.position ? opts.position.clone() : new THREE.Vector3();
+        this.gravityAttractors.push({
+            position: worldPos,
+            mass: this.GALAXY_MASS,
+            type: 'galaxy',
+            chunkKey: opts.chunkKey
         });
     }
 
@@ -623,6 +649,14 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
                 instance: blackHole,
                 chunkKey: key
             });
+
+            // Register black hole as gravity attractor (high mass!)
+            this.gravityAttractors.push({
+                position: pos.clone(),
+                mass: this.BLACK_HOLE_MASS,
+                type: 'blackhole',
+                chunkKey: key
+            });
         }
 
         // Spatial Anomaly Generation
@@ -656,8 +690,74 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
     getNormalAt() { return new THREE.Vector3(0, 1, 0); }
     getSurfaceType() { return SurfaceTypes.TARMAC; }
     getSpawnPosition() { return new THREE.Vector3(0, 500, 0); }
-    getGravity() { return 0; }
+    getGravity() { return 0; } // Earth gravity disabled - we use gravitational attractors instead
     getThrustMultiplier() { return this.params.thrustMultiplier; }
+
+    /**
+     * Calculate gravitational force from nearby attractors (black holes, galaxies)
+     * Uses Newtonian gravity: F = G * M / r^2, direction toward attractor
+     * @param {THREE.Vector3} playerPos - Current player position
+     * @returns {THREE.Vector3} - Net gravitational acceleration vector
+     */
+    getGravitationalForce(playerPos) {
+        const force = new THREE.Vector3(0, 0, 0);
+
+        if (!playerPos || this.gravityAttractors.length === 0) {
+            return force;
+        }
+
+        // Calculate distance to each attractor and sort by closest
+        const attractorsWithDist = this.gravityAttractors
+            .map(a => ({
+                ...a,
+                dist: a.position.distanceTo(playerPos)
+            }))
+            .filter(a => a.dist < this.MAX_GRAVITY_DISTANCE) // Only filter by max, not min
+            .sort((a, b) => a.dist - b.dist)
+            .slice(0, this.MAX_ATTRACTORS);
+
+        // Maximum acceleration cap (500 m/s² ~= 50G, needed for high-speed orbits)
+        const MAX_ACCELERATION = 500;
+
+        // Apply gravitational acceleration from each attractor
+        for (const attractor of attractorsWithDist) {
+            const direction = attractor.position.clone().sub(playerPos).normalize();
+
+            // Use soft minimum distance to prevent extreme forces at very close range
+            // This creates smooth falloff instead of hard cutoff
+            const effectiveDist = Math.max(attractor.dist, this.MIN_GRAVITY_DISTANCE);
+            const distSq = effectiveDist * effectiveDist;
+
+            // a = G * M / r^2, scaled by gravityScale parameter
+            let acceleration = (this.GRAVITY_CONSTANT * attractor.mass * this.params.gravityScale) / distSq;
+
+            // Cap acceleration to prevent extreme forces
+            acceleration = Math.min(acceleration, MAX_ACCELERATION);
+
+            force.add(direction.multiplyScalar(acceleration));
+        }
+
+        return force;
+    }
+
+    /**
+     * Get list of nearby attractors for UI/debugging
+     * @param {THREE.Vector3} playerPos - Current player position
+     * @returns {Array} - Array of {type, distance, direction} objects
+     */
+    getNearbyAttractors(playerPos) {
+        if (!playerPos) return [];
+
+        return this.gravityAttractors
+            .map(a => ({
+                type: a.type,
+                distance: a.position.distanceTo(playerPos),
+                position: a.position.clone()
+            }))
+            .filter(a => a.distance < this.MAX_GRAVITY_DISTANCE)
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, 5);
+    }
 
     /**
      * Check if this is Deep Space terrain (for warp effect)

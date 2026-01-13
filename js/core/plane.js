@@ -87,6 +87,20 @@ export class PlanePhysics {
 
         // ==================== SPARK SYSTEM ====================
         this.sparkSystem = new SparkSystem(scene);
+
+        // ==================== DEEP SPACE FLIGHT MODE ====================
+        // When true, enables atmospheric physics (drag/damping) even in deep space
+        this.atmosphereMode = false;
+    }
+
+    /**
+     * Toggle flight mode between Space (no drag) and Atmosphere (with drag)
+     * Only relevant in Deep Space level
+     */
+    toggleFlightMode() {
+        this.atmosphereMode = !this.atmosphereMode;
+        console.log(`[PlanePhysics] Flight Mode: ${this.atmosphereMode ? 'ATMOSPHERE' : 'SPACE'}`);
+        return this.atmosphereMode;
     }
 
     /**
@@ -101,6 +115,14 @@ export class PlanePhysics {
             this.GRAVITY = this.physicsProvider.getGravity();
         } else {
             this.GRAVITY = 9.81;
+        }
+
+        // Set default flight mode for deep space
+        // Default to ATMOSPHERE mode (drag on) to match original behavior
+        // User can toggle to SPACE mode for zero-drag orbital mechanics
+        if (this.physicsProvider?.isDeepSpace?.()) {
+            this.atmosphereMode = true; // Start in atmosphere mode by default
+            console.log(`[PlanePhysics] Deep Space detected - defaulting to ATMOSPHERE mode (toggle O/Circle for Space mode)`);
         }
 
         // Update thrust multipliers
@@ -238,6 +260,9 @@ export class PlanePhysics {
         if (gamepad.brake !== undefined) targetReverse = Math.max(targetReverse, gamepad.brake);
         this.input.reverseThrust = THREE.MathUtils.lerp(this.input.reverseThrust, targetReverse, 3.0 * dt);
 
+        // Airbrake (B key or Square button) - for deep space braking
+        this.input.airbrake = keys.airbrake || gamepad?.airbrake || false;
+
         // Helper for smoothing logic
         const getSmoothing = (target, current, attack, decay, counter) => {
             if (Math.abs(target) < 0.001) return decay; // Input released
@@ -291,6 +316,18 @@ export class PlanePhysics {
             this.physicsProvider.getGravity() : this.GRAVITY;
         forces.add(new THREE.Vector3(0, -gravity * this.MASS, 0));
 
+        // Check if we're in deep space (no air resistance)
+        const isDeepSpace = this.physicsProvider?.isDeepSpace?.() || false;
+
+        // 2b. Gravitational Attraction from nearby massive objects (black holes, galaxies)
+        // This is separate from Earth gravity - it pulls toward specific objects in space
+        // Skip if airbrake is active (player is "anchoring" in space)
+        if (this.physicsProvider?.getGravitationalForce && !(isDeepSpace && this.input.airbrake)) {
+            const gravAccel = this.physicsProvider.getGravitationalForce(this.mesh.position);
+            // F = m * a, so we multiply acceleration by mass
+            forces.add(gravAccel.clone().multiplyScalar(this.MASS));
+        }
+
         // 3. Aerodynamics
         const velocitySq = this.velocity.lengthSq();
         if (velocitySq > 0.1) {
@@ -299,8 +336,11 @@ export class PlanePhysics {
 
             // Drag
             // Simple drag opposing velocity
-            const dragMag = 0.5 * this.AIR_DENSITY * velocitySq * this.DRAG_COEFFICIENT * this.WING_AREA;
-            forces.add(vDir.clone().multiplyScalar(-dragMag));
+            // Skip drag in deep space (unless atmosphere mode is active)
+            if (!isDeepSpace || this.atmosphereMode) {
+                const dragMag = 0.5 * this.AIR_DENSITY * velocitySq * this.DRAG_COEFFICIENT * this.WING_AREA;
+                forces.add(vDir.clone().multiplyScalar(-dragMag));
+            }
 
             // Lift
             // Lift acts perpendicular to velocity, generally in the "Up" direction relative to wings
@@ -347,7 +387,16 @@ export class PlanePhysics {
         this.velocity.add(acceleration.multiplyScalar(dt));
 
         // Damping/Stability
-        this.velocity.multiplyScalar(0.999); // Global air friction
+        // Skip global air friction in deep space (unless atmosphere mode is active)
+        if (!isDeepSpace || this.atmosphereMode) {
+            this.velocity.multiplyScalar(0.999); // Global air friction
+        }
+
+        // Airbrake (Deep Space only) - rapidly reduce velocity and cancel gravity
+        if (isDeepSpace && this.input.airbrake) {
+            const airbrakeStrength = 0.95; // 5% velocity reduction per frame
+            this.velocity.multiplyScalar(airbrakeStrength);
+        }
 
         // Apply Velocity
         this.mesh.position.add(this.velocity.clone().multiplyScalar(dt));
