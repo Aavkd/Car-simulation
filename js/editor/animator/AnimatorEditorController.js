@@ -23,6 +23,7 @@ import { TimelinePanel } from './timeline/TimelinePanel.js';
 // Phase 4: IK Components
 import { IKSolver } from './ik/IKSolver.js';
 import { IKHandle } from './ik/IKHandle.js';
+import { FootIK } from './ik/FootIK.js';
 
 export class AnimatorEditorController {
     constructor(game) {
@@ -76,6 +77,7 @@ export class AnimatorEditorController {
         // ==================== Phase 4: IK Components ====================
         this.ikSolver = new IKSolver();
         this.ikHandles = []; // Store active IK handles
+        this.footIK = new FootIK(this.game, this.ikSolver);
 
 
         // Track bone transform state for undo
@@ -351,8 +353,9 @@ export class AnimatorEditorController {
         }
 
         // Phase 4: Update IK Solver
-        if (this.isPoseMode && this.ikSolver) {
-            this.ikSolver.update();
+        if (this.isPoseMode) {
+            if (this.footIK) this.footIK.update(dt);
+            if (this.ikSolver) this.ikSolver.update();
         }
 
 
@@ -655,9 +658,12 @@ export class AnimatorEditorController {
             <!-- IK Tools -->
             <div style="margin-bottom: 20px;">
                 <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: #888;">Inverse Kinematics</div>
-                <div style="display: flex; gap: 5px;">
+                <div style="display: flex; flex-direction: column; gap: 5px;">
                      <button onclick="window.game.animator.createIKChain()" ${this.selectedBone ? '' : 'disabled'} style="flex:1; padding: 8px; background: #8e44ad; border: none; color: white; cursor: pointer; border-radius: 4px; opacity: ${this.selectedBone ? 1 : 0.5};">
                         Creating IK Chain (2-Bone)
+                     </button>
+                     <button onclick="window.game.animator.toggleFootIK()" style="flex:1; padding: 8px; background: ${this.footIK && this.footIK.enabled ? '#27ae60' : '#333'}; border: 1px solid #444; color: white; cursor: pointer; border-radius: 4px;">
+                        ${this.footIK && this.footIK.enabled ? 'Enabled: Foot IK' : 'Enable Foot IK (Beta)'}
                      </button>
                 </div>
             </div>
@@ -704,6 +710,13 @@ export class AnimatorEditorController {
                 </div>
             </div>
         `;
+    }
+
+    toggleFootIK() {
+        if (this.footIK) {
+            this.footIK.setEnabled(!this.footIK.enabled);
+            this._buildUI();
+        }
     }
 
     captureKeyframe() {

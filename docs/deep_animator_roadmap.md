@@ -243,7 +243,7 @@ graph TD
   - Configure pole target
 
 #### 4.3 Foot IK (Ground Adaptation)
-- [ ] **[NEW] `js/editor/animator/ik/FootIK.js`**
+- [x] **[NEW] `js/editor/animator/ik/FootIK.js`**
   - Raycast to terrain
   - Automatic foot placement on slopes
   - Preview in editor with terrain debug lines
