@@ -4,6 +4,7 @@ import { SceneObjectManager } from './SceneObjectManager.js';
 import { AssetLibrary } from './AssetLibrary.js';
 import { LevelSerializer } from './LevelSerializer.js';
 import { RPGEditorController } from './RPGEditorController.js';
+import { SkyAtmosphereTransition } from '../environment/sky-atmosphere-transition.js';
 import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
 
 /**
@@ -64,13 +65,29 @@ export class EditorController {
         // Initialize asset library
         await this.assetLibrary.initialize();
 
+        // Determine skyType based on level type
+        let skyType = 'standard';
+        if (levelConfig.type === 'spaceground') {
+            skyType = 'spaceground';
+        } else if (levelConfig.type === 'deepspace') {
+            skyType = 'deepspace';
+        } else if (levelConfig.type === 'vaporwave' || levelConfig.type === 'cosmic') {
+            skyType = 'vaporwave';
+        }
+
         // Create initial level data
         this.currentLevel = this.serializer.createLevelData({
             name: `Custom ${levelConfig.name}`,
             baseType: levelConfig.type,
+            skyType: skyType,
             seed: levelConfig.params?.seed || Math.floor(Math.random() * 10000),
             heightScale: levelConfig.params?.heightScale || 50
         });
+
+        // Setup sky system for special level types
+        if (levelConfig.type === 'spaceground') {
+            this._setupSpacegroundSky();
+        }
 
         // Setup UI
         this._createEditorUI();
@@ -1041,38 +1058,101 @@ export class EditorController {
         if (params.seed) this.currentLevel.environment.seed = params.seed;
 
         // Check if terrain supports dynamic update
-        if (this.game.terrain.updateParams && this.game.terrain.generate) {
-            // 1. Dispose old mesh
-            if (this.game.terrain.mesh) {
-                this.game.scene.remove(this.game.terrain.mesh);
-                if (this.game.terrain.dispose) {
-                    this.game.terrain.dispose();
-                } else if (this.game.terrain.mesh.geometry) {
-                    // Fallback disposal
-                    this.game.terrain.mesh.geometry.dispose();
-                    this.game.terrain.mesh.material.dispose();
-                }
-            }
-
-            // 2. Update parameters
+        if (this.game.terrain.updateParams) {
+            // Update parameters first
             this.game.terrain.updateParams(params);
 
-            // 3. Generate new mesh
-            const newMesh = this.game.terrain.generate();
-            this.game.scene.add(newMesh);
+            // Special handling for SpaceGroundGenerator - only regenerate ground mesh
+            if (this.game.terrain.regenerateGround) {
+                console.log('[Editor] Using regenerateGround for SpaceGroundGenerator');
 
-            // 4. Update Physics Provider connections if needed
-            // The terrain object itself is the provider, so references held by Car/Plane should still work 
-            // IF they call getHeightAt() on the terrain object.
-            // However, visually we need the new mesh.
+                // regenerateGround handles its own mesh disposal/creation
+                this.game.terrain.regenerateGround();
 
-            this.game.terrain.mesh = newMesh; // Ensure reference consistency if needed
+                // The mesh reference stays the same (combinedMesh), just ground child is replaced
+            } else if (this.game.terrain.generate) {
+                // Standard terrain - dispose and regenerate
+                if (this.game.terrain.mesh) {
+                    this.game.scene.remove(this.game.terrain.mesh);
+                    if (this.game.terrain.dispose) {
+                        this.game.terrain.dispose();
+                    } else if (this.game.terrain.mesh.geometry) {
+                        // Fallback disposal
+                        this.game.terrain.mesh.geometry.dispose();
+                        this.game.terrain.mesh.material.dispose();
+                    }
+                }
+
+                // Generate new mesh
+                const newMesh = this.game.terrain.generate();
+                this.game.scene.add(newMesh);
+
+                // Update Physics Provider connections if needed
+                // The terrain object itself is the provider, so references held by Car/Plane should still work 
+                // IF they call getHeightAt() on the terrain object.
+                // However, visually we need the new mesh.
+
+                this.game.terrain.mesh = newMesh; // Ensure reference consistency if needed
+            }
         } else {
             console.warn('[Editor] Current terrain generator does not support dynamic regeneration');
         }
     }
 
+    /**
+     * Setup sky system for spaceground (Space Station) levels
+     * Creates SkyAtmosphereTransition with proper fog/camera settings
+     */
+    _setupSpacegroundSky() {
+        console.log('[EditorController] Setting up spaceground sky with atmosphere transition...');
+
+        // Clean up existing sky
+        if (this.game.sky) {
+            if (this.game.sky.skyDome) this.scene.remove(this.game.sky.skyDome);
+            if (this.game.sky.sun) this.scene.remove(this.game.sky.sun);
+            if (this.game.sky.moon) this.scene.remove(this.game.sky.moon);
+            if (this.game.sky.sunLight) {
+                this.scene.remove(this.game.sky.sunLight);
+                if (this.game.sky.sunLight.target) this.scene.remove(this.game.sky.sunLight.target);
+            }
+            if (this.game.sky.moonLight) this.scene.remove(this.game.sky.moonLight);
+            if (this.game.sky.ambientLight) this.scene.remove(this.game.sky.ambientLight);
+            if (this.game.sky.hemiLight) this.scene.remove(this.game.sky.hemiLight);
+            if (this.game.sky.starfield && this.game.sky.starfield.starsGroup) {
+                this.scene.remove(this.game.sky.starfield.starsGroup);
+            }
+            if (this.game.sky.northernLights && this.game.sky.northernLights.mesh) {
+                this.scene.remove(this.game.sky.northernLights.mesh);
+            }
+        }
+
+        // Create atmosphere transition sky (full day/night cycle + space transition at altitude)
+        this.game.sky = new SkyAtmosphereTransition(this.scene);
+
+        // Apply spaceground visual configuration - subtle bloom, increases at altitude
+        if (this.game.bloomPass) {
+            this.game.bloomPass.strength = 0.3;
+            this.game.bloomPass.radius = 0.5;
+            this.game.bloomPass.threshold = 0.3;
+        }
+
+        // Atmospheric fog settings
+        if (this.game.scene.fog) {
+            this.game.scene.fog.near = 500;
+            this.game.scene.fog.far = 50000;
+        }
+
+        // Extended camera far plane for space objects
+        this.camera.far = 200000;
+        this.camera.updateProjectionMatrix();
+    }
+
     _applyEnvironmentSettings(env) {
+        // Check if we need to switch sky system based on skyType
+        if (env.skyType === 'spaceground' && !(this.game.sky instanceof SkyAtmosphereTransition)) {
+            this._setupSpacegroundSky();
+        }
+
         if (env.timeOfDay !== undefined && this.game.sky) {
             this.game.sky.setTime(env.timeOfDay);
             this.guiParams.timeOfDay = env.timeOfDay;
@@ -1089,8 +1169,8 @@ export class EditorController {
 
             // Only apply if types match (e.g. don't apply DeepSpace settings to SkySystem)
             if (savedSky.type === currentSky.constructor.name) {
-                if (savedSky.type === 'SkySystem') {
-                    // Deep merge settings
+                if (savedSky.type === 'SkySystem' || savedSky.type === 'SkyAtmosphereTransition') {
+                    // Deep merge settings (SkyAtmosphereTransition extends SkySystem)
                     Object.assign(currentSky.settings.day, savedSky.settings.day);
                     Object.assign(currentSky.settings.sunset, savedSky.settings.sunset);
                     Object.assign(currentSky.settings.night, savedSky.settings.night);

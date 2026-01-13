@@ -114,6 +114,7 @@ export class LevelSerializer {
             environment: {
                 seed: options.seed || Math.floor(Math.random() * 10000),
                 timeOfDay: options.timeOfDay || 0.5,
+                skyType: options.skyType || 'standard',  // 'standard', 'deepspace', 'spaceground', 'vaporwave'
                 fogDensity: options.fogDensity || 0.0005,
                 fogColor: options.fogColor || 0x87CEEB,
                 parameters: {

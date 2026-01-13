@@ -144,6 +144,30 @@ export const LevelData = {
             chunkSize: 500,
             visibleDistance: 3000
         }
+    },
+    spaceground: {
+        id: 'spaceground',
+        name: 'Space Station',
+        description: 'Flat ground with cosmic deep space view. Take off and explore the universe!',
+        type: 'spaceground',
+        difficulty: 3,
+        color: '#1e3a5f', // Dark space blue
+        params: {
+            // Ground params (flat)
+            seed: 1337,
+            size: 10000,
+            segments: 200,
+            heightScale: 0.2,
+            maxHeight: 5,
+            baseHeight: 0,
+            // Space environment params
+            universeSize: 20000,
+            starCount: 2000,
+            galaxyCount: 2,
+            nebulaCount: 2,
+            thrustMultiplier: 100,
+            gravityScale: 1000
+        }
     }
 };
 

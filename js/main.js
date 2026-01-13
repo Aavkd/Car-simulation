@@ -12,6 +12,7 @@ import { PlayerController } from './core/player.js';
 import { SkySystem } from './environment/sky.js';
 import { SkyVaporwave } from './environment/sky-vaporwave.js';
 import { SkyDeepSpace } from './environment/sky-deepspace.js';
+import { SkyAtmosphereTransition } from './environment/sky-atmosphere-transition.js';
 import { WindEffect } from './environment/wind.js';
 import { LevelManager } from './levels/level-manager.js';
 import { LevelData, getAllLevels } from './levels/level-data.js';
@@ -1064,7 +1065,8 @@ class Game {
         if (levelConfig.type === 'vaporwave' || levelConfig.type === 'cosmic' || levelConfig.type === 'deepspace') {
             console.log('Applying Vaporwave/Space Visuals...');
             // Switch to Vaporwave Skybox or Deep Space Skybox
-            if (this.sky instanceof SkySystem) {
+            // Check if current sky is base SkySystem (not an extension like SkyAtmosphereTransition)
+            if (this.sky && this.sky.constructor.name === 'SkySystem') {
                 console.log('Swapping SkySystem -> Custom Sky');
                 // Remove standard sky objects
                 if (this.sky.skyDome) this.scene.remove(this.sky.skyDome);
@@ -1080,8 +1082,11 @@ class Game {
                 if (this.sky.starfield && this.sky.starfield.starsGroup) {
                     this.scene.remove(this.sky.starfield.starsGroup);
                 }
+                if (this.sky.northernLights && this.sky.northernLights.mesh) {
+                    this.scene.remove(this.sky.northernLights.mesh);
+                }
 
-                // Create Custom Sky
+                // Create Custom Sky based on level type
                 if (levelConfig.type === 'deepspace') {
                     this.sky = new SkyDeepSpace(this.scene);
                 } else {
@@ -1096,7 +1101,7 @@ class Game {
                 this.bloomPass.threshold = 0.2;
             }
 
-            // Override fog
+            // Override fog based on specific type
             if (levelConfig.type === 'cosmic') {
                 this.scene.fog.color.setHex(0x050011); // Almost black
                 this.bloomPass.strength = 0.8; // More bloom for cosmic
@@ -1112,6 +1117,7 @@ class Game {
                 this.camera.far = 200000;
                 this.camera.updateProjectionMatrix();
             } else {
+                // Vaporwave
                 this.scene.fog.color.setHex(0x2a0a3b);
                 this.scene.fog.near = 100;
                 this.scene.fog.far = 2000;
@@ -1123,9 +1129,49 @@ class Game {
                 }
             }
 
+        } else if (levelConfig.type === 'spaceground') {
+            // Space Ground uses SkyAtmosphereTransition (extends SkySystem with altitude transition)
+            console.log('Applying Space Ground Visuals with atmosphere transition...');
+
+            // Clean up any existing sky
+            if (this.sky) {
+                if (this.sky.skyDome) this.scene.remove(this.sky.skyDome);
+                if (this.sky.sun) this.scene.remove(this.sky.sun);
+                if (this.sky.moon) this.scene.remove(this.sky.moon);
+                if (this.sky.sunLight) {
+                    this.scene.remove(this.sky.sunLight);
+                    if (this.sky.sunLight.target) this.scene.remove(this.sky.sunLight.target);
+                }
+                if (this.sky.moonLight) this.scene.remove(this.sky.moonLight);
+                if (this.sky.ambientLight) this.scene.remove(this.sky.ambientLight);
+                if (this.sky.hemiLight) this.scene.remove(this.sky.hemiLight);
+                if (this.sky.starfield && this.sky.starfield.starsGroup) {
+                    this.scene.remove(this.sky.starfield.starsGroup);
+                }
+                if (this.sky.northernLights && this.sky.northernLights.mesh) {
+                    this.scene.remove(this.sky.northernLights.mesh);
+                }
+            }
+
+            // Create atmosphere transition sky (full day/night cycle + space transition at altitude)
+            this.sky = new SkyAtmosphereTransition(this.scene);
+
+            // Space ground visual configuration - subtle bloom for ground, increases at altitude
+            if (this.bloomPass) {
+                this.bloomPass.strength = 0.3;
+                this.bloomPass.radius = 0.5;
+                this.bloomPass.threshold = 0.3;
+            }
+
+            // Atmospheric fog (sky system will handle fog color dynamically)
+            this.scene.fog.near = 500;
+            this.scene.fog.far = 50000;
+            this.camera.far = 200000; // Very far for space objects
+            this.camera.updateProjectionMatrix();
+
         } else {
             // Standard Level
-            if (this.sky instanceof SkyVaporwave || this.sky instanceof SkyDeepSpace) {
+            if (this.sky instanceof SkyVaporwave || this.sky instanceof SkyDeepSpace || this.sky instanceof SkyAtmosphereTransition) {
                 console.log('Swapping Custom Sky -> SkySystem');
                 // Remove sky objects (generic clean up)
                 if (this.sky.skyDome) this.scene.remove(this.sky.skyDome);
@@ -1915,6 +1961,30 @@ class Game {
             }
 
             this.sky.update(deltaTime, this.camera.position);
+
+            // Dynamic bloom for Space Ground level
+            // Prevent sky bloom during day on ground, but enable it for stars in space
+            if (this.sky instanceof SkyAtmosphereTransition && this.bloomPass) {
+                const factor = this.sky.getTransitionFactor ? this.sky.getTransitionFactor() : 0;
+
+                // Target Bloom strengths
+                const spaceBloom = 1.0; // High bloom for stars
+
+                // Ground bloom: Low during day to avoid washout, moderate at night
+                const isNight = this.sky.isNight ? this.sky.isNight() : false;
+                const groundBloom = isNight ? 0.4 : 0.02; // Practically zero bloom for ground day
+
+                // Smoothly blend based on altitude
+                this.bloomPass.strength = THREE.MathUtils.lerp(groundBloom, spaceBloom, factor);
+
+                // Physics mode transition for Space Ground level
+                // Switch to space physics after atmosphere transition is nearly complete
+                if (this.plane) {
+                    // Feed continuous transition factor (0 to 1) for smooth physics blending
+                    // Factor increases as we go UP into space
+                    this.plane.setSpaceTransitionFactor(factor);
+                }
+            }
 
             // Update wind fog color based on time of day
             if (this.wind) {

@@ -9,12 +9,12 @@ export class NorthernLights {
         this.scene = scene;
         this.auroraGroup = new THREE.Group();
         this.auroraGroup.name = 'northernLights';
-        
+
         this.time = 0;
         this.opacity = 0;
-        
+
         this._createAuroraDome();
-        
+
         this.scene.add(this.auroraGroup);
         this.auroraGroup.visible = false;
     }
@@ -22,7 +22,7 @@ export class NorthernLights {
     _createAuroraDome() {
         // Create a hemisphere for the aurora - renders on the inside
         const geometry = new THREE.SphereGeometry(3500, 64, 32, 0, Math.PI * 2, 0, Math.PI * 0.5);
-        
+
         const material = new THREE.ShaderMaterial({
             uniforms: {
                 time: { value: 0 },
@@ -89,8 +89,9 @@ export class NorthernLights {
                     float angle = atan(vPosition.x, vPosition.z);
                     float height = vElevation;
                     
-                    // Aurora only appears in upper portion of sky (20-70 degrees elevation)
-                    float auroraZone = smoothstep(0.2, 0.35, height) * smoothstep(0.85, 0.6, height);
+                    // Aurora only appears in upper portion of sky (5-50 degrees elevation)
+                    // Lowered to appear closer to horizon as requested
+                    float auroraZone = smoothstep(0.05, 0.2, height) * smoothstep(0.6, 0.3, height);
                     
                     if (auroraZone < 0.01) {
                         discard;
@@ -181,19 +182,19 @@ export class NorthernLights {
      */
     update(deltaTime, visibility) {
         this.time += deltaTime;
-        
+
         // Smooth opacity transition
         const targetOpacity = visibility;
         this.opacity += (targetOpacity - this.opacity) * deltaTime * 2;
-        
+
         // Update visibility
         const shouldBeVisible = this.opacity > 0.01;
         if (shouldBeVisible !== this.auroraGroup.visible) {
             this.auroraGroup.visible = shouldBeVisible;
         }
-        
+
         if (!shouldBeVisible) return;
-        
+
         // Update shader uniforms
         this.auroraMesh.material.uniforms.time.value = this.time;
         this.auroraMesh.material.uniforms.opacity.value = this.opacity;

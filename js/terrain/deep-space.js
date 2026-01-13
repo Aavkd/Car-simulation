@@ -26,7 +26,8 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
             anomalyDistortion: 0.5,     // Max glitch distortion
             // Physics Tweaks
             thrustMultiplier: 100,     // Multiplier for plane speed/thrust (default 2x)
-            gravityScale: 1000         // Overall gravity strength multiplier (adjust this to tune attraction)
+            gravityScale: 1000,        // Overall gravity strength multiplier (adjust this to tune attraction)
+            minSpawnHeight: -Infinity  // Minimum Y height for chunk generation (for excluding ground)
         }, params);
 
         this.mesh = new THREE.Group();
@@ -161,6 +162,15 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
         const offsetY = cy * this.chunkSize;
         const offsetZ = cz * this.chunkSize;
         const center = new THREE.Vector3(offsetX, offsetY, offsetZ);
+
+        // Check Minimum Height (for exclusion zones)
+        if (offsetY < this.params.minSpawnHeight) {
+            // Only generate stars, no planets/objects
+            // Or generate nothing at all if we want pure empty space near ground
+            // Let's generate sparse stars just so it's not a black void if looking up from edge
+            this._generateStarfield(chunkGroup, center, key);
+            return chunkGroup;
+        }
 
         // Seed random based on position (simple hash)
         // Note: JS Math.random cannot be seeded easily. 

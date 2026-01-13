@@ -90,7 +90,10 @@ export class PlanePhysics {
 
         // ==================== DEEP SPACE FLIGHT MODE ====================
         // When true, enables atmospheric physics (drag/damping) even in deep space
-        this.atmosphereMode = false;
+        this.atmosphereMode = true;
+
+        // Continuous transition factor (0.0 = Full Atmosphere, 1.0 = Full Space)
+        this.spaceTransitionFactor = 0.0;
     }
 
     /**
@@ -98,9 +101,50 @@ export class PlanePhysics {
      * Only relevant in Deep Space level
      */
     toggleFlightMode() {
-        this.atmosphereMode = !this.atmosphereMode;
-        console.log(`[PlanePhysics] Flight Mode: ${this.atmosphereMode ? 'ATMOSPHERE' : 'SPACE'}`);
+        this.setAtmosphereMode(!this.atmosphereMode);
         return this.atmosphereMode;
+    }
+
+    /**
+     * Set atmosphere mode directly (for automatic altitude-based switching)
+     * @param {boolean} enabled - true for atmosphere mode (drag on), false for space mode
+     */
+    setAtmosphereMode(enabled) {
+        // Wrapper for binary toggle (0 or 1)
+        this.setSpaceTransitionFactor(enabled ? 0.0 : 1.0);
+    }
+
+    /**
+     * Set continuous space transition factor
+     * 0.0 = Full Atmosphere (1x thrust, full drag)
+     * 1.0 = Full Space (Max thrust, zero drag)
+     * @param {number} factor - 0 to 1
+     */
+    setSpaceTransitionFactor(factor) {
+        factor = THREE.MathUtils.clamp(factor, 0, 1);
+
+        if (Math.abs(this.spaceTransitionFactor - factor) > 0.001) {
+            this.spaceTransitionFactor = factor;
+            this.atmosphereMode = (factor < 0.5); // Keep boolean for UI/Logging
+
+            // Interpolate Thrust Multiplier
+            // Unscaled (Atmosphere): 1.0
+            // Scaled (Space): provider.multiplier (e.g. 100)
+
+            let maxMultiplier = 1.0;
+            if (this.physicsProvider && this.physicsProvider.getThrustMultiplier) {
+                maxMultiplier = this.physicsProvider.getThrustMultiplier();
+            }
+
+            // Use Exponential Interpolation for thrust feels better than linear
+            // f=0 -> 1
+            // f=0.5 -> sqrt(max)  (100 -> 10)
+            // f=1 -> max (100 -> 100)
+            const currentMultiplier = Math.pow(maxMultiplier, factor);
+
+            this.activeThrustMultiplier = currentMultiplier;
+            this._applyThrustMultiplier(currentMultiplier);
+        }
     }
 
     /**
@@ -122,17 +166,21 @@ export class PlanePhysics {
         // User can toggle to SPACE mode for zero-drag orbital mechanics
         if (this.physicsProvider?.isDeepSpace?.()) {
             this.atmosphereMode = true; // Start in atmosphere mode by default
+            this.spaceTransitionFactor = 0.0;
             console.log(`[PlanePhysics] Deep Space detected - defaulting to ATMOSPHERE mode (toggle O/Circle for Space mode)`);
+        } else {
+            this.spaceTransitionFactor = 0.0;
         }
 
-        // Update thrust multipliers
-        let multiplier = 1.0;
-        if (this.physicsProvider && this.physicsProvider.getThrustMultiplier) {
-            multiplier = this.physicsProvider.getThrustMultiplier();
-        }
+        // Force update of multipliers based on current provider and factor
+        this.setSpaceTransitionFactor(this.spaceTransitionFactor);
+    }
 
-        this.activeThrustMultiplier = multiplier;
-
+    /**
+     * Apply thrust multiplier to physics constants and visual effects
+     * @param {number} multiplier 
+     */
+    _applyThrustMultiplier(multiplier) {
         // Apply to forces
         this.MAX_THRUST = this.BASE_THRUST * multiplier;
         this.HOVER_FORCE = this.BASE_HOVER * multiplier;
@@ -143,15 +191,11 @@ export class PlanePhysics {
 
             // Adjust speed effect thresholds to match new speed
             if (this.speedEffectConfig) {
-                // Base thresholds (hardcoded backup or read from initial config if preserved)
-                // We'll assume the current config is the base if not already scaled.
-                // Ideally, we should reset to base values first. 
-                // Since this might be called multiple times, let's look at defining base values in init or just scaling relative to base constants.
                 // Base thresholds (Based on user tuning for 1x)
                 const baseMin = 100;
                 const baseMax = 2200;
-                const baseWidthBoost = this.speedEffectConfig.widthBoost || 1.0; // Assuming default 1.0 if not set
-                const baseBloomBoost = this.speedEffectConfig.bloomBoost || 1.0; // Assuming default 1.0 if not set
+                const baseWidthBoost = 1.0;
+                const baseBloomBoost = 1.0;
 
                 // Physics Correction:
                 // Plane top speed is limited by Drag = k * v^2 + Linear Friction.
@@ -174,7 +218,6 @@ export class PlanePhysics {
             if (this.speedEffectConfig) {
                 this.speedEffectConfig.minSpeed = 100;
                 this.speedEffectConfig.maxSpeed = 2200;
-                // Reset widthBoost and bloomBoost to their base values (assuming 1.0 if not explicitly stored)
                 this.speedEffectConfig.widthBoost = 1.0;
                 this.speedEffectConfig.bloomBoost = 1.0;
             }
@@ -336,9 +379,11 @@ export class PlanePhysics {
 
             // Drag
             // Simple drag opposing velocity
-            // Skip drag in deep space (unless atmosphere mode is active)
-            if (!isDeepSpace || this.atmosphereMode) {
-                const dragMag = 0.5 * this.AIR_DENSITY * velocitySq * this.DRAG_COEFFICIENT * this.WING_AREA;
+            // Scale drag by atmosphere density (1.0 - spaceTransitionFactor)
+            // In full space (factor 1.0), drag becomes 0
+            if (!isDeepSpace || this.spaceTransitionFactor < 1.0) {
+                const atmosphereDensity = 1.0 - this.spaceTransitionFactor;
+                const dragMag = 0.5 * this.AIR_DENSITY * velocitySq * this.DRAG_COEFFICIENT * this.WING_AREA * atmosphereDensity;
                 forces.add(vDir.clone().multiplyScalar(-dragMag));
             }
 
@@ -387,9 +432,13 @@ export class PlanePhysics {
         this.velocity.add(acceleration.multiplyScalar(dt));
 
         // Damping/Stability
-        // Skip global air friction in deep space (unless atmosphere mode is active)
-        if (!isDeepSpace || this.atmosphereMode) {
-            this.velocity.multiplyScalar(0.999); // Global air friction
+        // Skip global air friction in deep space (unless partially in atmosphere)
+        if (!isDeepSpace || this.spaceTransitionFactor < 1.0) {
+            // Lerp friction: 0.999 (Atmosphere) -> 1.0 (Space)
+            // factor 0 -> 0.999
+            // factor 1 -> 1.0
+            const friction = THREE.MathUtils.lerp(0.999, 1.0, this.spaceTransitionFactor);
+            this.velocity.multiplyScalar(friction);
         }
 
         // Airbrake (Deep Space only) - rapidly reduce velocity and cancel gravity

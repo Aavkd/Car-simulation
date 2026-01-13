@@ -8,6 +8,7 @@ import { CosmicGenerator } from '../terrain/cosmic.js';
 import { DeepSpaceGenerator } from '../terrain/deep-space.js';
 import { IceMountainGenerator } from '../terrain/ice-mountain.js';
 import { LongDriveGenerator } from '../terrain/long-drive.js';
+import { SpaceGroundGenerator } from '../terrain/space-ground.js';
 
 /**
  * Level Manager
@@ -68,6 +69,10 @@ export class LevelManager {
 
             case 'longdrive':
                 this.currentTerrain = new LongDriveGenerator(config.params);
+                break;
+
+            case 'spaceground':
+                this.currentTerrain = new SpaceGroundGenerator(config.params);
                 break;
         }
 
