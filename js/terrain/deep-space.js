@@ -25,7 +25,7 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
             anomalySpeed: 1.0,         // Rotation speed multiplier
             anomalyDistortion: 0.5,     // Max glitch distortion
             // Physics Tweaks
-            thrustMultiplier: 50     // Multiplier for plane speed/thrust (default 2x)
+            thrustMultiplier: 100     // Multiplier for plane speed/thrust (default 2x)
         }, params);
 
         this.mesh = new THREE.Group();
@@ -658,4 +658,12 @@ export class DeepSpaceGenerator extends BasePhysicsProvider {
     getSpawnPosition() { return new THREE.Vector3(0, 500, 0); }
     getGravity() { return 0; }
     getThrustMultiplier() { return this.params.thrustMultiplier; }
+
+    /**
+     * Check if this is Deep Space terrain (for warp effect)
+     * @returns {boolean}
+     */
+    isDeepSpace() {
+        return true;
+    }
 }

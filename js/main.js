@@ -25,6 +25,7 @@ import { NPCEntity } from './rpg/entities/NPCEntity.js';
 import { BlackHole } from './environment/BlackHole.js';
 import { ASCIIShader } from './postprocessing/ASCIIShader.js';
 import { HalftoneShader } from './postprocessing/HalftoneShader.js';
+import { WarpSpeedShader } from './postprocessing/WarpSpeedShader.js';
 
 /**
  * Available car specifications registry
@@ -1329,6 +1330,12 @@ class Game {
         this.bloomPass.radius = 1.0;
         this.composer.addPass(this.bloomPass);
 
+        // Warp Speed Pass (for Deep Space hyperdrive effect)
+        this.warpPass = new ShaderPass(WarpSpeedShader);
+        this.warpPass.uniforms['resolution'].value.set(window.innerWidth, window.innerHeight);
+        this.warpPass.enabled = false; // Only enabled in Deep Space with plane
+        this.composer.addPass(this.warpPass);
+
         // Retro Pass
         this.retroPass = new ShaderPass(Retro16BitShader);
         this.retroPass.uniforms['resolution'].value.set(window.innerWidth, window.innerHeight);
@@ -1660,6 +1667,9 @@ class Game {
         if (this.composer) {
             this.composer.setSize(width, height);
             this.retroPass.uniforms['resolution'].value.set(width, height);
+            if (this.warpPass) {
+                this.warpPass.uniforms['resolution'].value.set(width, height);
+            }
         }
     }
 
@@ -1773,6 +1783,68 @@ class Game {
                         : (this.plane ? this.plane.mesh.position : null));
                 if (playerPos) {
                     this.terrain.update(playerPos, this.sky);
+                }
+            }
+
+            // Update Warp Speed Effect (Deep Space + Plane only)
+            if (this.warpPass) {
+                const isDeepSpace = this.terrain && this.terrain.isDeepSpace && this.terrain.isDeepSpace();
+                const isPlane = !this.isOnFoot && this.activeVehicle === 'plane' && this.plane;
+
+                if (isDeepSpace && isPlane) {
+                    // Get thrust multiplier for scaling
+                    const thrustMultiplier = this.plane.activeThrustMultiplier || 1.0;
+
+                    // Scale speed thresholds with thrust multiplier (same formula as plane.js)
+                    // Using pow(0.7) to account for drag limiting top speed
+                    const speedScale = Math.pow(thrustMultiplier, 0.7);
+
+                    // Warp effect should start AFTER speed lines are fully visible
+                    // Base thresholds tuned for actual achievable speeds
+                    // At 100x multiplier: speedScale ≈ 25, max speed ~14,000 km/h
+                    const baseMinSpeed = 200;   // Effect starts at ~5,000 km/h at 100x
+                    const baseMaxSpeed = 560;   // Full effect at ~14,000 km/h at 100x
+
+                    const minSpeed = baseMinSpeed * speedScale;
+                    const maxSpeed = baseMaxSpeed * speedScale;
+
+                    const speedKmh = this.plane.speedKmh || 0;
+
+                    let speedFactor = 0;
+                    if (speedKmh > minSpeed) {
+                        speedFactor = (speedKmh - minSpeed) / (maxSpeed - minSpeed);
+                        speedFactor = Math.min(1, Math.max(0, speedFactor));
+                        // Use quadratic curve for more dramatic high-speed effect
+                        speedFactor = speedFactor * speedFactor;
+                    }
+
+                    // Boost effect intensity based on thrust multiplier for more dramatic visuals
+                    if (thrustMultiplier > 1) {
+                        const intensityBoost = 1.0 + Math.log10(thrustMultiplier) * 0.3;
+                        this.warpPass.uniforms['blurStrength'].value = 0.04 * intensityBoost;
+                        this.warpPass.uniforms['aberrationStrength'].value = 0.00005 * intensityBoost;
+                        this.warpPass.uniforms['streakIntensity'].value = 0.015 * intensityBoost;
+                    }
+
+                    // Smooth transition
+                    const currentFactor = this.warpPass.uniforms['speedFactor'].value;
+                    const targetFactor = speedFactor;
+                    this.warpPass.uniforms['speedFactor'].value = THREE.MathUtils.lerp(
+                        currentFactor, targetFactor, deltaTime * 3.0
+                    );
+
+                    this.warpPass.enabled = true;
+                } else {
+                    // Fade out effect when leaving deep space or plane
+                    if (this.warpPass.enabled) {
+                        const currentFactor = this.warpPass.uniforms['speedFactor'].value;
+                        this.warpPass.uniforms['speedFactor'].value = THREE.MathUtils.lerp(
+                            currentFactor, 0, deltaTime * 5.0
+                        );
+                        if (this.warpPass.uniforms['speedFactor'].value < 0.001) {
+                            this.warpPass.enabled = false;
+                        }
+                    }
                 }
             }
 

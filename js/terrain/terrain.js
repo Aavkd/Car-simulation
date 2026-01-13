@@ -434,5 +434,13 @@ export class TerrainGenerator {
             return SurfaceTypes.SNOW;
         }
     }
+
+    /**
+     * Check if this is Deep Space terrain (for warp effect)
+     * @returns {boolean}
+     */
+    isDeepSpace() {
+        return false;
+    }
 }
 
