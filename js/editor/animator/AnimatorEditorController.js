@@ -88,6 +88,9 @@ export class AnimatorEditorController {
         // ==================== Phase 5: Event Components ====================
         this.eventManager = new EventManager(this);
 
+        // Phase 5.3: Layer Preview
+        this.visualizedLayer = null;
+
 
         // Track bone transform state for undo
         this._transformStartQuaternion = null;
@@ -568,169 +571,13 @@ export class AnimatorEditorController {
     }
 
     _buildUI() {
-        if (!this.contentContainer) return;
-
-        if (this.isPoseMode && this.selectedEntity) {
-            this._buildPoseUI();
-            return;
-        }
-
-        if (!this.selectedEntity) {
-            this.contentContainer.innerHTML = `
-                <div style="text-align: center; padding: 40px 20px; border: 2px dashed #444; border-radius: 8px; color: #666;">
-                    <div style="font-size: 24px; margin-bottom: 10px;">🖱️</div>
-                    <div>Click on a character in the scene to inspect.</div>
-                </div>
-            `;
-            return;
-        }
-
-        // ... Standard Inspect UI (Original) ...
-        // Re-implementing original logic briefly for when not in Pose Mode
-        const name = this.selectedEntity.name || 'Unknown Entity';
-        const animator = this.selectedEntity.animator;
-        const currentStateName = animator && animator.fsm && animator.fsm.currentState ? animator.fsm.currentState.name : 'None';
-
-        // Parameters UI
-        let paramsHTML = '';
-        if (animator && animator.fsm) {
-            const data = animator.fsm.data;
-            const keys = Object.keys(data);
-            if (keys.length === 0) {
-                paramsHTML = '<div style="font-size: 12px; color: #666; font-style: italic; padding: 10px;">No parameters found.</div>';
-            } else {
-                keys.forEach(key => {
-                    const value = data[key];
-                    if (typeof value === 'boolean') {
-                        paramsHTML += `<div style="margin-bottom:10px;"><div style="font-size:11px;color:#ccc;margin-bottom:4px;font-weight:600;">${key}</div><input type="checkbox" ${value ? 'checked' : ''} onchange="window.game.animator.setParameter('${key}', this.checked)" style="accent-color:#3498db;"></div>`;
-                    } else if (typeof value === 'number') {
-                        paramsHTML += `<div style="margin-bottom:10px;"><div style="font-size:11px;color:#ccc;margin-bottom:4px;font-weight:600;">${key}</div><div style="display:flex;align-items:center;gap:10px;"><input type="range" min="0" max="10" step="0.1" value="${value}" style="flex:1" oninput="window.game.animator.setParameter('${key}', parseFloat(this.value)); this.nextElementSibling.textContent=parseFloat(this.value).toFixed(2)"><span style="color:#3498db;font-family:monospace;">${value.toFixed(2)}</span></div></div>`;
-                    }
-                });
-            }
-        }
-
-        // Timeline / Active CLip UI
-        let timelineHTML = '';
-        if (animator && animator.currentAction) {
-            const clip = animator.currentAction.getClip();
-            timelineHTML = `
-                <div style="margin-bottom: 20px;">
-                    <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: #888;">Active Clip</div>
-                    <div style="background: #222; border: 1px solid #333; border-radius: 4px; padding: 10px;">
-                         <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                            <span style="color: #fff; font-size: 13px;">${clip.name}</span>
-                            <span id="clip-time" style="color: #aaa; font-family: monospace; font-size: 13px;">${animator.currentAction.time.toFixed(2)}s</span>
-                        </div>
-                        <input type="range" id="clip-scrubber" min="0" max="${clip.duration}" step="0.01" value="${animator.currentAction.time}" style="width: 100%; accent-color: #3498db;"
-                            onmousedown="window.game.animator.isScrubbing = true; window.game.animator.pauseClip()"
-                            onmouseup="window.game.animator.isScrubbing = false; window.game.animator.resumeClip()"
-                            oninput="window.game.animator.scrubClip(parseFloat(this.value)); document.getElementById('clip-time').textContent = parseFloat(this.value).toFixed(2) + 's'">
-                    </div>
-                </div>
-             `;
-        } else {
-            timelineHTML = `
-                <div style="margin-bottom: 20px;">
-                    <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: #888;">Active Clip</div>
-                     <div style="font-size: 12px; color: #666; font-style: italic; padding: 10px; background: #222; border-radius: 4px;">No clip playing.</div>
-                </div>
-             `;
-        }
-
-        this.contentContainer.innerHTML = `
-            <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 6px; border: 1px solid #333; margin-bottom: 15px;">
-                <div style="font-size: 10px; text-transform: uppercase; color: #aaa; margin-bottom: 5px;">Entity</div>
-                <div style="font-size: 18px; font-weight: bold; color: #fff;">${name}</div>
-                <div style="font-size: 12px; color: #4cd137;">● Active</div>
-            </div>
-            <div style="margin-bottom: 20px;">
-                <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: #888;">State Machine</div>
-                <div style="background: #222; border: 1px solid #333; border-radius: 4px; padding: 10px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                        <span style="color: #aaa; font-size: 13px;">Current State:</span>
-                        <span id="anim-state-name" style="color: #e1b12c; font-weight: bold; font-size: 13px;">${currentStateName}</span>
-                    </div>
-                </div>
-            </div>
-             <div style="margin-bottom: 20px;">
-                <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: #888;">Parameters</div>
-                <div style="background: #222; border: 1px solid #333; border-radius: 4px; padding: 10px;">${paramsHTML}</div>
-            </div>
-            ${timelineHTML}
-            <div style="font-size: 10px; color: #555; text-align: center; margin-top: 20px;">Changes apply instantly. Use F8 to exit.</div>
-        `;
-
-        // Update inspector panel pose mode button
+        // Delegate to InspectorPanel
         if (this.inspectorPanel) {
-            this.inspectorPanel.updatePoseModeButton(this.isPoseMode);
+            this.inspectorPanel.refresh();
         }
     }
 
-    _buildPoseUI() {
-        const keyframeCount = this.capturedPoses.length;
-        this.contentContainer.innerHTML = `
-            <div style="background: #e67e2211; padding: 15px; border-radius: 6px; border: 1px solid #e67e22; margin-bottom: 15px;">
-                <div style="font-size: 10px; text-transform: uppercase; color: #e67e22; margin-bottom: 5px;">Pose Mode</div>
-                <div style="font-size: 16px; font-weight: bold; color: #fff;">${this.selectedEntity.name}</div>
-            </div>
-
-            <!-- IK Tools -->
-            <div style="margin-bottom: 20px;">
-                <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: #888;">Inverse Kinematics</div>
-                <div style="display: flex; flex-direction: column; gap: 5px;">
-                     <button onclick="window.game.animator.createIKChain()" ${this.selectedBone ? '' : 'disabled'} style="flex:1; padding: 8px; background: #8e44ad; border: none; color: white; cursor: pointer; border-radius: 4px; opacity: ${this.selectedBone ? 1 : 0.5};">
-                        Creating IK Chain (2-Bone)
-                     </button>
-                     <button onclick="window.game.animator.toggleFootIK()" style="flex:1; padding: 8px; background: ${this.footIK && this.footIK.enabled ? '#27ae60' : '#333'}; border: 1px solid #444; color: white; cursor: pointer; border-radius: 4px;">
-                        ${this.footIK && this.footIK.enabled ? 'Enabled: Foot IK' : 'Enable Foot IK (Beta)'}
-                     </button>
-                </div>
-            </div>
-
-
-            <div style="margin-bottom: 20px;">
-                <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: #888;">Tools</div>
-                 <div style="display: flex; gap: 5px; margin-bottom: 10px;">
-                    <button onclick="window.game.animator.transformControls.setMode('translate')" style="background: #333; border: 1px solid #444; color: #eee; padding: 8px; flex:1; cursor: pointer;">Move (W)</button>
-                    <button onclick="window.game.animator.transformControls.setMode('rotate')" style="background: #333; border: 1px solid #444; color: #eee; padding: 8px; flex:1; cursor: pointer;">Rotate (E)</button>
-                </div>
-                <div style="font-size:12px; color:#888;">Selected Bone: <span style="color:#fff;">${this.selectedBone ? this.selectedBone.name : 'None'}</span></div>
-                
-                <!-- Bone Size Slider -->
-                <div style="margin-top: 10px; border-top: 1px dashed #444; padding-top: 10px;">
-                    <div style="display:flex; justify-content:space-between; font-size:11px; color:#aaa; margin-bottom:4px;">
-                        <span>Bone Gizmo Size</span>
-                        <span id="bone-scale-val">${(this.boneScaleMultiplier || 1.0).toFixed(2)}x</span>
-                    </div>
-                    <input type="range" min="0.01" max="5.0" step="0.01" value="${this.boneScaleMultiplier || 1.0}" style="width:100%; accent-color:#e67e22;" 
-                        oninput="window.game.animator.setBoneScale(parseFloat(this.value)); document.getElementById('bone-scale-val').textContent = parseFloat(this.value).toFixed(2) + 'x'">
-                </div>
-            </div>
-
-            <div style="margin-bottom: 20px; border-top: 1px solid #444; padding-top: 15px;">
-                <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: #888;">Keyframes: ${keyframeCount}</div>
-                
-                <button onclick="window.game.animator.captureKeyframe()" style="width: 100%; padding: 12px; background: #27ae60; border: none; color: white; margin-bottom: 10px; cursor: pointer; font-weight: bold; border-radius: 4px;">📷 Capture Keyframe</button>
-                
-                <div style="max-height: 150px; overflow-y: auto; background: #222; margin-bottom: 10px; padding: 5px;">
-                    ${this.capturedPoses.map((p, i) => `
-                        <div style="display: flex; justify-content: space-between; padding: 5px; border-bottom: 1px solid #333; font-size: 12px;">
-                            <span style="color: #aaa;">Frame ${i}</span>
-                            <span style="color: #e74c3c; cursor: pointer;" onclick="window.game.animator.deleteKeyframe(${i})">✖</span>
-                        </div>
-                    `).join('')}
-                </div>
-
-                <div style="display: flex; gap: 10px;">
-                <div style="display: flex; gap: 10px;">
-                    <button onclick="window.game.animator.playPreview()" style="flex:1; padding: 10px; background: ${this.isPreviewing ? '#c0392b' : '#2980b9'}; border: none; color: white; cursor: pointer; font-weight: bold; border-radius: 4px;">${this.isPreviewing ? '⏹ Stop' : '▶ Preview'}</button>
-
-                    <button onclick="window.game.animator.exportAnimation()" style="flex:1; padding: 10px; background: #8e44ad; border: none; color: white; cursor: pointer; font-weight: bold; border-radius: 4px;">💾 Export</button>
-                </div>
-            </div>
-        `;
-    }
+    // _buildPoseUI removed as it is now handled by InspectorPanel.buildPoseUI()
 
     toggleFootIK() {
         if (this.footIK) {
@@ -1135,6 +982,7 @@ export class AnimatorEditorController {
 
         // Initial Sync
         this._updateBoneHelpers();
+        this._updateMaskVisualization();
     }
 
     _updateBoneHelpers() {
@@ -1389,5 +1237,69 @@ export class AnimatorEditorController {
             // Force redraw or data update if needed
             // For now, the render loop handles drawing, but we might need to update cache if we had one
         }
+    }
+
+    // ==================== Phase 5.3: Layer Preview Methods ====================
+
+    setLayerWeight(layerName, weight) {
+        if (this.selectedEntity && this.selectedEntity.animator) {
+            const layer = this.selectedEntity.animator.layers.get(layerName);
+            if (layer) {
+                layer.setWeight(weight);
+            }
+        }
+    }
+
+    toggleLayerMask(layerName) {
+        if (this.visualizedLayer === layerName) {
+            this.visualizedLayer = null;
+        } else {
+            this.visualizedLayer = layerName;
+        }
+
+        this._updateMaskVisualization();
+
+        // If we are highlighting a layer mask, ensure we are in a mode where bone helpers are visible.
+        // If not in pose mode, maybe we should enable a "visualization only" mode or just Pose Mode?
+        // Roadmap says "Mask visualization on skeleton". Usually implies Pose Mode or a specialized view.
+        // If user clicks eye but not in Pose Mode, text "Enter Pose Mode to see mask" or just auto-enter?
+        // Let's auto-enter Pose Mode if not active, for convenience.
+        if (this.visualizedLayer && !this.isPoseMode) {
+            this.togglePoseMode(); // This will create bone helpers and then we need to re-apply mask
+            // togglePoseMode calls _createBoneHelpers which calls _updateMaskVisualization, so we are good.
+        } else {
+            // Just update UI to refresh the eye icon
+            this._buildUI();
+        }
+    }
+
+    _updateMaskVisualization() {
+        if (!this.boneHelpers) return;
+
+        const defaultColor = 0x00ff00;
+        const maskColor = 0xff0000; // Red for masked bones
+
+        let maskedBones = new Set();
+        if (this.visualizedLayer && this.selectedEntity && this.selectedEntity.animator) {
+            const layer = this.selectedEntity.animator.layers.get(this.visualizedLayer);
+            if (layer) {
+                // Accessing internal method, acceptable for editor-core integration
+                maskedBones = layer._getDescendantBoneNames(layer.rootBoneName);
+            }
+        }
+
+        this.boneHelpers.forEach(helper => {
+            const bone = helper.userData.bone;
+            if (bone) {
+                // Check if this bone is in the mask
+                if (maskedBones.has(bone.name)) {
+                    helper.material.color.setHex(maskColor);
+                    helper.material.opacity = 0.8;
+                } else {
+                    helper.material.color.setHex(defaultColor);
+                    helper.material.opacity = 0.5;
+                }
+            }
+        });
     }
 }

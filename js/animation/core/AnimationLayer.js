@@ -72,6 +72,7 @@ export class AnimationLayer {
         }
 
         action.reset();
+        action.setEffectiveWeight(this.weight); // Apply current layer weight
         action.play(); // This plays in parallel with other actions on the mixer
 
         // Crossfade
@@ -88,6 +89,17 @@ export class AnimationLayer {
         if (this.currentAction) {
             this.currentAction.fadeOut(fadeTime);
             this.currentAction = null;
+        }
+    }
+
+    /**
+     * Set layer weight (0.0 - 1.0)
+     * @param {number} weight 
+     */
+    setWeight(weight) {
+        this.weight = Math.max(0, Math.min(1, weight));
+        if (this.currentAction) {
+            this.currentAction.setEffectiveWeight(this.weight);
         }
     }
 
@@ -138,12 +150,21 @@ export class AnimationLayer {
 
     _getDescendantBoneNames(rootName) {
         const names = new Set();
+        if (!rootName) return names; // Full body if rootName is null?
+
+        // If RootName is null or empty, currently _createSubClip interprets as filter nothing (empty).
+        // If we want full body, we should handle that. 
+        // But AnimationLayer implies a mask usually. 
+        // If rootBoneName is null, we should probably include ALL bones.
+
         const root = this.controller._findBone(rootName);
 
         if (!root) {
             console.warn(`[AnimationLayer] Root bone '${rootName}' not found in mesh.`);
             return names;
         }
+
+        names.add(root.name);
 
         root.traverse(child => {
             if (child.isBone) {

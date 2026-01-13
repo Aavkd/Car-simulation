@@ -1,80 +1,79 @@
-# Phase 5: Animation Events System Implementation
+# Phase 5: Animation Events & Layers
+**Date:** January 13, 2026
+**Status:** Completed
+**Focus:** Gameplay integration (Events) and advanced animation blending (Layers).
 
-This document details the implementation of the Animation Events System as part of the Deep Animator overhaul (Phase 5). This system allows animators to trigger gameplay logic at specific frames.
+---
 
-## 1. Overview
+## 🏗️ Architecture
 
-The Animation Events System consists of:
-1.  **Backend Data**: `AnimationEvent` and `EventManager` to store and manage event data.
-2.  **Timeline UI**: Visual markers on the timeline ruler to visualize and manipulate events.
-3.  **Inspector UI**: A dedicated panel to edit event properties (function name, parameters).
-4.  **Runtime Integration**: Hooks into the animation loop to trigger callbacks during playback.
+Phase 5 expanded the animator's capabilities beyond simple playback, enabling interaction with game logic (Events) and complex blending operations (Layers).
 
-## 2. Components
-
-### 2.1 Animation Event Data (`AnimationEvent.js`)
-A simple data structure representing a single event.
-```javascript
-class AnimationEvent {
-    constructor(data) {
-        this.id = UUID;
-        this.time = float;          // Time in seconds
-        this.functionName = string; // e.g., 'PlaySound'
-        this.parameters = object;   // e.g., { id: 'footstep_grass' }
-    }
-}
+```
+js/editor/animator/
+├── events/
+│   ├── EventManager.js    // Triggers callbacks based on time
+│   └── AnimationEvent.js  // Data structure
+├── ui/
+│   └── InspectorPanel.js  // Updated with Events & Layers UI
+└── AnimatorEditorController.js // Integration
 ```
 
-### 2.2 Event Manager (`EventManager.js`)
-Manages the collection of events and handles the triggering logic.
--   **Storage**: Maintains a sorted list of events.
--   **Update**: Called every frame with `currentTime` and `previousTime`.
--   **Triggering**: Checks for events falling within the `(prev, current]` time range and fires `onEventTriggered`.
+### 1. Events System (`EventManager.js`)
+*   **Purpose:** Trigger gameplay logic (sounds, particles, state changes) at specific frames of an animation.
+*   **Logic:** Tracks `currentTime` vs `previousTime` to detect when an event timestamp is crossed. 
+*   **Visualization:** Events appear as **Pentagon Markers** on the Timeline ruler.
+*   **Editor:** Double-click ruler to add, click marker to inspect/edit properties in the Inspector Panel.
 
-### 2.3 Timeline Integration (`TimelinePanel.js`)
--   **Visuals**: Draws pentagon markers on a dedicated "Events" track below the time ruler.
--   **Interaction**:
-    -   **Add**: Double-click on the ruler area.
-    -   **Select**: Click on an event marker.
-    -   **Move**: Drag markers to reschedule events (snaps to frame rate).
+### 2. Layer System (`AnimationLayer.js`)
+*   **Purpose:** Manage blended animations with masking (e.g., playing an "Attack" on the UpperBody while "Running" on the LowerBody).
+*   **Masking:** Defines a `rootBoneName`. Only this bone and its descendants are affected by the layer's animation.
+*   **Weighting:** Dynamically adjust the influence (0.0 - 1.0) of the layer.
 
-### 2.4 Inspector Integration (`InspectorPanel.js`)
-When an event is selected, the Inspector Panel displays:
--   **Time**: Editable number field (updates event position).
--   **Function Name**: String input.
--   **Parameters**: JSON text area for defining payload data.
--   **Delete**: Button to remove the event.
+### 3. Editor Integration (`AnimatorEditorController.js`)
+*   **Layer Preview:**
+    *   **Visualization:** New "Eye" toggle in the Inspector. When active, it enters Pose Mode and colors masked bones **RED** and unmasked bones **GREEN**.
+    *   **Blending:** "Weight" slider in the Inspector directly controls the `effectiveWeight` of the `AnimationAction`, allowing real-time preview of blending results.
+    *   **Refactor:** The main UI generation was refactored to delegate to `InspectorPanel`, making the code significantly cleaner and more modular.
 
-## 3. Usage Guide
+---
 
-### adding an Event
-1.  Move the mouse to the desired time on the **Timeline Ruler**.
-2.  **Double-click** in the ruler/events track area.
-3.  A generic event (default function: `OnEvent`) is created at that time.
+## 🔧 Key Features Implemented
 
-### Editing an Event
-1.  **Click** on the pentagon marker in the timeline.
-2.  Look at the **Inspector Panel** on the left.
-3.  Modify the `Function Name` (e.g., `Footstep`) and `Parameters`.
+### 📅 Animation Events
+*   **Interactive Timeline:** Drag markers to reschedule events.
+*   **Inspector:** Edit function name, parameters (JSON), and time with precision.
+*   **Runtime Support:** Events are triggered via `EventManager.update()` during gameplay or preview.
 
-### Deleting an Event
-1.  Select the event.
-2.  Click the **Delete Event** button in the Inspector.
+### 🍰 Layer Blending
+*   **Real-time Controls:** Adjust layer weights instantly using sliders.
+*   **Mask Visualization:** Visual debug tool to verify which bones are included in a layer mask.
+*   **Dynamic Creation (Design Phase):** *Planned feature to allow creating new layers at runtime.*
 
-## 4. Technical Details
+---
 
-### Trigger Logic
-Events are triggered based on the delta between frames.
-`EventManager.update(currentTime, previousTime, isPlaying)`
+## 🔌 Integration Details
 
--   If `currentTime > previousTime`: Triggers events `E` where `prev < E.time <= current`.
--   If `currentTime < previousTime` (Loop): Triggers events from `prev` to `Duration`, then `0` to `current`. *Implementation currently simplifies loop handling.*
+### InspectorPanel
+*   **Modular UI:** The panel now dynamically builds sections based on the selected entity's capabilities (FSM, Layers, Events).
+*   **`_buildLayers()`**: Generates the list of active layers with controls.
+    ```javascript
+    // Example Layer UI structure
+    [Layer Name] [👁️ Toggle Mask]
+    Mask: Spine
+    Weight: [======|====] 0.60
+    ```
 
-### File Location
--   `js/editor/animator/events/AnimationEvent.js`
--   `js/editor/animator/events/EventManager.js`
+### AnimatorEditorController
+*   **`_updateMaskVisualization()`**:
+    *   Iterates through `boneHelpers`.
+    *   Checks if bone name exists in the active layer's mask logic.
+    *   Applies Color/Opacity override (Red = Masked).
+*   **`setLayerWeight(name, val)`**: Proxies UI input to the backend `AnimationLayer` instance.
 
-## 5. Verification
--   **Unit Tests**: N/A (Manual testing performed).
--   **Integration**: Verified via `AnimatorEditorController` preview loop.
--   **Visuals**: Verified timeline rendering and marker selection.
+---
+
+## 📝 Future Improvements
+*   **Layer-specific playback:** Ability to selectively play an animation *only* on a specific layer for testing.
+*   **Dynamic Layer Creation:** UI to define new layers (Name + Root Bone) at runtime (See `docs/feature_design_layer_creation.md`).
+*   **Additive Blending:** Support for additive layers (e.g., breathing, recoil) in the previewer.

@@ -280,11 +280,12 @@ graph TD
   - Delete events
 
 #### 5.3 Layer Preview
-- [ ] **Visualize animation layers in editor**
-  - Layer list with weight sliders
-  - Mask visualization on skeleton
-  - Toggle layers on/off for preview
-  - See blending results in real-time
+- [x] **Visualize animation layers in editor**
+  - [x] Layer list with weight sliders
+  - [x] Mask visualization on skeleton (Red/Green bones)
+  - [x] Toggle layers on/off for preview
+  - [x] See blending results in real-time
+
 
 #### 5.4 Additive Animation Preview
 - [ ] **Support additive blending preview**

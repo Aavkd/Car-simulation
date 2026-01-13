@@ -66,6 +66,7 @@ export class InspectorPanel {
         const stateName = animator?.fsm?.currentState?.name || 'None';
 
         let paramsHTML = this._buildParams(animator);
+        let layersHTML = this._buildLayers(animator);
         let clipHTML = animator?.currentAction ? this._buildClipUI(animator) : '<div style="font-size:12px;color:var(--anim-text-muted);font-style:italic;padding:10px;background:var(--anim-surface);border-radius:4px;">No clip playing.</div>';
 
         this.contentContainer.innerHTML = `
@@ -88,10 +89,45 @@ export class InspectorPanel {
                 <div style="background:var(--anim-surface);border:1px solid var(--anim-border);border-radius:4px;padding:10px;">${paramsHTML}</div>
             </div>
             <div class="animator-section">
+                <div class="animator-section-title">Layers</div>
+                <div style="background:var(--anim-surface);border:1px solid var(--anim-border);border-radius:4px;padding:10px;">${layersHTML}</div>
+            </div>
+            <div class="animator-section">
                 <div class="animator-section-title">Active Clip</div>
                 ${clipHTML}
             </div>
         `;
+    }
+
+    _buildLayers(animator) {
+        if (!animator || !animator.layers || animator.layers.size === 0) {
+            return '<div style="color:var(--anim-text-muted);font-style:italic;">No layers defined.</div>';
+        }
+
+        let html = '';
+        for (const [name, layer] of animator.layers) {
+            html += `
+                <div style="margin-bottom:12px; border-bottom:1px solid #333; padding-bottom:8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                        <span style="font-size:12px; font-weight:600; color:#ddd;">${name}</span>
+                        <button onclick="window.game.animator.toggleLayerMask('${name}')" title="Visualize Mask" 
+                            style="background:none; border:none; cursor:pointer; font-size:14px; opacity:${this.editor.visualizedLayer === name ? '1' : '0.4'}">
+                            👁️
+                        </button>
+                    </div>
+                    <div style="font-size:10px; color:#aaa; margin-bottom:4px;">
+                        Mask: ${layer.rootBoneName || 'Full Body'}
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-size:10px; color:#aaa; width:40px;">W: ${(layer.weight || 0).toFixed(2)}</span>
+                        <input type="range" class="animator-slider" min="0" max="1" step="0.01" value="${layer.weight || 0}" 
+                            oninput="window.game.animator.setLayerWeight('${name}', parseFloat(this.value)); this.previousElementSibling.textContent='W: '+parseFloat(this.value).toFixed(2)"
+                            style="flex:1; accent-color:var(--anim-accent);">
+                    </div>
+                </div>
+            `;
+        }
+        return html;
     }
 
     _buildParams(animator) {
@@ -130,6 +166,19 @@ export class InspectorPanel {
                 <div style="font-size:10px;text-transform:uppercase;color:var(--anim-accent);margin-bottom:5px;">Pose Mode</div>
                 <div style="font-size:16px;font-weight:bold;color:var(--anim-text);">${this.editor.selectedEntity.name}</div>
             </div>
+            
+            <div class="animator-section">
+                <div class="animator-section-title">Inverse Kinematics</div>
+                 <div style="display: flex; flex-direction: column; gap: 5px;">
+                     <button onclick="window.game.animator.createIKChain()" class="animator-btn" style="background: #8e44ad; border-color: #8e44ad; color: white;" ${this.editor.selectedBone ? '' : 'disabled'}>
+                        Create IK Chain (2-Bone)
+                     </button>
+                     <button onclick="window.game.animator.toggleFootIK()" class="animator-btn" style="border: 1px solid #444; color: white;">
+                        ${this.editor.footIK && this.editor.footIK.enabled ? 'Enabled: Foot IK' : 'Enable Foot IK (Beta)'}
+                     </button>
+                </div>
+            </div>
+
             <div class="animator-section">
                 <div class="animator-section-title">Tools</div>
                 <div style="display:flex;gap:5px;margin-bottom:10px;">
