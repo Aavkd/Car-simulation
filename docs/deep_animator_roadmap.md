@@ -200,9 +200,9 @@ graph TD
 ```
 
 #### 3.3 Curve Editor
-- [ ] **[NEW] `js/editor/animator/timeline/CurveEditor.js`**
+- [x] **[NEW] `js/editor/animator/timeline/CurveEditor.js`**
   - Bezier curve visualization for each property
-  - Tangent handles (Smooth, Linear, Stepped)
+  - Tangent handles (Smooth, Linear, Stepped, Bezier)
   - Key value editing via number input
   - Curve presets: Ease In, Ease Out, Bounce, Elastic
 
@@ -430,7 +430,7 @@ js/editor/animator/
 ├── timeline/                    # ✅ PHASE 3 COMPLETE
 │   ├── TimelinePanel.js        # ✅ Implemented
 │   ├── DopeSheet.js            # ✅ Implemented
-│   ├── CurveEditor.js          # ⏳ Deferred
+│   ├── CurveEditor.js          # ✅ Implemented
 │   └── KeyframeData.js         # ✅ Implemented
 │
 ├── ik/                          # ⏳ Phase 4

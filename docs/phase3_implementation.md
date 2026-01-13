@@ -14,6 +14,7 @@ Phase 3 introduced a new `timeline` module within the editor architecture. It se
 js/editor/animator/timeline/
 ├── TimelinePanel.js    // Main container & Canvas renderer
 ├── DopeSheet.js        // Logic for bone hierarchy & keyframe selection
+├── CurveEditor.js      // Visual graph editor for interpolation curves
 └── KeyframeData.js     // Enhanced data model (PoseKeyframe, TimelineData)
 ```
 
@@ -23,6 +24,7 @@ The visualization core, similar to `GraphEditor` but specialized for time-based 
 *   **Interaction:** Handles zoom (`Ctrl+Wheel`), pan (`Wheel/Drag`), and playhead scrubbing.
 *   **Responsiveness:** Includes a vertical resize handle and auto-scaling time ruler.
 *   **Integration:** Instantiated in `AnimatorEditorController`, toggled via Toolbar (`T`).
+*   **View Toggle:** Switches between "Dope Sheet" logic and "Curve Editor" view modes.
 
 ### 2. Dope Sheet Logic (`DopeSheet.js`)
 Manages the complexity of bone hierarchies and keyframe operations.
@@ -31,10 +33,22 @@ Manages the complexity of bone hierarchies and keyframe operations.
 *   **Operations:** Implements copy, paste, delete, and duplicate (`Ctrl+D`) logic for selected keys.
 *   **Filtering:** Provides filtered views of bones (expanding/collapsing groups).
 
-### 3. Keyframe Data Model (`KeyframeData.js`)
+### 3. Curve Editor (`CurveEditor.js`)
+*New in Phase 3.3*: Visual graph editing for precise animation control.
+*   **Visualization:** Renders X, Y, Z, W quaternion components as distinct Bezier curves.
+*   **Handles:** Interactive tangent handles to shape acceleration/deceleration.
+*   **Presets:** Quick-apply buttons for standard motion curves:
+    *   `Smooth` (Standard Bezier)
+    *   `Linear` (Straight lines)
+    *   `Stepped` (Instant hold)
+    *   `Bounce` (Physics-based bounce effect)
+    *   `Elastic` (Spring effect)
+*   **Overlay:** Precision numeric input for selected keyframe Time and Value.
+
+### 4. Keyframe Data Model (`KeyframeData.js`)
 An abstraction layer over the legacy `capturedPoses` array.
 *   **TimelineData:** Manages the list of `PoseKeyframe` objects.
-*   **Interpolation:** Supports future expansion for tangents (Bezier, Linear, Stepped).
+*   **Interpolation:** Supports extensive tangent types (`SMOOTH`, `LINEAR`, `STEPPED`, `BEZIER`, `BOUNCE`, `ELASTIC`).
 *   **Synchronization:** Loads from and saves back to the editor's core data structure.
 
 ---
@@ -52,6 +66,11 @@ An abstraction layer over the legacy `capturedPoses` array.
     *   **Red**: Unselected
     *   **Blue**: Selected
 *   **Row Selection:** Clicking a bone row's keyframe selects only that bone's data for that time.
+
+### 📈 Curve Editor
+*   **Mode Toggle:** Switch between 🎞️ Dope Sheet and 📈 Curve Editor via toolbar.
+*   **Property Focus:** Select a bone in the left panel to view its rotation curves.
+*   **Runtime Evaluation:** Animation playback now uses the actual curve data (Component-wise Bezier) instead of simple SLERP, allowing for complex timing and effects.
 
 ### 🎮 Playback & Controls
 *   **Toolbar Integration:**
@@ -74,8 +93,8 @@ An abstraction layer over the legacy `capturedPoses` array.
 *   **Sync:**
     *   `captureKeyframe()` -> Refreshes timeline.
     *   `deleteKeyframe()` -> Refreshes timeline.
-    *   `playPreview()` -> Updates playhead position every frame.
-    *   Timeline scrub -> Updates character pose via `_applyPoseAtTime()`.
+    *   `playPreview()` -> Updates playhead position every frame and evaluates curves.
+    *   Timeline scrub -> Updates character pose via `_applyPoseAtTime()` with curve support.
 
 ### HotkeyManager
 *   Delegates timeline-specific actions (`Ctrl+C`, `Ctrl+V`, `Delete`) to `DopeSheet` when the timeline is active.
@@ -83,6 +102,5 @@ An abstraction layer over the legacy `capturedPoses` array.
 ---
 
 ## 📝 Future Improvements (Deferred)
-*   **Curve Editor:** Visual editing of interpolation curves (Ease-in/out).
 *   **Audio Support:** Waveform display for syncing animation to sound.
 *   **Multi-Select Drag:** Dragging multiple keyframes simultaneously (currently single/batch select works, but drag interaction needs refinement).

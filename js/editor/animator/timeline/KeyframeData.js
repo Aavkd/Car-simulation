@@ -12,7 +12,9 @@ export const InterpolationType = {
     SMOOTH: 'smooth',       // Auto-calculated bezier tangents
     LINEAR: 'linear',       // Straight line between keyframes
     STEPPED: 'stepped',     // Hold value until next keyframe
-    BEZIER: 'bezier'        // Custom bezier tangents
+    BEZIER: 'bezier',       // Custom bezier tangents
+    BOUNCE: 'bounce',       // Bouncing effect
+    ELASTIC: 'elastic'      // Elastic effect
 };
 
 /**
@@ -76,7 +78,9 @@ export class PoseKeyframe {
     addBone(boneName, rotation) {
         this.bones.push({
             name: boneName,
-            rot: rotation.clone()
+            rot: rotation.clone(),
+            tangentIn: { type: InterpolationType.SMOOTH },
+            tangentOut: { type: InterpolationType.SMOOTH }
         });
     }
 
@@ -100,7 +104,9 @@ export class PoseKeyframe {
         pose.id = legacyPose.id;
         pose.bones = legacyPose.bones.map(b => ({
             name: b.name,
-            rot: b.rot.clone ? b.rot.clone() : b.rot
+            rot: b.rot.clone ? b.rot.clone() : b.rot,
+            tangentIn: b.tangentIn || { type: InterpolationType.SMOOTH },
+            tangentOut: b.tangentOut || { type: InterpolationType.SMOOTH }
         }));
         return pose;
     }

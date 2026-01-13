@@ -6,8 +6,9 @@
  * Follows patterns from GraphEditor.js for canvas rendering.
  */
 
-import { TimelineData } from './KeyframeData.js';
+import { TimelineData, InterpolationType } from './KeyframeData.js';
 import { DopeSheet } from './DopeSheet.js';
+import { CurveEditor } from './CurveEditor.js';
 
 /**
  * TimelinePanel - Professional timeline editor component
@@ -20,6 +21,9 @@ export class TimelinePanel {
         // Data
         this.timelineData = new TimelineData();
         this.dopeSheet = new DopeSheet(this);
+        this.curveEditor = new CurveEditor(this);
+
+        this.viewMode = 'dopesheet'; // 'dopesheet' or 'curve'
 
         // View state
         this.zoom = 100;                    // Pixels per second
@@ -204,6 +208,17 @@ export class TimelinePanel {
         fitView.onclick = () => this.fitToView();
         toolbar.appendChild(fitView);
 
+        // Separator
+        toolbar.appendChild(this._createSeparator());
+
+        // View Mode Toggle
+        this.viewToggle = document.createElement('button');
+        this.viewToggle.className = 'animator-tool-btn';
+        this.viewToggle.innerHTML = '📈';
+        this.viewToggle.title = 'Toggle Curve Editor';
+        this.viewToggle.onclick = () => this.toggleViewMode();
+        toolbar.appendChild(this.viewToggle);
+
         // Spacer
         const spacer = document.createElement('div');
         spacer.style.flex = '1';
@@ -267,7 +282,47 @@ export class TimelinePanel {
         this.boneListContent.className = 'bone-list-content';
         container.appendChild(this.boneListContent);
 
+        // Populate initial list (if data exists)
+        this._updateBoneList();
+
         return container;
+    }
+
+    refreshBoneList() {
+        if (!this.boneListContent) return;
+        this.boneListContent.innerHTML = '';
+        const visibleBones = this.dopeSheet.getVisibleBones();
+
+        visibleBones.forEach((boneName, index) => {
+            const row = document.createElement('div');
+            row.style.cssText = `
+                height: ${this.trackHeight}px;
+                display: flex;
+                align-items: center;
+                padding-left: 10px;
+                color: #ccc;
+                font-size: 11px;
+                border-bottom: 1px solid #333;
+                cursor: pointer;
+             `;
+            row.textContent = boneName;
+
+            // Highlight if selected for curves
+            if (this.viewMode === 'curve' && this.curveEditor.selectedBoneName === boneName) {
+                row.style.background = '#2c3e50';
+                row.style.color = '#3498db';
+                row.style.fontWeight = 'bold';
+            }
+
+            row.onclick = () => {
+                if (this.viewMode === 'curve') {
+                    this.curveEditor.setTarget(boneName, 'rotation.x'); // Default to X
+                    this.refreshBoneList(); // Re-render to show selection
+                }
+            };
+
+            this.boneListContent.appendChild(row);
+        });
     }
 
     /**
@@ -399,11 +454,15 @@ export class TimelinePanel {
         // Draw time ruler
         this._drawTimeRuler(ctx, width);
 
-        // Draw grid lines
-        this._drawGrid(ctx, width, height);
+        if (this.viewMode === 'dopesheet') {
+            // Draw grid lines
+            this._drawGrid(ctx, width, height);
 
-        // Draw keyframe markers
-        this._drawKeyframes(ctx, width, height);
+            // Draw keyframe markers
+            this._drawKeyframes(ctx, width, height);
+        } else if (this.viewMode === 'curve') {
+            this.curveEditor.render(ctx, width, height);
+        }
 
         // Draw playhead
         this._drawPlayhead(ctx, height);
@@ -634,8 +693,15 @@ export class TimelinePanel {
             return;
         }
 
-        // Left click - select keyframe
-        this._handleKeyframeClick(x, y, e.shiftKey);
+        // Left click
+        if (this.viewMode === 'dopesheet') {
+            this._handleKeyframeClick(x, y, e.shiftKey);
+        } else if (this.viewMode === 'curve') {
+            const hit = this.curveEditor.onMouseDown(e, x, y);
+            if (!hit) {
+                // If no curve element hit, maybe allow panning/selection box?
+            }
+        }
     }
 
     /**
@@ -654,15 +720,23 @@ export class TimelinePanel {
             const dx = e.clientX - this.panStartX;
             this.viewOffset = Math.max(0, this.panStartOffset - dx);
         }
+
+        if (this.viewMode === 'curve') {
+            this.curveEditor.onMouseMove(e, x, y);
+        }
     }
 
     /**
      * Handle mouse up
      * @private
      */
-    _onMouseUp() {
+    _onMouseUp(e) {
         this.isDraggingPlayhead = false;
         this.isPanning = false;
+
+        if (this.viewMode === 'curve') {
+            this.curveEditor.onMouseUp(e);
+        }
     }
 
     /**
@@ -766,6 +840,17 @@ export class TimelinePanel {
         this.setPlayheadTime(time);
     }
 
+    toggleViewMode() {
+        this.viewMode = this.viewMode === 'dopesheet' ? 'curve' : 'dopesheet';
+        this.viewToggle.innerHTML = this.viewMode === 'dopesheet' ? '📈' : '💠';
+        this.viewToggle.title = this.viewMode === 'dopesheet' ? 'Switch to Curve Editor' : 'Switch to Dope Sheet';
+
+        // Auto-refresh visibility
+        this._updateBoneList();
+
+        console.log(`[TimelinePanel] Switched to ${this.viewMode} mode`);
+    }
+
     // ==================== Public API ====================
 
     /**
@@ -820,10 +905,108 @@ export class TimelinePanel {
 
             const nextBone = nextKeyframe.bones.find(b => b.name === boneData.name);
             if (nextBone) {
-                bone.quaternion.slerpQuaternions(boneData.rot, nextBone.rot, alpha);
+                // Component-wise evaluation
+                const x = this._calculateValue(boneData.rot.x, nextBone.rot.x, prevKeyframe.time, nextKeyframe.time, time, boneData.tangentOut, nextBone.tangentIn);
+                const y = this._calculateValue(boneData.rot.y, nextBone.rot.y, prevKeyframe.time, nextKeyframe.time, time, boneData.tangentOut, nextBone.tangentIn);
+                const z = this._calculateValue(boneData.rot.z, nextBone.rot.z, prevKeyframe.time, nextKeyframe.time, time, boneData.tangentOut, nextBone.tangentIn);
+                const w = this._calculateValue(boneData.rot.w, nextBone.rot.w, prevKeyframe.time, nextKeyframe.time, time, boneData.tangentOut, nextBone.tangentIn);
+
+                bone.quaternion.set(x, y, z, w).normalize();
             } else {
                 bone.quaternion.copy(boneData.rot);
             }
+        }
+    }
+
+    /**
+     * Calculate single value at time t based on interpolation
+     * @private
+     */
+    _calculateValue(v1, v2, t1, t2, time, tangentOut, tangentIn) {
+        const dt = t2 - t1;
+        if (dt <= 0.0001) return v1;
+
+        const t = (time - t1) / dt; // Normalized time [0, 1]
+
+        // Determine type
+        const type = (tangentOut && tangentOut.type) ? tangentOut.type : InterpolationType.SMOOTH;
+
+        if (type === InterpolationType.STEPPED) {
+            return v1;
+        }
+        else if (type === InterpolationType.LINEAR) {
+            return v1 + (v2 - v1) * t;
+        }
+        else if (type === InterpolationType.BOUNCE) {
+            // Simple bounce effect approximation
+            if (t < (1 / 2.75)) {
+                return v1 + (v2 - v1) * (7.5625 * t * t);
+            } else if (t < (2 / 2.75)) {
+                const t2 = t - (1.5 / 2.75);
+                return v1 + (v2 - v1) * (7.5625 * t2 * t2 + 0.75);
+            } else if (t < (2.5 / 2.75)) {
+                const t2 = t - (2.25 / 2.75);
+                return v1 + (v2 - v1) * (7.5625 * t2 * t2 + 0.9375);
+            } else {
+                const t2 = t - (2.625 / 2.75);
+                return v1 + (v2 - v1) * (7.5625 * t2 * t2 + 0.984375);
+            }
+        }
+        else if (type === InterpolationType.ELASTIC) {
+            // Simple elastic
+            const p = 0.3;
+            return v1 + (v2 - v1) * (Math.pow(2, -10 * t) * Math.sin((t - p / 4) * (2 * Math.PI) / p) + 1);
+        }
+        else {
+            // Bezier / Smooth
+            // Normalized control points
+            // tangent.x is in seconds, tangent.y is in value
+            // We need normalized (0-1) coordinates
+
+            // Default smooth tangents (horizontal)
+            let mx1 = 0.33; // x relative
+            let my1 = 0;    // y relative
+            let mx2 = -0.33;
+            let my2 = 0;
+
+            if (tangentOut && tangentOut.type === InterpolationType.BEZIER) {
+                mx1 = (tangentOut.x || 0.1) / dt;
+                my1 = (tangentOut.y || 0) / (v2 - v1 || 1.0); // Normalize value? No, bezier formula uses absolute values usually or relative
+                // Actually easier to do standard cubic bezier on values directly
+
+                // Let's use the explicit cubic bezier formula
+                // P0 = v1, P3 = v2
+                // P1 = v1 + tangentOut.y
+                // P2 = v2 + tangentIn.y (tangentIn.y is relative to v2)
+
+                // But wait, the tangent x also matters for time distortion (easing)
+                // Integrating full 2D bezier for time remapping is complex (requires Newton's method)
+                // For this implementation, we will simplify: 
+                // We assume X progression is largely linear-ish OR we approximate
+
+                my1 = tangentOut.y || 0;
+            }
+            if (tangentIn && tangentIn.type === InterpolationType.BEZIER) {
+                my2 = tangentIn.y || 0;
+            }
+
+            // Standard Cubic Bezier interpolation for Value (1D)
+            // B(t) = (1-t)^3 P0 + 3(1-t)^2 t P1 + 3(1-t) t^2 P2 + t^3 P3
+            const invT = 1 - t;
+            const P0 = v1;
+            const P1 = v1 + my1; // Control point 1 
+            const P2 = v2 + my2; // Control point 2
+            const P3 = v2;
+
+            // Note: This ignores X handles (time easing) for now, treating it as Y-only curve interpolated over linear time.
+            // This is "good enough" for basic visual consistency with the editor which draws x/y, 
+            // but in the editor x handles stretch time.
+            // To do this properly we'd need to solve for t, but let's stick to value interpolation for phase 1.
+
+            return (invT * invT * invT * P0) +
+                (3 * invT * invT * t * P1) +
+                (3 * invT * t * t * P2) +
+                (t * t * t * P3);
         }
     }
 
@@ -908,7 +1091,14 @@ export class TimelinePanel {
                 overflow: hidden;
                 white-space: nowrap;
                 background: ${item.isGroup ? 'var(--anim-surface)' : 'transparent'};
+                transition: background 0.1s;
             `;
+
+            if (this.viewMode === 'curve' && !item.isGroup && this.curveEditor.selectedBoneName === item.name) {
+                row.style.background = '#2c3e50';
+                row.style.color = '#3498db';
+                row.style.fontWeight = 'bold';
+            }
 
             if (item.isGroup) {
                 row.innerHTML = `<span style="margin-right:5px; font-size:9px;">${item.expanded ? '▼' : '▶'}</span> <b>${item.name}</b>`;
@@ -919,8 +1109,24 @@ export class TimelinePanel {
             } else {
                 row.textContent = item.name;
                 row.title = item.name;
-                row.onmouseenter = () => row.style.background = 'var(--anim-surface-hover)';
-                row.onmouseleave = () => row.style.background = '';
+
+                row.onmouseenter = () => {
+                    if (this.viewMode === 'curve' && this.curveEditor.selectedBoneName === item.name) return;
+                    row.style.background = 'var(--anim-surface-hover)';
+                };
+                row.onmouseleave = () => {
+                    if (this.viewMode === 'curve' && this.curveEditor.selectedBoneName === item.name) return;
+                    row.style.background = item.isGroup ? 'var(--anim-surface)' : 'transparent';
+                };
+
+                row.onclick = () => {
+                    if (this.viewMode === 'curve') {
+                        this.curveEditor.setTarget(item.name, 'rotation.x'); // Default to X
+                        this._updateBoneList();
+                    } else {
+                        // Dope sheet selection logic could go here
+                    }
+                };
             }
 
             this.boneListContent.appendChild(row);
