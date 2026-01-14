@@ -14,8 +14,8 @@
 ### 2.2 Advanced Strafe & Locomotion
 - **Directional Blending**: Implemented an angular blend system that mixes `Locomotion` (Forward) and `Strafe` (Lateral) animations. Diagonal movement (W+D) now results in a natural blend of both.
 - **Mirrored Left Movement**: Reused Right Strafe assets for Left Strafe using mesh scaling (`scale.x = -0.03`).
-- **Delayed & Sticky Scale**: 
-    - **Delayed Flip**: Masked the mirroring "pop" by waiting until the Strafe animation is >50% dominant before flipping the mesh.
+- **Sticky Scale**: 
+    - **Instant Flip**: Removed delayed flip to ensure correct strafe rotation/direction immediately upon input.
     - **Sticky State**: Maintained current scale on stop to allow smooth fading back to Idle.
 - **Rotation Lock**: Integrated a view-targeted rotation lock that activates whenever the player is moving laterally.
 
@@ -29,5 +29,5 @@
 - [x] Natural diagonal movement blending.
 - [x] Mirroring functionality for Left Strafing.
 - [x] T-pose glitch eliminated via Weight Accumulator.
-- [x] Mirroring "snap" hidden via Delayed Flip.
+- [x] Correct Left Strafe orientation via Instant Flip (Removed Delay).
 - [x] Player model interactive in Animator Editor via Raycast selection.

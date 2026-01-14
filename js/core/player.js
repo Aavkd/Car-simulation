@@ -365,17 +365,15 @@ export class PlayerController {
                 this.animator.setTreeTargetWeight('Locomotion', locomotionWeight);
                 this.animator.setTreeTargetWeight('Strafe', strafeWeight);
 
-                // Mirror Logic (Sticky Scale with Delayed Flip)
+                // Mirror Logic (Sticky Scale)
                 const strafeTree = this.animator.getTree('Strafe');
                 const currentStrafeWeight = strafeTree ? strafeTree.fadeWeight : 0;
 
                 if (this.mesh) {
                     // Logic: 
-                    // If strafing Left, only flip when Strafe animation is dominant (> 0.5 weight)
+                    // If strafing Left, flip immediately. Delay caused wrong rotation.
                     if (this.moveRight < -0.1) {
-                        if (currentStrafeWeight > 0.5) {
-                            this.mesh.scale.x = -0.03;
-                        }
+                        this.mesh.scale.x = -0.03;
                     } else if (this.moveRight > 0.1) {
                         // Right strafe -> Normal scale immediately
                         this.mesh.scale.x = 0.03;
