@@ -1,90 +1,33 @@
 # Animator Editor Enhancement & Player Integration Roadmap
 
 ## 1. Executive Summary
-**Goal**: Enhance the Animator Editor to allow setting and editing animations for game entities (NPCs, Player).
-**Validation Case**: Implement this system for the Player character, enabling full third-person animation (Idle, Walk, Sprint) editable within the tooling.
+**Goal**: Enhance the Animator Editor and Player Controller to support high-fidelity third-person animation and seamless NPC/Player state management.
 **Status**: **Completed** (Jan 14, 2026)
 
-## 2. Current Architecture & Gap Analysis
+## 2. Key Features Implemented
 
-### 2.1 Existing Systems
-- **Animator Editor (`AnimatorEditorController.js`)**:
-    -   Supports raycast selection of entities via `userData.entity`.
-    -   Includes a `LibraryPanel` for browsing animations.
-    -   Includes a `LibraryService` for importing/retargeting.
--   **Animation System (`AnimationController.js`)**:
-    -   Handles FSM (Finite State Machine) and BlendTrees.
-    -   Wraps `THREE.AnimationMixer`.
--   **Player Controller (`PlayerController.js`)**:
-    -   Loads a static `Knight.fbx`.
-    -   **Gap**: No `AnimationController` attached.
-    -   **Gap**: Mesh is not marked as an entity, making it unselectable in the Editor.
--   **Library Service**:
-    -   **Bug**: Contains incorrect property access (`animator.controller.actions` vs `animator.actions`) preventing animations from being applied.
+### 2.1 Animation System Overhaul
+- **Weight Accumulator (Shared Action Blending)**: Re-engineered the blending engine to sum weights across multiple active blend trees. This ensures that shared clips (like `Idle`) maintain 100% influence during transitions, preventing the "fading to bind pose" (T-pose) glitch.
+- **Synchronized Fade State**: Standardized `fadeSpeed` calculations across the `AnimationController` to ensure perfectly timed crossfades between different locomotion modes.
+- **Manual Tree Control**: Added `setTreeTargetWeight` and `setTreeParameter` to allow external scripts (like `PlayerController`) to manually drive specific blend trees.
 
-## 3. Implementation Phases
+### 2.2 Advanced Strafe & Locomotion
+- **Directional Blending**: Implemented an angular blend system that mixes `Locomotion` (Forward) and `Strafe` (Lateral) animations. Diagonal movement (W+D) now results in a natural blend of both.
+- **Mirrored Left Movement**: Reused Right Strafe assets for Left Strafe using mesh scaling (`scale.x = -0.03`).
+- **Delayed & Sticky Scale**: 
+    - **Delayed Flip**: Masked the mirroring "pop" by waiting until the Strafe animation is >50% dominant before flipping the mesh.
+    - **Sticky State**: Maintained current scale on stop to allow smooth fading back to Idle.
+- **Rotation Lock**: Integrated a view-targeted rotation lock that activates whenever the player is moving laterally.
 
-### Phase 1: Core Plumbing & Fixes (Completed)
-*Objective: Ensure the underlying tools can actually apply animations to an entity.*
+## 3. Technical Specs
+- **PlayerController.js**: Calculates `blendFactor` via `Math.atan2(|moveRight|, moveForward)` and manages the `isStrafing` state for rotation locking.
+- **AnimationController.js**: Implements an aggregator that collects `computedWeights` from every registered `BlendTree1D` and applies a global summation before updating the Three.js Mixer.
+- **BlendTree1D.js**: Operates on a single parameter (Speed) and exports a frame-by-frame weight map for the controller.
 
-1.  **Fix `LibraryService.js`**:
-    -   Corrected the `applyAnimation()` method to properly register new clips to the `AnimationController`.
-    -   Replaced `animator.controller.actions` with `animator.actions`.
-    -   **Fix**: Correctly stored `THREE.AnimationAction` objects directly in the map instead of wrapper objects.
-2.  **Verify `AnimationController.js`**:
-    -   Confirmed dynamic addition of clips (`actions.set(...)`) is supported at runtime.
-
-### Phase 2: Player Entity Upgrade (Completed)
-*Objective: Make the Player a valid "Entity" that accepts animations.*
-
-1.  **Refactor `loadModel` in `PlayerController.js`**:
-    -   Loaded `Idle.fbx`, `Walk.fbx`, and `Sprint.fbx` alongside the base mesh using `THREE.LoadingManager`.
-    -   Initialized `this.animator = new AnimationController(mesh, animations)`.
-    -   **Feature**: Added fallback logic to auto-generate a `Walk` animation from `Sprint` (at 50% speed) if `Walk.fbx` fails to load.
-2.  **Entity Tagging**:
-    -   Set `this.mesh.userData.entity = this` to enable Raycast selection in the Editor.
-    -   Set `this.mesh.userData.type = 'player'`.
-3.  **State Machine Integration**:
-    -   Connected Player input (velocity, isGrounded) to `animator.setInput()`.
-    -   Defined 'Locomotion' BlendTree:
-        -   Idle: 0.0
-        -   Walk: 20.0
-        -   Sprint: 40.0
-
-### Phase 3: Editor Integration (Completed)
-*Objective: Allow the user to use the Editor UI to manipulate the Player.*
-
-1.  **Selection Support**:
-    -   Verified `AnimatorEditorController` successfully selects the Player mesh via `userData.entity`.
-2.  **Clip Management**:
-    -   Ensured the Editor's "Clips" list refreshes when `LibraryService` applies a new animation.
-3.  **Persistence Strategy (Design Only)**:
-    -   *Future*: Editor should export an `entity_config.json` defining which animations load for which entity.
-
-### Phase 4: Validation & Third-Person Testing (Completed)
-*Objective: Verify the end-to-end user story.*
-
-1.  **Test 3rd Person View**:
-    -   Verified camera correctly follows the now-animated mesh.
-2.  **Editor Workflow Test**:
-    -   Verified selecting Player in Editor works.
-    -   Verified applying new animations works.
-
-## 4. Technical Specifications
-
-### File Targets
--   `js/editor/animator/library/LibraryService.js` (Fix Applied)
--   `js/core/player.js` (Feature Implemented)
--   `js/animation/core/AnimationController.js` (Verified)
-
-### Data Flow
-1.  **Input**: User presses WASD.
-2.  **PlayerController**: Calculates velocity -> `animator.setInput('speed', 5.0)`.
-3.  **AnimationController**: FSM evaluates 'Locomotion' BlendTree -> Blends 'Walk' and 'Run' clips.
-4.  **Editor Override**: User selects Player -> `animator.play('Dance')` -> Overrides Locomotion.
-
-## 5. Verification Checklist
--   [x] Player mesh is visible and animating in 3rd person.
--   [x] Player transitions smoothly from Idle to Run.
--   [x] Clicking Player in Editor selects it.
--   [x] "Apply" in Library Service adds the clip to the Player's dropdown list.
+## 4. Verification Checklist
+- [x] Smooth transitions between Idle, Walk, and Sprint.
+- [x] Natural diagonal movement blending.
+- [x] Mirroring functionality for Left Strafing.
+- [x] T-pose glitch eliminated via Weight Accumulator.
+- [x] Mirroring "snap" hidden via Delayed Flip.
+- [x] Player model interactive in Animator Editor via Raycast selection.

@@ -4,6 +4,7 @@ import * as THREE from 'three';
  * BlendTree1D
  * Binds multiple animations to a single float parameter (e.g. Speed).
  * Linearly interpolates weights between thresholds.
+ * Supports smooth fading in/out via manual weight management.
  */
 export class BlendTree1D {
     /**
@@ -18,49 +19,95 @@ export class BlendTree1D {
 
         // Cache actions for checking existence
         this._actionsFallback = {};
+
+        // Computed weights for accumulator
+        this.computedWeights = new Map();
+
+        // Fading system
+        this.fadeWeight = 0.0;
+        this.targetWeight = 0.0;
+        this.fadeSpeed = 0.0;
+        this.parameterValue = 0.0; // Cache last parameter
+        this._isActive = false;
     }
 
     /**
-     * Update weights based on the parameter value.
-     * @param {number} value - The input parameter (e.g. speed)
+     * Set the parameter value (e.g. speed) and recalculate weights
+     * @param {number} value 
      */
-    update(value) {
+    setParameter(value) {
+        this.parameterValue = value;
+        this._applyWeights();
+    }
+
+    /**
+     * Update fade animation
+     * @param {number} delta 
+     */
+    tick(delta) {
+        if (this.fadeWeight !== this.targetWeight) {
+            const diff = this.targetWeight - this.fadeWeight;
+            const step = this.fadeSpeed * delta;
+
+            if (Math.abs(diff) <= step) {
+                this.fadeWeight = this.targetWeight;
+            } else {
+                this.fadeWeight += Math.sign(diff) * step;
+            }
+
+            // Re-apply weights with new fade factor
+            this._applyWeights();
+        }
+    }
+
+    _applyWeights() {
+        const value = this.parameterValue;
+        this.computedWeights.clear();
+
+        // If tree is faded out completely, don't bother setting weights (ensure zero once)
+        if (this.fadeWeight <= 0.001 && this.targetWeight <= 0.001) {
+            if (this.fadeWeight === 0) return;
+        }
+
         // 1. Find the two points bounding the value
         let minIndex = 0;
         let maxIndex = this.points.length - 1;
 
-        // Reset all weights to 0 initially
+        // Reset all weights to 0 initially if they are not active?
+        // Actually we iterate all points to ensure we control all participating clips
         this.points.forEach(p => {
             const action = this.controller.actions.get(p.clip);
             if (action) {
-                // Determine if we need to force play them if they are not playing? 
-                // The AnimationController generally expects us to manage playback if we are "playing" this tree.
-                if (!action.isRunning()) action.play();
+                // Ensure playing if we have any weight
+                if (this.fadeWeight > 0.001 && !action.isRunning()) {
+                    action.play();
+                }
 
-                // Speed Scaling: Adjust playback speed to match actual movement speed
-                // This prevents foot sliding (skating)
+                // Speed Scaling: Adjust playback speed based on parameter
                 if (p.threshold > 0.001) {
-                    // Scale playback speed. If we are moving at 50% of walk speed, play walk at 50% speed.
                     action.timeScale = value / p.threshold;
                 } else {
-                    // Keep Idle (0 threshold) at normal speed
                     action.timeScale = 1.0;
                 }
 
-                // We will calculate correct weight below. 
-                // However, we start at 0 to ensure non-active clips fade out or stay silent.
-                action.setEffectiveWeight(0);
+                // We start assumption of 0 weight, overridden below
+                // But we don't want to set 0 here if we are about to set it to something else
+                // So we rely on _setWeight to set the final values
             }
         });
 
+        // Calculate base weights (before fade)
         if (value <= this.points[0].threshold) {
             // Below min: 100% first clip
             this._setWeight(0, 1.0);
+            this._zeroOthers(0);
         } else if (value >= this.points[maxIndex].threshold) {
             // Above max: 100% last clip
             this._setWeight(maxIndex, 1.0);
+            this._zeroOthers(maxIndex);
         } else {
             // In between
+            let found = false;
             for (let i = 0; i < maxIndex; i++) {
                 const p1 = this.points[i];
                 const p2 = this.points[i + 1];
@@ -72,29 +119,49 @@ export class BlendTree1D {
                     this._setWeight(i, 1.0 - factor);
                     this._setWeight(i + 1, factor);
 
-                    // Only sync phase if both clips are moving (prevent Idle syncing)
-                    // If p1 is Idle (threshold 0), we don't want to sync Walk's phase to it.
+                    // Zero out others
+                    this._zeroOthers(i, i + 1);
+
+                    // Sync phase
                     if (p1.threshold > 0.001) {
                         this._syncPhase(i, i + 1);
                     }
+                    found = true;
                     break;
                 }
+            }
+            if (!found) {
+                // Fallback (shouldn't happen)
+                this._setWeight(0, 1.0);
             }
         }
     }
 
+    /**
+     * Set weight for a specific index, scaled by master fadeWeight
+     */
     _setWeight(index, weight) {
         const clipName = this.points[index].clip;
-        const action = this.controller.actions.get(clipName);
-        if (action) {
-            action.setEffectiveWeight(weight);
+
+        // Multiply by the tree's master fade weight
+        const finalWeight = weight * this.fadeWeight;
+
+        this.computedWeights.set(clipName, finalWeight);
+    }
+
+    /**
+     * Set weight to 0 for all indices except the excluded ones
+     */
+    _zeroOthers(excludeIndex1, excludeIndex2 = -1) {
+        for (let i = 0; i < this.points.length; i++) {
+            if (i !== excludeIndex1 && i !== excludeIndex2) {
+                this._setWeight(i, 0.0);
+            }
         }
     }
 
     /**
-     * Simple phase matching: Sync the time of the less weighted clip to the more weighted one
-     * so feet hit the ground at the same relative time.
-     * Assumes clips are loopable and have similar cycle structures (e.g. Walk & Run both start on left foot).
+     * Simple phase matching to prevent foot sliding transitions
      */
     _syncPhase(indexA, indexB) {
         const nameA = this.points[indexA].clip;
@@ -104,41 +171,50 @@ export class BlendTree1D {
 
         if (!actionA || !actionB) return;
 
-        // Get effective weights
+        // Sync the one with less weight to the one with more weight
         const weightA = actionA.getEffectiveWeight();
         const weightB = actionB.getEffectiveWeight();
 
-        // Sync the one with less weight to the one with more weight
         if (weightA > weightB) {
-            // A is dominant
             const ratio = actionA.time / actionA.getClip().duration;
             actionB.time = ratio * actionB.getClip().duration;
         } else {
-            // B is dominant
             const ratio = actionB.time / actionB.getClip().duration;
             actionA.time = ratio * actionA.getClip().duration;
         }
     }
 
-    activate() {
-        // Ensure all participating actions are playing (paused or weight 0, but 'enabled')
-        this.points.forEach(p => {
-            const action = this.controller.actions.get(p.clip);
-            if (action) {
-                action.reset();
-                action.play();
-                action.setEffectiveWeight(0);
-            }
-        });
+    /**
+     * Activate this blend tree with fade-in
+     * @param {number} fadeTime - Time to fade in
+     */
+    activate(fadeTime = 0.2) {
+        this.targetWeight = 1.0;
+        this.fadeSpeed = 1.0 / Math.max(0.01, fadeTime);
+        this._isActive = true;
+
+        // If starting from 0, ensure actions are playing
+        if (this.fadeWeight <= 0.001) {
+            this.points.forEach(p => {
+                const action = this.controller.actions.get(p.clip);
+                if (action) {
+                    if (!action.isRunning()) {
+                        action.reset();
+                        action.play();
+                    }
+                    // Weight will be applied by aggregator
+                }
+            });
+        }
     }
 
-    deactivate() {
-        // Stop all
-        this.points.forEach(p => {
-            const action = this.controller.actions.get(p.clip);
-            if (action) {
-                action.stop();
-            }
-        });
+    /**
+     * Deactivate this blend tree with fade-out
+     * @param {number} fadeTime - Time to fade out
+     */
+    deactivate(fadeTime = 0.2) {
+        this.targetWeight = 0.0;
+        this.fadeSpeed = 1.0 / Math.max(0.01, fadeTime);
+        this._isActive = false;
     }
 }

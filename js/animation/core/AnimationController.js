@@ -137,10 +137,11 @@ export class AnimationController {
     }
 
     /**
-     * Activate a Blend Tree
+     * Activate a Blend Tree with crossfade
      * @param {string} name 
+     * @param {number} fadeTime - Time to crossfade in seconds
      */
-    playBlendTree(name) {
+    playBlendTree(name, fadeTime = 0.2) {
         const tree = this.blendTrees.get(name);
         if (!tree) return;
 
@@ -148,27 +149,71 @@ export class AnimationController {
 
         // Stop current single action if any
         if (this.currentAction) {
-            this.currentAction.fadeOut(0.2);
+            this.currentAction.fadeOut(fadeTime);
             this.currentAction = null;
         }
 
-        // Deactivate old tree
+        // Crossfade from old tree to new tree
         if (this.activeBlendTree) {
-            this.activeBlendTree.deactivate();
+            this.activeBlendTree.deactivate(fadeTime);
         }
 
         this.activeBlendTree = tree;
-        this.activeBlendTree.activate();
+        this.activeBlendTree.activate(fadeTime);
     }
 
     /**
      * Update a parameter on the active blend tree
      * @param {number} value 
      */
+    /**
+     * Update a parameter on the active blend tree
+     * @param {number} value 
+     */
     setBlendParameter(value) {
         if (this.activeBlendTree) {
-            this.activeBlendTree.update(value);
+            this.activeBlendTree.setParameter(value);
         }
+    }
+
+    /**
+     * Set the target weight for a specific blend tree manually
+     * @param {string} name 
+     * @param {number} weight 
+     * @param {number} fadeTime 
+     */
+    setTreeTargetWeight(name, weight, fadeTime = 0.2) {
+        const tree = this.blendTrees.get(name);
+        if (tree) {
+            tree.targetWeight = weight;
+            // Always update fade speed to match requested time
+            tree.fadeSpeed = 1.0 / Math.max(0.01, fadeTime);
+
+            // Activate if weight > 0 and not active
+            if (weight > 0 && !tree._isActive) {
+                tree.activate(fadeTime);
+            }
+        }
+    }
+
+    /**
+     * Set parameter for a specific tree
+     * @param {string} name 
+     * @param {number} value 
+     */
+    setTreeParameter(name, value) {
+        const tree = this.blendTrees.get(name);
+        if (tree) {
+            tree.setParameter(value);
+        }
+    }
+
+    /**
+     * Get a blend tree by name
+     * @param {string} name 
+     */
+    getTree(name) {
+        return this.blendTrees.get(name);
     }
 
     getClipNames() {
@@ -256,6 +301,30 @@ export class AnimationController {
         if (this.fsm) {
             this.fsm.update(delta);
         }
+
+        // Update blend trees (handle fading) & Accumulate weights
+        const weightAccumulator = new Map();
+
+        this.blendTrees.forEach(tree => {
+            if (tree.tick) {
+                tree.tick(delta);
+            }
+            // Collect weights
+            if (tree.computedWeights) {
+                tree.computedWeights.forEach((weight, clipName) => {
+                    const current = weightAccumulator.get(clipName) || 0;
+                    weightAccumulator.set(clipName, current + weight);
+                });
+            }
+        });
+
+        // Apply accumulated weights
+        weightAccumulator.forEach((weight, clipName) => {
+            const action = this.actions.get(clipName);
+            if (action) {
+                action.setEffectiveWeight(weight);
+            }
+        });
 
         // Update procedural layers AFTER mixer to override bone transforms
         this.proceduralLayers.forEach(layer => {

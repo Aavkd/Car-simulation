@@ -3,6 +3,55 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { AnimationController } from '../animation/core/AnimationController.js';
 
 /**
+ * Animation Set Configurations
+ * Easily switch between different animation sets for the player
+ */
+const ANIMATION_SETS = {
+    basic: {
+        path: 'assets/animations/library/basic/',
+        clips: ['Idle', 'Walk', 'Sprint', 'Right Strafe Walking', 'Right Strafe Sprint'],
+        blendTree: [
+            { threshold: 0.0, clip: 'Idle' },
+            { threshold: 9.0, clip: 'Walk' },
+            { threshold: 20.0, clip: 'Sprint' }
+        ],
+        strafeBlendTree: [
+            { threshold: 0.0, clip: 'Idle' },
+            { threshold: 9.0, clip: 'Right Strafe Walking' },
+            { threshold: 20.0, clip: 'Right Strafe Sprint' }
+        ]
+    },
+    knight: {
+        path: 'assets/animations/library/Knight_anims/',
+        clips: [
+            // Core locomotion
+            'idle',
+            'walking',
+            'running',
+            // Jump
+            'jump',
+            // Strafe walking (slow)
+            'left strafe walking',
+            'right strafe walking',
+            // Strafe (fast)
+            'left strafe',
+            'right strafe',
+            // Turning
+            'left turn',
+            'right turn',
+            'left turn 90',
+            'right turn 90'
+        ],
+        blendTree: [
+            { threshold: 0.0, clip: 'idle' },
+            { threshold: 9.0, clip: 'walking' },
+            { threshold: 20.0, clip: 'running' }
+        ]
+    }
+};
+
+
+/**
  * Player Controller - First-person on-foot movement
  * Allows player to walk around the world when not in the car
  */
@@ -62,6 +111,10 @@ export class PlayerController {
         this.mesh = null;
         this.meshLoaded = false;
         this.meshVisible = false;
+
+        // Animation set (can be 'basic' or 'knight')
+        this.animationSet = 'basic'; // Default to knight animations
+        this.scene = null; // Store scene reference for reloading
     }
 
     /**
@@ -183,9 +236,18 @@ export class PlayerController {
             moveDir.normalize();
         }
 
+        // ==================== STRAFE DETECTION (for rotation & animation) ====================
+        // Detect if player is strafing (any lateral movement triggers strafe mode)
+        const isStrafing = Math.abs(this.moveRight) > 0.1 && this.moveForward > -0.1; // Only forward/lateral, let backward be adventure mode?
+        // Actually, let's allow strafing even if backing up slightly, but main backward is adventure.
+        // Simple: if moving sideways significantly, we strafe.
+
         // ==================== ROTATION ====================
-        // If moving, rotate body to face movement direction
-        if (moveDir.lengthSq() > 0.1) {
+        if (isStrafing) {
+            // When strafing, keep body facing the view direction
+            this.rotation.yaw = this.viewRotation.yaw;
+        } else if (moveDir.lengthSq() > 0.1) {
+            // Normal movement: rotate body to face movement direction
             // Calculate target yaw based on movement vector
             // Yaw = atan2(-x, -z) based on our forward definition
             const targetYaw = Math.atan2(-moveDir.x, -moveDir.z);
@@ -263,8 +325,72 @@ export class PlayerController {
         if (this.animator) {
             // Speed (horizontal only)
             const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
-            this.animator.setInput('speed', speed);
+
+            // Check if we're using knight animations (which have jump)
+            const hasAdvancedAnims = this.animationSet === 'knight';
+
+            // ===== STRAFE & LOCOMOTION BLENDING =====
+            const strafeDirection = this.moveRight > 0 ? 1 : -1;
+
+            // Calculate Blend Factor based on angle
+            // 0 = Forward, 1 = Sideways
+            // Angle range: 0 (Forward) to PI/2 (Sideways)
+            const angle = Math.atan2(Math.abs(this.moveRight), Math.max(0, this.moveForward));
+            const blendFactor = THREE.MathUtils.clamp(angle / (Math.PI / 2), 0, 1);
+
+            if (!this.isGrounded && hasAdvancedAnims) {
+                // ===== JUMPING / IN AIR =====
+                this.animator.play('jump');
+            } else if (this.animator.blendTrees.has('Strafe')) {
+                // Directional Blending
+                // Always update parameters for both trees
+                this.animator.setTreeParameter('Locomotion', speed);
+                this.animator.setTreeParameter('Strafe', speed);
+
+                // Determine tree weights
+                let strafeWeight = 0;
+                let locomotionWeight = 0;
+
+                if (isStrafing) {
+                    // Blending mode
+                    strafeWeight = blendFactor;
+                    locomotionWeight = 1.0 - blendFactor;
+                } else {
+                    // Adventure mode (pure locomotion)
+                    locomotionWeight = 1.0;
+                    strafeWeight = 0.0;
+                }
+
+                // Apply weights
+                this.animator.setTreeTargetWeight('Locomotion', locomotionWeight);
+                this.animator.setTreeTargetWeight('Strafe', strafeWeight);
+
+                // Mirror Logic (Sticky Scale with Delayed Flip)
+                const strafeTree = this.animator.getTree('Strafe');
+                const currentStrafeWeight = strafeTree ? strafeTree.fadeWeight : 0;
+
+                if (this.mesh) {
+                    // Logic: 
+                    // If strafing Left, only flip when Strafe animation is dominant (> 0.5 weight)
+                    if (this.moveRight < -0.1) {
+                        if (currentStrafeWeight > 0.5) {
+                            this.mesh.scale.x = -0.03;
+                        }
+                    } else if (this.moveRight > 0.1) {
+                        // Right strafe -> Normal scale immediately
+                        this.mesh.scale.x = 0.03;
+                    }
+                    // else keep current scale (Sticky)
+                }
+
+            } else {
+                // Fallback for basic set without strafe tree
+                this.animator.setInput('speed', speed);
+                this.animator.playBlendTree('Locomotion');
+            }
+
             this.animator.setInput('isGrounded', this.isGrounded);
+            this.animator.setInput('strafeDirection', strafeDirection);
             this.animator.update(dt);
         }
     }
@@ -355,6 +481,8 @@ export class PlayerController {
      * @returns {Promise} - Resolves when model is loaded
      */
     async loadModel(scene) {
+        this.scene = scene; // Store reference for reloading
+
         return new Promise((resolve, reject) => {
             const loader = new FBXLoader();
             const manager = new THREE.LoadingManager();
@@ -362,6 +490,16 @@ export class PlayerController {
 
             const animations = [];
             let characterMesh = null;
+
+            // Get animation set configuration
+            const animSet = ANIMATION_SETS[this.animationSet];
+            if (!animSet) {
+                console.error(`[Player] Unknown animation set: ${this.animationSet}`);
+                reject(new Error(`Unknown animation set: ${this.animationSet}`));
+                return;
+            }
+
+            console.log(`[Player] Loading animation set: ${this.animationSet}`);
 
             // Load Character Mesh
             fbxLoader.load('assets/models/Knight.fbx', (fbx) => {
@@ -376,8 +514,8 @@ export class PlayerController {
                 });
             });
 
-            // Load Animations
-            const animFiles = ['Idle', 'Walk', 'Sprint'];
+            // Load Animations from configured set
+            const animFiles = animSet.clips;
             const loadedClips = [];
 
             let loadedCount = 0;
@@ -389,10 +527,17 @@ export class PlayerController {
             };
 
             animFiles.forEach(name => {
-                fbxLoader.load(`assets/animations/library/basic/${name}.fbx`, (anim) => {
+                fbxLoader.load(`${animSet.path}${name}.fbx`, (anim) => {
                     if (anim.animations && anim.animations.length > 0) {
-                        const clip = anim.animations[0];
+                        let clip = anim.animations[0];
                         clip.name = name; // Rename clip to file name
+
+                        // Strip root motion (position tracks) from knight animations
+                        // This prevents the animation from physically moving the character
+                        if (this.animationSet === 'knight') {
+                            clip = this._stripRootMotion(clip);
+                        }
+
                         loadedClips.push(clip);
                         console.log(`[Player] Loaded animation: ${name}`);
                     } else {
@@ -417,12 +562,14 @@ export class PlayerController {
                     // Initialize Animator
                     this.animator = new AnimationController(this.mesh, loadedClips);
 
-                    // Setup Locomotion BlendTree
-                    this.animator.addBlendTree('Locomotion', [
-                        { threshold: 0.0, clip: 'Idle' },
-                        { threshold: 9.0, clip: 'Walk' },
-                        { threshold: 20.0, clip: 'Sprint' }
-                    ]);
+                    // Setup Locomotion BlendTree from config
+                    this.animator.addBlendTree('Locomotion', animSet.blendTree);
+
+                    // Setup Strafe BlendTree if available
+                    if (animSet.strafeBlendTree) {
+                        this.animator.addBlendTree('Strafe', animSet.strafeBlendTree);
+                        console.log('[Player] Strafe blend tree registered');
+                    }
 
                     // Default to Locomotion
                     this.animator.playBlendTree('Locomotion');
@@ -432,11 +579,83 @@ export class PlayerController {
                     this.meshLoaded = true;
 
                     scene.add(this.mesh);
-                    console.log('[Player] Knight model and animations initialized');
+                    console.log(`[Player] Knight model and ${this.animationSet} animations initialized`);
                 }
                 resolve();
             };
         });
+    }
+
+    /**
+     * Strip root motion (position tracks) from an animation clip
+     * This prevents the animation from physically moving the character
+     * @param {THREE.AnimationClip} clip - The animation clip to process
+     * @returns {THREE.AnimationClip} - The clip with root motion removed
+     */
+    _stripRootMotion(clip) {
+        // Filter out position tracks for the root bone (usually named 'mixamo' or 'Hips' or root-level)
+        // Keep rotation and scale tracks
+        const filteredTracks = clip.tracks.filter(track => {
+            const trackName = track.name.toLowerCase();
+
+            // Remove position tracks for root-level bones
+            // Common root bone names: mixamorig:Hips, Hips, Root, Armature
+            const isPositionTrack = trackName.includes('.position');
+            const isRootBone = trackName.includes('hips') ||
+                trackName.includes('root') ||
+                trackName.includes('armature') ||
+                trackName.startsWith('mixamorig');
+
+            // Only remove position tracks on root bones
+            if (isPositionTrack && isRootBone) {
+                console.log(`[Player] Stripping root motion track: ${track.name}`);
+                return false;
+            }
+
+            return true;
+        });
+
+        // Create a new clip with the filtered tracks
+        return new THREE.AnimationClip(clip.name, clip.duration, filteredTracks);
+    }
+
+    /**
+     * Switch to a different animation set
+     * @param {string} setName - Name of the animation set ('basic' or 'knight')
+     */
+    async setAnimationSet(setName) {
+        if (!ANIMATION_SETS[setName]) {
+            console.error(`[Player] Unknown animation set: ${setName}`);
+            return;
+        }
+
+        if (setName === this.animationSet) {
+            console.log(`[Player] Already using animation set: ${setName}`);
+            return;
+        }
+
+        console.log(`[Player] Switching animation set from ${this.animationSet} to ${setName}`);
+        this.animationSet = setName;
+
+        // If mesh is already loaded, reload with new animations
+        if (this.scene && this.meshLoaded) {
+            // Remove old mesh
+            if (this.mesh) {
+                this.scene.remove(this.mesh);
+                this.mesh = null;
+            }
+
+            this.meshLoaded = false;
+            this.animator = null;
+
+            // Reload with new animation set
+            await this.loadModel(this.scene);
+
+            // Restore visibility
+            if (this.meshVisible) {
+                this.setMeshVisible(true);
+            }
+        }
     }
 
     /**
