@@ -28,6 +28,9 @@ import { FootIK } from './ik/FootIK.js';
 // Phase 5: Event Components
 import { EventManager } from './events/EventManager.js';
 
+// Phase 6: Animation Import Components
+import { ImportDialog } from './ui/ImportDialog.js';
+
 export class AnimatorEditorController {
     constructor(game) {
         this.game = game;
@@ -91,6 +94,9 @@ export class AnimatorEditorController {
         // Phase 5.3: Layer Preview
         this.visualizedLayer = null;
 
+        // ==================== Phase 6: Animation Import ====================
+        this.importDialog = new ImportDialog(this.uiManager, this);
+
 
         // Track bone transform state for undo
         this._transformStartQuaternion = null;
@@ -149,13 +155,17 @@ export class AnimatorEditorController {
         this.container.appendChild(timelineEl);
         this.timelinePanel.hide(); // Hidden by default until Pose Mode
 
+        // Phase 6: Build Import Dialog
+        const importDialogEl = this.importDialog.build();
+        document.body.appendChild(importDialogEl); // Append to body for modal overlay
+
         // Get content container reference for backwards compatibility
         this.contentContainer = this.inspectorPanel.contentContainer;
 
         // Initialize transform controls
         this._createTransformControls();
 
-        console.log('AnimatorEditorController: Phase 1 + Phase 2 + Phase 3 initialization complete');
+        console.log('AnimatorEditorController: Phase 1-6 initialization complete');
     }
 
     _createTransformControls() {

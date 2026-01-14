@@ -326,11 +326,11 @@ graph TD
 
 ---
 
-### Phase 7: Retargeting & Import/Export
-**Timeline**: Animation portability
+### Phase 7: Animation Ecosystem & Library
+**Timeline**: Scalability & Reusability
 
-#### 7.1 Humanoid Avatar Definition
-- [ ] **[NEW] `js/editor/animator/retarget/HumanoidAvatar.js`**
+#### 7.1 Humanoid Avatar Definition ✅ COMPLETED
+- [x] **[NEW] `js/editor/animator/import/HumanoidAvatar.js`**
   - Standard bone mapping (Unity-compatible naming)
   - Auto-detection of common rigs (Mixamo, UE Mannequin)
   - Manual bone assignment UI
@@ -347,21 +347,38 @@ graph TD
 }
 ```
 
-#### 7.2 Animation Retargeting
-- [ ] **[NEW] `js/editor/animator/retarget/Retargeter.js`**
+#### 7.2 Animation Retargeting ✅ COMPLETED
+- [x] **[NEW] `js/editor/animator/import/Retargeter.js`**
   - Source → Target skeleton mapping
   - Bone length compensation
   - Rotation offset handling
   - Preview retargeted motion before applying
   - [Design Document](./animation_import_design.md)
 
-#### 7.3 Import Enhancements
+#### 7.3 Animation Library (New)
+- [ ] **[NEW] `js/services/LibraryService.js`**
+  - Scanning `assets/animations/library/` for FBX/GLB files
+  - Indexing and caching animation metadata
+  - "Live Preview" on selected character (click-to-play)
+  
+- [ ] **Library UI Panel**
+  - Searchable list of available animations
+  - Categorization by folder
+  - "Apply to Character" action
+
+#### 7.4 Advanced Visualization (New)
+- [ ] **WebGL Import Preview**
+  - Dedicated `THREE.WebGLRenderer` inside Import Dialog
+  - Split-screen: Source animation vs Target retargeting
+  - Scrubbing and playback controls for source file
+
+#### 7.5 Import Enhancements
 - [ ] **Support additional formats**
   - BVH (Motion Capture)
   - FBX animations (via three.js FBXLoader)
   - Mixamo direct download integration
 
-#### 7.4 Export Enhancements
+#### 7.6 Export Enhancements
 - [ ] **Professional export options**
   - GLB/GLTF with embedded animation
   - Separate `.anim.json` files

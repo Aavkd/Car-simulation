@@ -256,6 +256,12 @@ export class Toolbar {
         group.className = 'animator-toolbar-group';
         group.style.cssText = 'display: flex; gap: 4px;';
 
+        // Import Animation Button
+        const importBtn = this._createToolButton('📥', 'Import Animation (I)',
+            () => this._showImportDialog());
+        importBtn.id = 'btn-import';
+        group.appendChild(importBtn);
+
         // Phase 2: Toggle Graph View
         this.graphToggleBtn = this._createToolButton('📊', 'Toggle State Machine Graph (G)',
             () => this._toggleGraphView());
@@ -525,6 +531,18 @@ export class Toolbar {
         if (this.editor.hotkeyManager) {
             const hotkeys = this.editor.hotkeyManager.getHotkeyList();
             console.table(hotkeys);
+        }
+    }
+
+    /**
+     * Show the import dialog
+     * @private
+     */
+    _showImportDialog() {
+        if (this.editor.importDialog) {
+            this.editor.importDialog.show();
+        } else {
+            console.warn('[Toolbar] Import dialog not available');
         }
     }
 

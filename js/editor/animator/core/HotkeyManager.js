@@ -68,6 +68,9 @@ export class HotkeyManager {
         this.register('t', () => this._toggleTimelineView(), 'Toggle Timeline');
         this.register('i', () => this._setLoopInPoint(), 'Set Loop In Point');
         this.register('o', () => this._setLoopOutPoint(), 'Set Loop Out Point');
+
+        // Phase 6: Animation Import
+        this.register('i', () => this._showImportDialog(), 'Import Animation', { shift: true });
     }
 
     /**
@@ -322,6 +325,13 @@ export class HotkeyManager {
             const time = this.editor.timelinePanel.playheadTime;
             this.editor.timelinePanel.timelineData.loopOut = time;
             console.log(`[Hotkey] Loop Out Point set to ${time.toFixed(2)}s`);
+        }
+    }
+
+    _showImportDialog() {
+        // Phase 6: Show animation import dialog
+        if (this.editor.importDialog) {
+            this.editor.importDialog.show();
         }
     }
 
