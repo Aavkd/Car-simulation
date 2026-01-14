@@ -354,17 +354,30 @@ export class LibraryService {
      */
     _captureEntityPose(entity) {
         const pose = new Map();
-        const mesh = entity.mesh || entity;
+        const skeleton = this._getEntitySkeleton(entity);
 
-        mesh.traverse((child) => {
-            if (child.isBone) {
-                pose.set(child.name, {
-                    position: child.position.clone(),
-                    quaternion: child.quaternion.clone(),
-                    scale: child.scale.clone()
+        if (skeleton) {
+            // Robust capture from skeleton bones
+            for (const bone of skeleton.bones) {
+                pose.set(bone.name, {
+                    position: bone.position.clone(),
+                    quaternion: bone.quaternion.clone(),
+                    scale: bone.scale.clone()
                 });
             }
-        });
+        } else {
+            // Fallback for non-skinned hierarchies
+            const mesh = entity.mesh || entity;
+            mesh.traverse((child) => {
+                if (child.isBone) {
+                    pose.set(child.name, {
+                        position: child.position.clone(),
+                        quaternion: child.quaternion.clone(),
+                        scale: child.scale.clone()
+                    });
+                }
+            });
+        }
 
         return pose;
     }
@@ -376,16 +389,44 @@ export class LibraryService {
      * @param {Map<string, Object>} pose 
      */
     _restoreEntityPose(entity, pose) {
+        const skeleton = this._getEntitySkeleton(entity);
         const mesh = entity.mesh || entity;
 
-        mesh.traverse((child) => {
-            if (child.isBone && pose.has(child.name)) {
-                const saved = pose.get(child.name);
-                child.position.copy(saved.position);
-                child.quaternion.copy(saved.quaternion);
-                child.scale.copy(saved.scale);
+        if (skeleton) {
+            for (const bone of skeleton.bones) {
+                if (pose.has(bone.name)) {
+                    const saved = pose.get(bone.name);
+                    bone.position.copy(saved.position);
+                    bone.quaternion.copy(saved.quaternion);
+                    bone.scale.copy(saved.scale);
+                }
             }
-        });
+        } else {
+            // Fallback traversal
+            mesh.traverse((child) => {
+                if (child.isBone && pose.has(child.name)) {
+                    const saved = pose.get(child.name);
+                    child.position.copy(saved.position);
+                    child.quaternion.copy(saved.quaternion);
+                    child.scale.copy(saved.scale);
+                }
+            });
+        }
+
+        // Force update world matrices after restoring bone transforms
+        mesh.updateMatrixWorld(true);
+
+        // Update skeleton bone matrices for proper GPU skinning
+        if (skeleton) {
+            skeleton.update();
+        } else {
+            // Fallback if we couldn't find skeleton via helper but it might be there
+            mesh.traverse((child) => {
+                if (child.isSkinnedMesh && child.skeleton) {
+                    child.skeleton.update();
+                }
+            });
+        }
     }
 
     /**
