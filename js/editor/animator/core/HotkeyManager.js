@@ -71,6 +71,9 @@ export class HotkeyManager {
 
         // Phase 6: Animation Import
         this.register('i', () => this._showImportDialog(), 'Import Animation', { shift: true });
+
+        // Phase 7: Animation Library
+        this.register('l', () => this._toggleLibraryPanel(), 'Toggle Animation Library');
     }
 
     /**
@@ -332,6 +335,13 @@ export class HotkeyManager {
         // Phase 6: Show animation import dialog
         if (this.editor.importDialog) {
             this.editor.importDialog.show();
+        }
+    }
+
+    _toggleLibraryPanel() {
+        // Phase 7: Toggle animation library panel
+        if (this.editor.toggleLibraryPanel) {
+            this.editor.toggleLibraryPanel();
         }
     }
 

@@ -67,36 +67,36 @@ This roadmap tracks the implementation of the Animation Import system, enabling 
     - [ ] Verify Blender GLTF export.
     - [ ] Verify pure BVH motion capture data.
 
-### Phase 5: Animation Library & Live Preview 📚
-**Goal**: Create a reusable library of animations that can be previewed on any character.
+### Phase 5: Animation Library & Live Preview (Completed) 📚
+**Goal**: Create a browsable library of animations that can be previewed on any character.
 
-- [ ] **5.1 Library Backend**
-    - [ ] Create `assets/animations/library/` directory.
-    - [ ] Implement server-side scanning (Node.js script or API endpoint) to list available FBX files.
-    - [ ] Implement on-demand loading of library files (don't load all at once).
+- [x] **5.1 Library Backend**
+    - [x] Create JSON manifest system for library assets
+    - [x] Implement background scanning of library folders
+    - [x] Build `LibraryService` for caching and retrieval
 
-- [ ] **5.2 Library Panel (`LibraryPanel.js`)**
-    - [ ] Create a new searchable panel in the Animator Editor.
-    - [ ] Display thumbnails or list of available animations.
-    - [ ] Categories/Folders support.
+- [x] **5.2 Library Panel**
+    - [x] Create dockable, searchable library UI
+    - [x] Implement category tree view
+    - [x] Add drag-and-drop from library to character
 
-- [ ] **5.3 Real-time Preview**
-    - [ ] "One-click" preview: Clicking an animation in the library instantly plays it on the selected character.
-    - [ ] Auto-retargeting on preview (using cached T-pose calibration).
-    - [ ] "Apply to Character" button to permanently import the clip.
+- [x] **5.3 Real-time Preview**
+    - [x] Implement one-click preview on selected character
+    - [x] Auto-retargeting for preview playback
+    - [x] "Apply" functionality to import permanently
 
-### Phase 6: Advanced Visualization 🕶️
-**Goal**: High-fidelity previews and visual aids.
+## Phase 6: Advanced Visualization (Completed) 🕶️
+**Goal**: Enhance the import dialog with rich 3D visualization.
 
-- [ ] **6.1 WebGL Dialog Preview**
-    - [x] ~~**Placeholder**: Simple structure ready.~~ replaced by:
-    - [ ] **Implementation**: Render a dedicated `THREE.WebGLRenderer` inside the Import Dialog.
-    - [ ] **Interactive**: Orbit controls to rotate/zoom the preview.
-    - [ ] **Split Screen**: Show Source Skeleton (Left) and Target Mesh (Right) side-by-side.
+- [x] **6.1 WebGL Dialog Preview**
+    - [x] Embed `THREE.WebGLRenderer` inside the import DOM overlay
+    - [x] Implement isolated scene for previewing source assets
+    - [x] Add playback controls (Play/Pause, Scrub)
 
-- [ ] **6.2 Bone Mapping Visuals**
-    - [ ] Draw lines connecting Source bones to Target bones in the 3D view.
-    - [ ] Color-code confidence levels of auto-mapping.
+- [x] **6.2 Bone Mapping Visuals**
+    - [x] Render source skeleton (red) and target skeleton (green)
+    - [x] Draw connecting lines for mapped bones
+    - [x] Color-code confidence levels (Green=High, Yellow=Medium, Red=Low)
 
 ---
 

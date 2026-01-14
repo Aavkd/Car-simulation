@@ -355,19 +355,19 @@ graph TD
   - Preview retargeted motion before applying
   - [Design Document](./animation_import_design.md)
 
-#### 7.3 Animation Library (New)
-- [ ] **[NEW] `js/services/LibraryService.js`**
+#### 7.3 Animation Library (New) ✅ COMPLETED
+- [x] **[NEW] `js/services/LibraryService.js`**
   - Scanning `assets/animations/library/` for FBX/GLB files
   - Indexing and caching animation metadata
   - "Live Preview" on selected character (click-to-play)
   
-- [ ] **Library UI Panel**
+- [x] **Library UI Panel**
   - Searchable list of available animations
   - Categorization by folder
   - "Apply to Character" action
 
-#### 7.4 Advanced Visualization (New)
-- [ ] **WebGL Import Preview**
+#### 7.4 Advanced Visualization (New) ✅ COMPLETED
+- [x] **WebGL Import Preview**
   - Dedicated `THREE.WebGLRenderer` inside Import Dialog
   - Split-screen: Source animation vs Target retargeting
   - Scrubbing and playback controls for source file

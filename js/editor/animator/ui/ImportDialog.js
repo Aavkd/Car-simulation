@@ -1,9 +1,9 @@
 /**
  * ImportDialog.js
- * Animation Import System - Phase 3.1
+ * Animation Import System - Phase 3.1 + Phase 6 (Advanced Visualization)
  * 
  * Modal dialog for the animation import workflow.
- * Provides file selection, bone mapping UI, and import options.
+ * Provides file selection, bone mapping UI, import options, and 3D preview.
  */
 
 import { AnimationImporter } from '../import/AnimationImporter.js';
@@ -11,6 +11,7 @@ import { HumanoidMapper, HUMANOID_BONES } from '../import/HumanoidAvatar.js';
 import { SkeletonViewer } from '../import/SkeletonViewer.js';
 import { Retargeter } from '../import/Retargeter.js';
 import { ClipConverter } from '../import/ClipConverter.js';
+import { DialogSceneManager } from '../viz/DialogSceneManager.js';
 
 /**
  * ImportDialog - Modal UI for animation import
@@ -46,6 +47,12 @@ export class ImportDialog {
 
         // Skeleton viewer for preview
         this.skeletonViewer = null;
+
+        // 3D Scene manager for preview (Phase 6)
+        this.sceneManager = null;
+        this.previewContainer = null;
+        this.previewActive = false;
+        this.splitViewEnabled = false;
 
         // Bind methods
         this._onFileSelect = this._onFileSelect.bind(this);
@@ -169,6 +176,11 @@ export class ImportDialog {
         this.dropZone = this._buildDropZone();
         content.appendChild(this.dropZone);
 
+        // 3D Preview section (Phase 6)
+        this.previewSection = this._buildPreviewSection();
+        this.previewSection.style.display = 'none';
+        content.appendChild(this.previewSection);
+
         // Import details (shown after file load)
         this.detailsPanel = this._buildDetailsPanel();
         this.detailsPanel.style.display = 'none';
@@ -226,6 +238,149 @@ export class ImportDialog {
 
         return zone;
     }
+
+    /**
+     * Build 3D preview section (Phase 6)
+     * @private
+     */
+    _buildPreviewSection() {
+        const section = document.createElement('div');
+        section.className = 'import-preview-section';
+        section.style.cssText = `
+            background: var(--ae-surface-alt, #2a2a2a);
+            border-radius: 8px;
+            overflow: hidden;
+        `;
+
+        // Preview header with controls
+        const header = document.createElement('div');
+        header.style.cssText = `
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--ae-border, #333);
+        `;
+
+        const title = document.createElement('span');
+        title.textContent = '🎬 3D Preview';
+        title.style.cssText = `
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--ae-text, #fff);
+        `;
+
+        // Controls container
+        const controls = document.createElement('div');
+        controls.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        `;
+
+        // Playback controls
+        this.playBtn = document.createElement('button');
+        this.playBtn.innerHTML = '▶';
+        this.playBtn.title = 'Play/Pause';
+        this.playBtn.style.cssText = `
+            background: var(--ae-accent, #4a9eff);
+            border: none;
+            color: white;
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        `;
+        this.playBtn.onclick = () => this._togglePlayback();
+
+        // Stop button
+        const stopBtn = document.createElement('button');
+        stopBtn.innerHTML = '⏹';
+        stopBtn.title = 'Stop';
+        stopBtn.style.cssText = `
+            background: var(--ae-surface, #252525);
+            border: 1px solid var(--ae-border, #444);
+            color: var(--ae-text, #fff);
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        `;
+        stopBtn.onclick = () => this._stopPreviewPlayback();
+
+        // Time display
+        this.timeDisplay = document.createElement('span');
+        this.timeDisplay.textContent = '0.00 / 0.00';
+        this.timeDisplay.style.cssText = `
+            font-size: 11px;
+            color: var(--ae-text-muted, #666);
+            min-width: 80px;
+            text-align: center;
+        `;
+
+        // Split view toggle
+        this.splitViewBtn = document.createElement('button');
+        this.splitViewBtn.innerHTML = '◧';
+        this.splitViewBtn.title = 'Toggle Split View';
+        this.splitViewBtn.style.cssText = `
+            background: var(--ae-surface, #252525);
+            border: 1px solid var(--ae-border, #444);
+            color: var(--ae-text, #fff);
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        `;
+        this.splitViewBtn.onclick = () => this._toggleSplitView();
+
+        controls.appendChild(this.playBtn);
+        controls.appendChild(stopBtn);
+        controls.appendChild(this.timeDisplay);
+        controls.appendChild(this.splitViewBtn);
+
+        header.appendChild(title);
+        header.appendChild(controls);
+        section.appendChild(header);
+
+        // 3D Canvas container
+        this.previewContainer = document.createElement('div');
+        this.previewContainer.className = 'preview-canvas-container';
+        this.previewContainer.style.cssText = `
+            width: 100%;
+            height: 280px;
+            background: #1a1a2e;
+            position: relative;
+        `;
+        section.appendChild(this.previewContainer);
+
+        // Timeline scrubber
+        const scrubberContainer = document.createElement('div');
+        scrubberContainer.style.cssText = `
+            padding: 10px 12px;
+            border-top: 1px solid var(--ae-border, #333);
+        `;
+
+        this.scrubber = document.createElement('input');
+        this.scrubber.type = 'range';
+        this.scrubber.min = '0';
+        this.scrubber.max = '100';
+        this.scrubber.value = '0';
+        this.scrubber.style.cssText = `
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+        `;
+        this.scrubber.oninput = () => this._onScrub();
+
+        scrubberContainer.appendChild(this.scrubber);
+        section.appendChild(scrubberContainer);
+
+        return section;
+    }
+
 
     /**
      * Build details panel (shown after file load)
@@ -509,6 +664,9 @@ export class ImportDialog {
         this.targetMapping = {};
         this.selectedClips.clear();
 
+        // Cleanup 3D preview
+        this._cleanupPreview();
+
         // Restore drop zone to initial state
         this.dropZone.innerHTML = `
             <div style="font-size: 48px; margin-bottom: 16px;">📁</div>
@@ -534,8 +692,9 @@ export class ImportDialog {
             this.dropZone.onclick = () => fileInput.click();
         }
 
-        // Show drop zone, hide details
+        // Show drop zone, hide details and preview
         this.dropZone.style.display = 'block';
+        this.previewSection.style.display = 'none';
         this.detailsPanel.style.display = 'none';
 
         // Disable import button
@@ -599,8 +758,9 @@ export class ImportDialog {
      * @private
      */
     _showImportDetails() {
-        // Hide drop zone, show details
+        // Hide drop zone, show details and preview
         this.dropZone.style.display = 'none';
+        this.previewSection.style.display = 'block';
         this.detailsPanel.style.display = 'flex';
 
         // Populate source info
@@ -629,6 +789,9 @@ export class ImportDialog {
 
         // Auto-map target skeleton if entity is selected
         this._autoMapTargetSkeleton();
+
+        // Initialize 3D preview (Phase 6)
+        this._initializePreview();
 
         // Update import button state
         this._updateImportButtonState();
@@ -1075,6 +1238,165 @@ export class ImportDialog {
         if (this.skeletonViewer) {
             this.skeletonViewer.dispose();
         }
+
+        // Clean up 3D scene manager
+        if (this.sceneManager) {
+            this.sceneManager.dispose();
+            this.sceneManager = null;
+        }
+    }
+
+    // =========================================
+    // Phase 6: 3D Preview Methods
+    // =========================================
+
+    /**
+     * Initialize the 3D preview scene
+     * @private
+     */
+    _initializePreview() {
+        // Create scene manager if not exists
+        if (!this.sceneManager) {
+            this.sceneManager = new DialogSceneManager();
+            this.sceneManager.initialize(this.previewContainer);
+
+            // Set up time update callback
+            this.sceneManager.onTimeUpdate = (time, duration) => {
+                this._updateTimeDisplay(time, duration);
+            };
+        }
+
+        // Show source skeleton/mesh in preview
+        if (this.importResult.scene) {
+            this.sceneManager.showSourceSkeleton(
+                this.importResult.skeleton,
+                this.importResult.scene
+            );
+        } else if (this.importResult.skeleton) {
+            this.sceneManager.showSourceSkeleton(this.importResult.skeleton);
+        }
+
+        // Show target mesh if entity is selected
+        if (this.editor.selectedEntity) {
+            const mesh = this.editor.selectedEntity.mesh || this.editor.selectedEntity;
+            this.sceneManager.showTargetMesh(mesh);
+        }
+
+        // Update scrubber max value based on first clip
+        if (this.importResult.clips && this.importResult.clips.length > 0) {
+            const clip = this.importResult.clips[0];
+            this.scrubber.max = Math.floor(clip.duration * 100);
+            this._updateTimeDisplay(0, clip.duration);
+        }
+
+        // Start rendering
+        this.sceneManager.start();
+        this.previewActive = true;
+    }
+
+    /**
+     * Toggle playback
+     * @private
+     */
+    _togglePlayback() {
+        if (!this.sceneManager || !this.importResult.clips || this.importResult.clips.length === 0) {
+            return;
+        }
+
+        if (this.sceneManager.isPlaying) {
+            this.sceneManager.setPaused(true);
+            this.playBtn.innerHTML = '▶';
+        } else {
+            // Get selected clip or first clip
+            const selectedClips = Array.from(this.selectedClips);
+            const clipIndex = selectedClips.length > 0
+                ? this.importResult.clipInfo.findIndex(c => this.selectedClips.has(c.name))
+                : 0;
+            const clip = this.importResult.clips[Math.max(0, clipIndex)];
+
+            if (!this.sceneManager.currentAction) {
+                this.sceneManager.startPlayback(clip);
+            } else {
+                this.sceneManager.setPaused(false);
+            }
+            this.playBtn.innerHTML = '⏸';
+        }
+    }
+
+    /**
+     * Stop playback
+     * @private
+     */
+    _stopPreviewPlayback() {
+        if (!this.sceneManager) return;
+
+        this.sceneManager.stopPlayback();
+        this.playBtn.innerHTML = '▶';
+        this.scrubber.value = '0';
+        this._updateTimeDisplay(0, this.sceneManager.getDuration() || 0);
+    }
+
+    /**
+     * Handle scrubber input
+     * @private
+     */
+    _onScrub() {
+        if (!this.sceneManager || !this.importResult.clips || this.importResult.clips.length === 0) {
+            return;
+        }
+
+        // Get clip
+        const clip = this.importResult.clips[0];
+        const time = (parseFloat(this.scrubber.value) / 100) * clip.duration;
+
+        // Update pose
+        this.sceneManager.updatePose(clip, time);
+        this._updateTimeDisplay(time, clip.duration);
+    }
+
+    /**
+     * Toggle split view
+     * @private
+     */
+    _toggleSplitView() {
+        if (!this.sceneManager) return;
+
+        this.splitViewEnabled = !this.splitViewEnabled;
+        this.sceneManager.setSplitView(this.splitViewEnabled);
+
+        // Update button style
+        this.splitViewBtn.style.background = this.splitViewEnabled
+            ? 'var(--ae-accent, #4a9eff)'
+            : 'var(--ae-surface, #252525)';
+        this.splitViewBtn.style.color = this.splitViewEnabled ? 'white' : 'var(--ae-text, #fff)';
+    }
+
+    /**
+     * Update time display
+     * @private
+     */
+    _updateTimeDisplay(current, total) {
+        if (!this.timeDisplay) return;
+
+        const formatTime = (t) => t.toFixed(2);
+        this.timeDisplay.textContent = `${formatTime(current)} / ${formatTime(total)}`;
+
+        // Update scrubber position if playing
+        if (total > 0 && this.sceneManager && this.sceneManager.isPlaying) {
+            this.scrubber.value = Math.floor((current / total) * 100);
+        }
+    }
+
+    /**
+     * Stop preview when dialog is hidden
+     * @private
+     */
+    _cleanupPreview() {
+        if (this.sceneManager) {
+            this.sceneManager.stopPlayback();
+            this.sceneManager.stop();
+        }
+        this.previewActive = false;
     }
 }
 

@@ -1,0 +1,58 @@
+{
+    "version": "1.0",
+    "lastUpdated": "2026-01-14",
+    "categories": [
+        {
+            "name": "basic",
+            "displayName": "Basic Motions",
+            "animations": [
+                {
+                    "name": "Idle",
+                    "file": "Idle.fbx",
+                    "duration": 2.0,
+                    "tags": [
+                        "idle",
+                        "standing",
+                        "rest"
+                    ]
+                },
+                {
+                    "name": "Walk",
+                    "file": "Walk.fbx",
+                    "duration": 1.0,
+                    "tags": [
+                        "locomotion",
+                        "walk",
+                        "movement"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "combat",
+            "displayName": "Combat",
+            "animations": [
+                {
+                    "name": "Attack01",
+                    "file": "Attack01.fbx",
+                    "duration": 0.8,
+                    "tags": [
+                        "attack",
+                        "melee",
+                        "combat"
+                    ]
+                },
+                {
+                    "name": "Block",
+                    "file": "Block.fbx",
+                    "duration": 0.5,
+                    "tags": [
+                        "defense",
+                        "block",
+                        "combat"
+                    ]
+                }
+            ]
+        }
+    ]
+}

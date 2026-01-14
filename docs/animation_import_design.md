@@ -1,6 +1,6 @@
 # 🎬 Feature Design: Animation Import & Retargeting
 
-**Status**: Draft
+**Status**: Implemented
 **Owner**: Editor Team
 **Related Phase**: Phase 7 (Retargeting & Import/Export)
 

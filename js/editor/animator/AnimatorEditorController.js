@@ -31,6 +31,10 @@ import { EventManager } from './events/EventManager.js';
 // Phase 6: Animation Import Components
 import { ImportDialog } from './ui/ImportDialog.js';
 
+// Phase 7: Animation Library Components
+import { LibraryService } from './library/LibraryService.js';
+import { LibraryPanel } from './library/LibraryPanel.js';
+
 export class AnimatorEditorController {
     constructor(game) {
         this.game = game;
@@ -97,6 +101,11 @@ export class AnimatorEditorController {
         // ==================== Phase 6: Animation Import ====================
         this.importDialog = new ImportDialog(this.uiManager, this);
 
+        // ==================== Phase 7: Animation Library ====================
+        this.libraryService = new LibraryService(this);
+        this.libraryPanel = new LibraryPanel(this.uiManager, this.libraryService, this);
+        this.isLibraryVisible = false;
+
 
         // Track bone transform state for undo
         this._transformStartQuaternion = null;
@@ -159,13 +168,18 @@ export class AnimatorEditorController {
         const importDialogEl = this.importDialog.build();
         document.body.appendChild(importDialogEl); // Append to body for modal overlay
 
+        // Phase 7: Build Library Panel
+        const libraryEl = this.libraryPanel.build();
+        this.container.appendChild(libraryEl);
+        this.libraryPanel.hide(); // Hidden by default, shown with 'L' key
+
         // Get content container reference for backwards compatibility
         this.contentContainer = this.inspectorPanel.contentContainer;
 
         // Initialize transform controls
         this._createTransformControls();
 
-        console.log('AnimatorEditorController: Phase 1-6 initialization complete');
+        console.log('AnimatorEditorController: Phase 1-7 initialization complete');
     }
 
     _createTransformControls() {
@@ -391,6 +405,10 @@ export class AnimatorEditorController {
         // This is mostly handled by addEvent/sortEvents calls.
 
 
+        // Phase 7: Update Library Service (for animation preview playback)
+        if (this.libraryService) {
+            this.libraryService.update(dt);
+        }
 
         // Update Camera Orbit
         if (this.selectedEntity && this.game.cameraController) {
@@ -1353,5 +1371,57 @@ export class AnimatorEditorController {
                 }
             }
         });
+    }
+
+    // ==================== Phase 7: Library Methods ====================
+
+    /**
+     * Toggle the Animation Library panel visibility
+     */
+    toggleLibraryPanel() {
+        this.isLibraryVisible = !this.isLibraryVisible;
+
+        if (this.isLibraryVisible) {
+            this.libraryPanel.show();
+            if (this.statusBar) {
+                this.statusBar.setMessage('Animation Library opened');
+            }
+        } else {
+            this.libraryPanel.hide();
+            // Stop any previews when hiding
+            if (this.libraryService) {
+                this.libraryService.stopPreview();
+            }
+            if (this.statusBar) {
+                this.statusBar.setMessage('Animation Library closed');
+            }
+        }
+    }
+
+    /**
+     * Show the Animation Library panel
+     */
+    showLibraryPanel() {
+        if (!this.isLibraryVisible) {
+            this.toggleLibraryPanel();
+        }
+    }
+
+    /**
+     * Hide the Animation Library panel
+     */
+    hideLibraryPanel() {
+        if (this.isLibraryVisible) {
+            this.toggleLibraryPanel();
+        }
+    }
+
+    /**
+     * Show the Import Animation dialog
+     */
+    showImportDialog() {
+        if (this.importDialog) {
+            this.importDialog.show();
+        }
     }
 }
