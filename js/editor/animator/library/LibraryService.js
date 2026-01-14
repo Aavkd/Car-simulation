@@ -267,14 +267,11 @@ export class LibraryService {
             // Add clips to entity's animator
             const animator = entity.animator;
 
-            if (animator && animator.controller) {
+            if (animator) {
                 for (const clip of convertedClips) {
                     // Add action to mixer
                     const threeClip = converter.toThreeClip(clip);
-                    animator.controller.actions.set(clip.name, {
-                        clip: threeClip,
-                        action: animator.mixer.clipAction(threeClip)
-                    });
+                    animator.actions.set(clip.name, animator.mixer.clipAction(threeClip));
                 }
             }
 

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { AnimationController } from '../animation/core/AnimationController.js';
 
 /**
  * Player Controller - First-person on-foot movement
@@ -327,36 +328,85 @@ export class PlayerController {
     async loadModel(scene) {
         return new Promise((resolve, reject) => {
             const loader = new FBXLoader();
-            loader.load(
-                'assets/models/Knight.fbx',
-                (fbx) => {
-                    this.mesh = fbx;
+            const manager = new THREE.LoadingManager();
+            const fbxLoader = new FBXLoader(manager);
 
-                    // Scale the model appropriately (scaled world, so ~4x larger)
-                    this.mesh.scale.setScalar(0.04); // Adjust as needed for Knight model
+            const animations = [];
+            let characterMesh = null;
 
-                    // Enable shadows
-                    this.mesh.traverse((child) => {
-                        if (child.isMesh) {
-                            child.castShadow = true;
-                            child.receiveShadow = true;
-                        }
-                    });
+            // Load Character Mesh
+            fbxLoader.load('assets/models/Knight.fbx', (fbx) => {
+                characterMesh = fbx;
+                characterMesh.scale.setScalar(0.04);
 
-                    // Initially hidden (first-person mode by default)
+                characterMesh.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+            });
+
+            // Load Animations
+            const animFiles = ['Idle', 'Walk', 'Sprint'];
+            const loadedClips = [];
+
+            let loadedCount = 0;
+            const checkLoad = () => {
+                loadedCount++;
+                if (loadedCount === animFiles.length + 1) { // +1 for mesh
+                    this._finalizeLoad(scene, characterMesh, loadedClips, resolve);
+                }
+            };
+
+            animFiles.forEach(name => {
+                fbxLoader.load(`assets/animations/library/basic/${name}.fbx`, (anim) => {
+                    if (anim.animations && anim.animations.length > 0) {
+                        const clip = anim.animations[0];
+                        clip.name = name; // Rename clip to file name
+                        loadedClips.push(clip);
+                        console.log(`[Player] Loaded animation: ${name}`);
+                    } else {
+                        console.error(`[Player] Failed to load animation or no clips found in: ${name}`);
+                    }
+                    // We don't wait for all to initialize, but let's see. 
+                    // The original code relied on manager.onLoad.
+                });
+            });
+
+            manager.onLoad = () => {
+                console.log(`[Player] All assets loaded. Clips: ${loadedClips.map(c => c.name).join(', ')}`);
+                if (characterMesh) {
+                    this.mesh = characterMesh;
+
+                    // Setup Entity Reference for Editor
+                    this.mesh.userData.entity = this;
+                    this.mesh.userData.type = 'player';
+                    this.mesh.userData.name = 'Player';
+
+
+                    // Initialize Animator
+                    this.animator = new AnimationController(this.mesh, loadedClips);
+
+                    // Setup Locomotion BlendTree
+                    this.animator.addBlendTree('Locomotion', [
+                        { threshold: 0.0, clip: 'Idle' },
+                        { threshold: 20.0, clip: 'Walk' },
+                        { threshold: 40.0, clip: 'Sprint' }
+                    ]);
+
+                    // Default to Locomotion
+                    this.animator.playBlendTree('Locomotion');
+
+                    // Initially hidden
                     this.mesh.visible = false;
                     this.meshLoaded = true;
 
                     scene.add(this.mesh);
-                    console.log('[Player] Knight model loaded');
-                    resolve();
-                },
-                undefined,
-                (error) => {
-                    console.error('[Player] Failed to load Knight model:', error);
-                    resolve(); // Resolve anyway to not block loading
+                    console.log('[Player] Knight model and animations initialized');
                 }
-            );
+                resolve();
+            };
         });
     }
 
