@@ -26,7 +26,12 @@ export class PlayerController {
         // ==================== STATE ====================
         this.position = new THREE.Vector3(0, 0, 0);
         this.velocity = new THREE.Vector3(0, 0, 0);
-        this.rotation = { yaw: 0, pitch: 0 };  // First-person look angles
+        
+        // Rotation split: 
+        // rotation = body orientation (visual mesh)
+        // viewRotation = camera/look orientation (input)
+        this.rotation = { yaw: 0, pitch: 0 }; 
+        this.viewRotation = { yaw: 0, pitch: 0 };
 
         // Grounded state
         this.isGrounded = false;
@@ -41,6 +46,9 @@ export class PlayerController {
         this.mouseSensitivity = 0.002;
         this.minPitch = -Math.PI / 2 + 0.1;  // Prevent looking straight down
         this.maxPitch = Math.PI / 2 - 0.1;   // Prevent looking straight up
+        
+        // Turn smoothing
+        this.turnSpeed = 10.0; // Radians per second
 
         // Interaction
         this.raycaster = new THREE.Raycaster();
@@ -65,6 +73,8 @@ export class PlayerController {
         this.position.copy(pos);
         this.rotation.yaw = yaw;
         this.rotation.pitch = 0;
+        this.viewRotation.yaw = yaw;
+        this.viewRotation.pitch = 0;
         this.velocity.set(0, 0, 0);
     }
 
@@ -74,15 +84,19 @@ export class PlayerController {
      * @param {number} deltaY - Mouse Y movement
      */
     handleMouseLook(deltaX, deltaY) {
-        this.rotation.yaw -= deltaX * this.mouseSensitivity;
-        this.rotation.pitch -= deltaY * this.mouseSensitivity;
+        // Update View Rotation (Camera)
+        this.viewRotation.yaw -= deltaX * this.mouseSensitivity;
+        this.viewRotation.pitch -= deltaY * this.mouseSensitivity;
 
         // Clamp pitch to prevent flipping
-        this.rotation.pitch = THREE.MathUtils.clamp(
-            this.rotation.pitch,
+        this.viewRotation.pitch = THREE.MathUtils.clamp(
+            this.viewRotation.pitch,
             this.minPitch,
             this.maxPitch
         );
+        
+        // Keep body pitch zero
+        this.rotation.pitch = 0;
     }
 
     /**
@@ -93,12 +107,12 @@ export class PlayerController {
      */
     handleAnalogLook(x, y, deltaTime) {
         const sensitivity = 2.0;
-        this.rotation.yaw -= x * sensitivity * deltaTime;
-        this.rotation.pitch -= y * sensitivity * deltaTime;
+        this.viewRotation.yaw -= x * sensitivity * deltaTime;
+        this.viewRotation.pitch -= y * sensitivity * deltaTime;
 
         // Clamp pitch
-        this.rotation.pitch = THREE.MathUtils.clamp(
-            this.rotation.pitch,
+        this.viewRotation.pitch = THREE.MathUtils.clamp(
+            this.viewRotation.pitch,
             this.minPitch,
             this.maxPitch
         );
@@ -145,22 +159,20 @@ export class PlayerController {
             this.isSprinting = true;
         }
 
-        // Interaction is handled via event callback in main.js calling player.interact()
-
         // ==================== MOVEMENT ====================
-        // Calculate movement direction based on yaw
-        // Forward is the direction the player is facing
+        // Calculate movement direction relative to VIEW (Camera)
         const moveDir = new THREE.Vector3();
+        
+        // Use viewRotation for direction calculation
         const forward = new THREE.Vector3(
-            -Math.sin(this.rotation.yaw),
+            -Math.sin(this.viewRotation.yaw),
             0,
-            -Math.cos(this.rotation.yaw)
+            -Math.cos(this.viewRotation.yaw)
         );
-        // Right vector - SWAPPED sign to fix inversion
         const right = new THREE.Vector3(
-            Math.cos(this.rotation.yaw),
+            Math.cos(this.viewRotation.yaw),
             0,
-            -Math.sin(this.rotation.yaw)
+            -Math.sin(this.viewRotation.yaw)
         );
 
         moveDir.addScaledVector(forward, this.moveForward);
@@ -169,6 +181,22 @@ export class PlayerController {
         // Normalize if moving diagonally
         if (moveDir.lengthSq() > 1) {
             moveDir.normalize();
+        }
+
+        // ==================== ROTATION ====================
+        // If moving, rotate body to face movement direction
+        if (moveDir.lengthSq() > 0.1) {
+            // Calculate target yaw based on movement vector
+            // Yaw = atan2(-x, -z) based on our forward definition
+            const targetYaw = Math.atan2(-moveDir.x, -moveDir.z);
+            
+            // Shortest angle difference
+            let diff = targetYaw - this.rotation.yaw;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            
+            // Smooth rotation
+            this.rotation.yaw += diff * this.turnSpeed * dt;
         }
 
         // Determine target speed
@@ -254,10 +282,11 @@ export class PlayerController {
      * @returns {THREE.Vector3}
      */
     getLookDirection() {
+        // Use viewRotation so first-person camera follows mouse look
         return new THREE.Vector3(
-            -Math.sin(this.rotation.yaw) * Math.cos(this.rotation.pitch),
-            Math.sin(this.rotation.pitch),
-            -Math.cos(this.rotation.yaw) * Math.cos(this.rotation.pitch)
+            -Math.sin(this.viewRotation.yaw) * Math.cos(this.viewRotation.pitch),
+            Math.sin(this.viewRotation.pitch),
+            -Math.cos(this.viewRotation.yaw) * Math.cos(this.viewRotation.pitch)
         );
     }
 

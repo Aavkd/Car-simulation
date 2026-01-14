@@ -553,17 +553,38 @@ export class CameraController {
 
         const config = this.playerThirdPersonConfig;
         const playerPos = player.position.clone();
-        const playerYaw = player.rotation.yaw;
+        
+        // Use View Rotation (Camera Control) instead of Body Rotation
+        const yaw = player.viewRotation.yaw;
+        const pitch = player.viewRotation.pitch;
 
-        // Calculate camera offset behind the player
-        // Player faces -sin(yaw), -cos(yaw) direction, so camera should be opposite
-        const offsetX = Math.sin(playerYaw) * config.distance;
-        const offsetZ = Math.cos(playerYaw) * config.distance;
+        // Calculate camera offset based on view direction
+        // We want the camera to be behind the look direction
+        // Look Vector (Spherical to Cartesian):
+        // x = -sin(yaw) * cos(pitch)
+        // y = sin(pitch)
+        // z = -cos(yaw) * cos(pitch)
+        
+        // Camera Position = Target - LookVector * Distance
+        // However, we want to control height orbit manually or via pitch?
+        // Standard orbit: 
+        // Horizontal distance = distance * cos(pitch)
+        // Vertical distance = distance * sin(pitch)
+        // BUT, usually "Pitch" in FPS controls Look Up/Down.
+        // If I look UP (Positive Pitch), the camera should move DOWN (to look up).
+        // So offset Y should be negative of vertical component?
+        
+        const hDist = config.distance * Math.cos(pitch);
+        const vDist = config.distance * Math.sin(pitch);
+
+        const offsetX = Math.sin(yaw) * hDist;
+        const offsetZ = Math.cos(yaw) * hDist;
+        const offsetY = -vDist; 
 
         // Desired camera position: behind and above player
         const desiredPosition = new THREE.Vector3(
             playerPos.x + offsetX,
-            playerPos.y + config.height,
+            playerPos.y + config.height + offsetY,
             playerPos.z + offsetZ
         );
 
@@ -575,8 +596,8 @@ export class CameraController {
         );
 
         // Smooth camera position
-        this.currentPosition.lerp(desiredPosition, 8 * deltaTime);
-        this.currentLookAt.lerp(lookAtPoint, 12 * deltaTime);
+        this.currentPosition.lerp(desiredPosition, 10 * deltaTime);
+        this.currentLookAt.lerp(lookAtPoint, 15 * deltaTime);
 
         // Apply position
         this.camera.position.copy(this.currentPosition);
