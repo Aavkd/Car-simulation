@@ -3,6 +3,7 @@
 ## 1. Executive Summary
 **Goal**: Enhance the Animator Editor to allow setting and editing animations for game entities (NPCs, Player).
 **Validation Case**: Implement this system for the Player character, enabling full third-person animation (Idle, Walk, Sprint) editable within the tooling.
+**Status**: **Completed** (Jan 14, 2026)
 
 ## 2. Current Architecture & Gap Analysis
 
@@ -23,58 +24,58 @@
 
 ## 3. Implementation Phases
 
-### Phase 1: Core Plumbing & Fixes
+### Phase 1: Core Plumbing & Fixes (Completed)
 *Objective: Ensure the underlying tools can actually apply animations to an entity.*
 
 1.  **Fix `LibraryService.js`**:
-    -   Correct the `applyAnimation()` method to properly register new clips to the `AnimationController`.
-    -   Replace `animator.controller.actions` with `animator.actions`.
+    -   Corrected the `applyAnimation()` method to properly register new clips to the `AnimationController`.
+    -   Replaced `animator.controller.actions` with `animator.actions`.
+    -   **Fix**: Correctly stored `THREE.AnimationAction` objects directly in the map instead of wrapper objects.
 2.  **Verify `AnimationController.js`**:
-    -   Ensure dynamic addition of clips (`actions.set(...)`) is supported at runtime.
+    -   Confirmed dynamic addition of clips (`actions.set(...)`) is supported at runtime.
 
-### Phase 2: Player Entity Upgrade
+### Phase 2: Player Entity Upgrade (Completed)
 *Objective: Make the Player a valid "Entity" that accepts animations.*
 
 1.  **Refactor `loadModel` in `PlayerController.js`**:
-    -   Load `Idle.fbx`, `Walk.fbx`, and `Sprint.fbx` alongside the base mesh.
-    -   Initialize `this.animator = new AnimationController(mesh, animations)`.
+    -   Loaded `Idle.fbx`, `Walk.fbx`, and `Sprint.fbx` alongside the base mesh using `THREE.LoadingManager`.
+    -   Initialized `this.animator = new AnimationController(mesh, animations)`.
+    -   **Feature**: Added fallback logic to auto-generate a `Walk` animation from `Sprint` (at 50% speed) if `Walk.fbx` fails to load.
 2.  **Entity Tagging**:
     -   Set `this.mesh.userData.entity = this` to enable Raycast selection in the Editor.
     -   Set `this.mesh.userData.type = 'player'`.
 3.  **State Machine Integration**:
-    -   Connect Player input (velocity, isGrounded) to `animator.setInput()`.
-    -   Define a basic 'Locomotion' BlendTree (Idle <-> Walk <-> Sprint).
+    -   Connected Player input (velocity, isGrounded) to `animator.setInput()`.
+    -   Defined 'Locomotion' BlendTree:
+        -   Idle: 0.0
+        -   Walk: 20.0
+        -   Sprint: 40.0
 
-### Phase 3: Editor Integration
+### Phase 3: Editor Integration (Completed)
 *Objective: Allow the user to use the Editor UI to manipulate the Player.*
 
 1.  **Selection Support**:
-    -   Verify `AnimatorEditorController` successfully selects the Player mesh.
+    -   Verified `AnimatorEditorController` successfully selects the Player mesh via `userData.entity`.
 2.  **Clip Management**:
-    -   Ensure the Editor's "Clips" list refreshes when `LibraryService` applies a new animation.
+    -   Ensured the Editor's "Clips" list refreshes when `LibraryService` applies a new animation.
 3.  **Persistence Strategy (Design Only)**:
-    -   *Note*: Currently, we will load default animations via code.
     -   *Future*: Editor should export an `entity_config.json` defining which animations load for which entity.
 
-### Phase 4: Validation & Third-Person Testing
+### Phase 4: Validation & Third-Person Testing (Completed)
 *Objective: Verify the end-to-end user story.*
 
 1.  **Test 3rd Person View**:
-    -   Ensure the camera correctly follows the now-animated mesh.
+    -   Verified camera correctly follows the now-animated mesh.
 2.  **Editor Workflow Test**:
-    -   Open Game -> Toggle Editor.
-    -   Select Player.
-    -   Open Animation Library (Key `L`).
-    -   Preview a *new* animation (e.g., a Dance or Attack).
-    -   Apply it.
-    -   Verify the Player can play this new animation.
+    -   Verified selecting Player in Editor works.
+    -   Verified applying new animations works.
 
 ## 4. Technical Specifications
 
 ### File Targets
--   `js/editor/animator/library/LibraryService.js` (Fix)
--   `js/core/player.js` (Feature)
--   `js/animation/core/AnimationController.js` (Verify)
+-   `js/editor/animator/library/LibraryService.js` (Fix Applied)
+-   `js/core/player.js` (Feature Implemented)
+-   `js/animation/core/AnimationController.js` (Verified)
 
 ### Data Flow
 1.  **Input**: User presses WASD.
@@ -83,7 +84,7 @@
 4.  **Editor Override**: User selects Player -> `animator.play('Dance')` -> Overrides Locomotion.
 
 ## 5. Verification Checklist
--   [ ] Player mesh is visible and animating in 3rd person.
--   [ ] Player transitions smoothly from Idle to Run.
--   [ ] Clicking Player in Editor selects it.
--   [ ] "Apply" in Library Service adds the clip to the Player's dropdown list.
+-   [x] Player mesh is visible and animating in 3rd person.
+-   [x] Player transitions smoothly from Idle to Run.
+-   [x] Clicking Player in Editor selects it.
+-   [x] "Apply" in Library Service adds the clip to the Player's dropdown list.
