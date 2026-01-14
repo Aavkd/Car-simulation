@@ -9,8 +9,9 @@ import { AnimationController } from '../animation/core/AnimationController.js';
 const ANIMATION_SETS = {
     basic: {
         path: 'assets/animations/library/basic/',
-        clips: ['Idle', 'Walk', 'Sprint', 'Right Strafe Walking', 'Right Strafe Sprint'],
+        clips: ['Idle', 'Walk', 'Sprint', 'Right Strafe Walking', 'Right Strafe Sprint', 'Walking Backward'],
         blendTree: [
+            { threshold: -5.4, clip: 'Walking Backward' },
             { threshold: 0.0, clip: 'Idle' },
             { threshold: 9.0, clip: 'Walk' },
             { threshold: 20.0, clip: 'Sprint' }
@@ -69,7 +70,8 @@ export class PlayerController {
             height: 5.5,            // Player eye height (1.7m * 4 = 6.8m)
             radius: 1.2,            // Collision radius (scaled)
             acceleration: 60.0,     // How quickly player accelerates (scaled)
-            friction: 30.0          // Ground friction / deceleration (scaled)
+            friction: 30.0,          // Ground friction / deceleration (scaled)
+            backwardSpeedMulti: 0.6 // Reduce speed when walking backward
         };
 
         // ==================== STATE ====================
@@ -238,13 +240,13 @@ export class PlayerController {
 
         // ==================== STRAFE DETECTION (for rotation & animation) ====================
         // Detect if player is strafing (any lateral movement triggers strafe mode)
-        const isStrafing = Math.abs(this.moveRight) > 0.1 && this.moveForward > -0.1; // Only forward/lateral, let backward be adventure mode?
-        // Actually, let's allow strafing even if backing up slightly, but main backward is adventure.
-        // Simple: if moving sideways significantly, we strafe.
+        // Also treat backward movement as a "combat/strafe" state to prevent turning around
+        const isBackward = this.moveForward < -0.1;
+        const isStrafing = Math.abs(this.moveRight) > 0.1 || isBackward;
 
         // ==================== ROTATION ====================
         if (isStrafing) {
-            // When strafing, keep body facing the view direction
+            // When strafing or moving backward, keep body facing the view direction
             this.rotation.yaw = this.viewRotation.yaw;
         } else if (moveDir.lengthSq() > 0.1) {
             // Normal movement: rotate body to face movement direction
@@ -262,7 +264,11 @@ export class PlayerController {
         }
 
         // Determine target speed
-        const targetSpeed = this.isSprinting ? this.specs.sprintSpeed : this.specs.walkSpeed;
+        let targetSpeed = this.isSprinting ? this.specs.sprintSpeed : this.specs.walkSpeed;
+
+        if (isBackward) {
+            targetSpeed *= this.specs.backwardSpeedMulti;
+        }
 
         // Apply acceleration towards target velocity
         const targetVelocity = moveDir.clone().multiplyScalar(targetSpeed);
@@ -323,8 +329,34 @@ export class PlayerController {
 
         // ==================== ANIMATION DRIVER ====================
         if (this.animator) {
+            // Calculate signed speed relative to player forward direction
+            // Forward = Positive, Backward = Negative
+            // We use the dot product of velocity and model forward vector
+
+            // Model forward (based on rotation.yaw)
+            // Note: rotation.yaw is 0 when facing -Z (North), but THREE.js forward is -Z? 
+            // Let's stick to the convention used in movement:
+            // forward = (-sin(yaw), 0, -cos(yaw))
+            const modelForward = new THREE.Vector3(
+                -Math.sin(this.rotation.yaw),
+                0,
+                -Math.cos(this.rotation.yaw)
+            );
+
+            // Normalize velocity to get direction, but we need the magnitude for speed
+            // Signed Speed = Velocity . ModelForward
+            const speedMagnitude = this.velocity.length();
+            let signedSpeed = speedMagnitude;
+
+            // Check if moving backward relative to model orientation
+            const velDir = this.velocity.clone().normalize();
+            const dot = velDir.dot(modelForward);
+            if (dot < -0.1) {
+                signedSpeed = -speedMagnitude;
+            }
+
             // Speed (horizontal only)
-            const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
+            // const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
 
             // Check if we're using knight animations (which have jump)
             const hasAdvancedAnims = this.animationSet === 'knight';
@@ -344,8 +376,10 @@ export class PlayerController {
             } else if (this.animator.blendTrees.has('Strafe')) {
                 // Directional Blending
                 // Always update parameters for both trees
-                this.animator.setTreeParameter('Locomotion', speed);
-                this.animator.setTreeParameter('Strafe', speed);
+                // Use absolute speed for Strafe tree (blend factor handles the rest)
+                // Use SIGNED speed for Locomotion tree (to pick backward/forward)
+                this.animator.setTreeParameter('Locomotion', signedSpeed);
+                this.animator.setTreeParameter('Strafe', Math.abs(signedSpeed));
 
                 // Determine tree weights
                 let strafeWeight = 0;
@@ -383,7 +417,12 @@ export class PlayerController {
 
             } else {
                 // Fallback for basic set without strafe tree
-                this.animator.setInput('speed', speed);
+                this.animator.setTreeParameter('Locomotion', signedSpeed);
+                // this.animator.setInput('speed', speed); // Deprecated if using blend trees manually?
+                // Actually the FSM MoveState might update 'speed' too, so let's keep it consistent if needed, 
+                // but here we are driving blend tree manually.
+
+                // Ensure the tree is active
                 this.animator.playBlendTree('Locomotion');
             }
 
