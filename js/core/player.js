@@ -13,8 +13,8 @@ export class PlayerController {
         // ==================== PLAYER SPECS ====================
         // Note: Car is scaled ~4x, so player is also scaled to match
         this.specs = {
-            walkSpeed: 20.0,        // m/s walking speed (scaled 4x)
-            sprintSpeed: 40.0,      // m/s sprinting speed (scaled 4x)
+            walkSpeed: 9.0,        // m/s walking speed (scaled 4x)
+            sprintSpeed: 20.0,      // m/s sprinting speed (scaled 4x)
             jumpForce: 25.0,        // Jump velocity (scaled)
             gravity: 60.0,          // Gravity strength (scaled)
             height: 5.5,            // Player eye height (1.7m * 4 = 6.8m)
@@ -26,11 +26,11 @@ export class PlayerController {
         // ==================== STATE ====================
         this.position = new THREE.Vector3(0, 0, 0);
         this.velocity = new THREE.Vector3(0, 0, 0);
-        
+
         // Rotation split: 
         // rotation = body orientation (visual mesh)
         // viewRotation = camera/look orientation (input)
-        this.rotation = { yaw: 0, pitch: 0 }; 
+        this.rotation = { yaw: 0, pitch: 0 };
         this.viewRotation = { yaw: 0, pitch: 0 };
 
         // Grounded state
@@ -46,7 +46,7 @@ export class PlayerController {
         this.mouseSensitivity = 0.002;
         this.minPitch = -Math.PI / 2 + 0.1;  // Prevent looking straight down
         this.maxPitch = Math.PI / 2 - 0.1;   // Prevent looking straight up
-        
+
         // Turn smoothing
         this.turnSpeed = 10.0; // Radians per second
 
@@ -94,7 +94,7 @@ export class PlayerController {
             this.minPitch,
             this.maxPitch
         );
-        
+
         // Keep body pitch zero
         this.rotation.pitch = 0;
     }
@@ -162,7 +162,7 @@ export class PlayerController {
         // ==================== MOVEMENT ====================
         // Calculate movement direction relative to VIEW (Camera)
         const moveDir = new THREE.Vector3();
-        
+
         // Use viewRotation for direction calculation
         const forward = new THREE.Vector3(
             -Math.sin(this.viewRotation.yaw),
@@ -189,12 +189,12 @@ export class PlayerController {
             // Calculate target yaw based on movement vector
             // Yaw = atan2(-x, -z) based on our forward definition
             const targetYaw = Math.atan2(-moveDir.x, -moveDir.z);
-            
+
             // Shortest angle difference
             let diff = targetYaw - this.rotation.yaw;
             while (diff > Math.PI) diff -= Math.PI * 2;
             while (diff < -Math.PI) diff += Math.PI * 2;
-            
+
             // Smooth rotation
             this.rotation.yaw += diff * this.turnSpeed * dt;
         }
@@ -366,7 +366,7 @@ export class PlayerController {
             // Load Character Mesh
             fbxLoader.load('assets/models/Knight.fbx', (fbx) => {
                 characterMesh = fbx;
-                characterMesh.scale.setScalar(0.04);
+                characterMesh.scale.setScalar(0.03);
 
                 characterMesh.traverse((child) => {
                     if (child.isMesh) {
@@ -420,8 +420,8 @@ export class PlayerController {
                     // Setup Locomotion BlendTree
                     this.animator.addBlendTree('Locomotion', [
                         { threshold: 0.0, clip: 'Idle' },
-                        { threshold: 20.0, clip: 'Walk' },
-                        { threshold: 40.0, clip: 'Sprint' }
+                        { threshold: 9.0, clip: 'Walk' },
+                        { threshold: 20.0, clip: 'Sprint' }
                     ]);
 
                     // Default to Locomotion

@@ -37,6 +37,16 @@ export class BlendTree1D {
                 // The AnimationController generally expects us to manage playback if we are "playing" this tree.
                 if (!action.isRunning()) action.play();
 
+                // Speed Scaling: Adjust playback speed to match actual movement speed
+                // This prevents foot sliding (skating)
+                if (p.threshold > 0.001) {
+                    // Scale playback speed. If we are moving at 50% of walk speed, play walk at 50% speed.
+                    action.timeScale = value / p.threshold;
+                } else {
+                    // Keep Idle (0 threshold) at normal speed
+                    action.timeScale = 1.0;
+                }
+
                 // We will calculate correct weight below. 
                 // However, we start at 0 to ensure non-active clips fade out or stay silent.
                 action.setEffectiveWeight(0);
@@ -62,7 +72,11 @@ export class BlendTree1D {
                     this._setWeight(i, 1.0 - factor);
                     this._setWeight(i + 1, factor);
 
-                    this._syncPhase(i, i + 1);
+                    // Only sync phase if both clips are moving (prevent Idle syncing)
+                    // If p1 is Idle (threshold 0), we don't want to sync Walk's phase to it.
+                    if (p1.threshold > 0.001) {
+                        this._syncPhase(i, i + 1);
+                    }
                     break;
                 }
             }

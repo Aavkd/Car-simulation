@@ -107,9 +107,9 @@ export class CameraController {
 
         // Third-person player config
         this.playerThirdPersonConfig = {
-            distance: 12,       // Distance behind player
-            height: 6,          // Height above player
-            lookAtHeight: 3,    // Look at point above player feet
+            distance: 9,       // Distance behind player
+            height: 0,          // Height above player
+            lookAtHeight: 0,    // Look at point above player feet
             fov: 65
         };
 
@@ -553,7 +553,7 @@ export class CameraController {
 
         const config = this.playerThirdPersonConfig;
         const playerPos = player.position.clone();
-        
+
         // Use View Rotation (Camera Control) instead of Body Rotation
         const yaw = player.viewRotation.yaw;
         const pitch = player.viewRotation.pitch;
@@ -564,7 +564,7 @@ export class CameraController {
         // x = -sin(yaw) * cos(pitch)
         // y = sin(pitch)
         // z = -cos(yaw) * cos(pitch)
-        
+
         // Camera Position = Target - LookVector * Distance
         // However, we want to control height orbit manually or via pitch?
         // Standard orbit: 
@@ -573,13 +573,13 @@ export class CameraController {
         // BUT, usually "Pitch" in FPS controls Look Up/Down.
         // If I look UP (Positive Pitch), the camera should move DOWN (to look up).
         // So offset Y should be negative of vertical component?
-        
+
         const hDist = config.distance * Math.cos(pitch);
         const vDist = config.distance * Math.sin(pitch);
 
         const offsetX = Math.sin(yaw) * hDist;
         const offsetZ = Math.cos(yaw) * hDist;
-        const offsetY = -vDist; 
+        const offsetY = -vDist;
 
         // Desired camera position: behind and above player
         const desiredPosition = new THREE.Vector3(
