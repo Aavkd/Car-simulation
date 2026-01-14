@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
 /**
  * Player Controller - First-person on-foot movement
@@ -47,6 +48,11 @@ export class PlayerController {
 
         // Animation
         this.animator = null;
+
+        // 3D Model (Knight for third-person camera)
+        this.mesh = null;
+        this.meshLoaded = false;
+        this.meshVisible = false;
     }
 
     /**
@@ -310,6 +316,92 @@ export class PlayerController {
         } else {
             // No hit
             // console.log('[Player] Nothing to interact with');
+        }
+    }
+
+    /**
+     * Load the 3D player model (Knight.fbx)
+     * @param {THREE.Scene} scene - The scene to add the model to
+     * @returns {Promise} - Resolves when model is loaded
+     */
+    async loadModel(scene) {
+        return new Promise((resolve, reject) => {
+            const loader = new FBXLoader();
+            loader.load(
+                'assets/models/Knight.fbx',
+                (fbx) => {
+                    this.mesh = fbx;
+
+                    // Scale the model appropriately (scaled world, so ~4x larger)
+                    this.mesh.scale.setScalar(0.04); // Adjust as needed for Knight model
+
+                    // Enable shadows
+                    this.mesh.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+
+                    // Initially hidden (first-person mode by default)
+                    this.mesh.visible = false;
+                    this.meshLoaded = true;
+
+                    scene.add(this.mesh);
+                    console.log('[Player] Knight model loaded');
+                    resolve();
+                },
+                undefined,
+                (error) => {
+                    console.error('[Player] Failed to load Knight model:', error);
+                    resolve(); // Resolve anyway to not block loading
+                }
+            );
+        });
+    }
+
+    /**
+     * Update the 3D mesh position and rotation to match player state
+     */
+    updateMesh() {
+        if (!this.mesh || !this.meshLoaded) return;
+
+        // Position mesh at player feet (player.position is at eye level)
+        this.mesh.position.set(
+            this.position.x,
+            this.position.y - this.specs.height,
+            this.position.z
+        );
+
+        // Rotate mesh to face player's yaw direction
+        // Player's forward direction uses -sin(yaw), -cos(yaw)
+        // Add PI to flip the model to face forward (away from camera)
+        this.mesh.rotation.y = this.rotation.yaw + Math.PI;
+
+        // Apply visibility based on meshVisible flag (in case model loaded after visibility was set)
+        if (this.meshVisible && !this.mesh.visible) {
+            this.mesh.visible = true;
+            this.mesh.traverse((child) => {
+                child.visible = true;
+            });
+            console.log('[Player] Mesh made visible after late load');
+        }
+    }
+
+    /**
+     * Set mesh visibility (show in third-person, hide in first-person)
+     * @param {boolean} visible - Whether the mesh should be visible
+     */
+    setMeshVisible(visible) {
+        this.meshVisible = visible;
+        console.log(`[Player] setMeshVisible(${visible}), mesh exists: ${!!this.mesh}, meshLoaded: ${this.meshLoaded}`);
+        if (this.mesh) {
+            this.mesh.visible = visible;
+            // Also traverse children to ensure visibility propagates
+            this.mesh.traverse((child) => {
+                child.visible = visible;
+            });
+            console.log(`[Player] Mesh visibility set to ${visible}, position:`, this.mesh.position);
         }
     }
 }

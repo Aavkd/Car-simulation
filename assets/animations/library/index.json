@@ -25,6 +25,17 @@
                         "walk",
                         "movement"
                     ]
+                },
+                {
+                    "name": "Sprint",
+                    "file": "Sprint.fbx",
+                    "duration": 0.8,
+                    "tags": [
+                        "locomotion",
+                        "sprint",
+                        "run",
+                        "movement"
+                    ]
                 }
             ]
         },

@@ -101,6 +101,18 @@ export class CameraController {
         // Player mode (on-foot first person)
         this.isPlayerMode = false;
 
+        // Player camera modes (for on-foot)
+        this.playerCameraModes = ['first_person', 'third_person'];
+        this.playerCameraModeIndex = 0;
+
+        // Third-person player config
+        this.playerThirdPersonConfig = {
+            distance: 12,       // Distance behind player
+            height: 6,          // Height above player
+            lookAtHeight: 3,    // Look at point above player feet
+            fov: 65
+        };
+
         this.enabled = true; // Control flag
 
         this._bindMouseEvents();
@@ -221,6 +233,22 @@ export class CameraController {
      */
     setPlayerMode(enabled) {
         this.isPlayerMode = enabled;
+    }
+
+    /**
+     * Get current player camera mode
+     * @returns {string} - 'first_person' or 'third_person'
+     */
+    get playerCameraMode() {
+        return this.playerCameraModes[this.playerCameraModeIndex];
+    }
+
+    /**
+     * Cycle to next player camera mode (for on-foot)
+     */
+    nextPlayerCameraMode() {
+        this.playerCameraModeIndex = (this.playerCameraModeIndex + 1) % this.playerCameraModes.length;
+        console.log(`[Camera] Player camera mode: ${this.playerCameraMode}`);
     }
 
     nextMode() {
@@ -509,6 +537,56 @@ export class CameraController {
 
         // Fixed FOV for player mode
         const targetFov = 75;
+        this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, this.fovSmoothing * deltaTime);
+        this.camera.fov = this.currentFov;
+        this.camera.updateProjectionMatrix();
+    }
+
+    /**
+     * Update camera for player (on-foot) third-person view
+     * Camera follows behind the player, looking at them
+     * @param {PlayerController} player - Player controller reference
+     * @param {number} deltaTime - Time since last frame
+     */
+    updatePlayerThirdPersonCamera(player, deltaTime) {
+        if (!player) return;
+
+        const config = this.playerThirdPersonConfig;
+        const playerPos = player.position.clone();
+        const playerYaw = player.rotation.yaw;
+
+        // Calculate camera offset behind the player
+        // Player faces -sin(yaw), -cos(yaw) direction, so camera should be opposite
+        const offsetX = Math.sin(playerYaw) * config.distance;
+        const offsetZ = Math.cos(playerYaw) * config.distance;
+
+        // Desired camera position: behind and above player
+        const desiredPosition = new THREE.Vector3(
+            playerPos.x + offsetX,
+            playerPos.y + config.height,
+            playerPos.z + offsetZ
+        );
+
+        // Look-at point: player position + some height
+        const lookAtPoint = new THREE.Vector3(
+            playerPos.x,
+            playerPos.y + config.lookAtHeight,
+            playerPos.z
+        );
+
+        // Smooth camera position
+        this.currentPosition.lerp(desiredPosition, 8 * deltaTime);
+        this.currentLookAt.lerp(lookAtPoint, 12 * deltaTime);
+
+        // Apply position
+        this.camera.position.copy(this.currentPosition);
+        this.camera.lookAt(this.currentLookAt);
+
+        // Reset up vector
+        this.camera.up.set(0, 1, 0);
+
+        // FOV for third-person
+        const targetFov = config.fov;
         this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, this.fovSmoothing * deltaTime);
         this.camera.fov = this.currentFov;
         this.camera.updateProjectionMatrix();

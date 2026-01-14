@@ -867,6 +867,8 @@ class Game {
         // Initialize Player if needed
         if (!this.player) {
             this.player = new PlayerController(this.terrain);
+            // Load the Knight model for third-person camera
+            this.player.loadModel(this.scene);
         }
 
         // Set Player Position
@@ -1256,6 +1258,8 @@ class Game {
 
         // Initialize player controller (on-foot mode)
         this.player = new PlayerController(this.terrain);
+        // Load the Knight model for third-person camera
+        this.player.loadModel(this.scene);
 
         // Input callbacks
         this.input.onEnterExitVehicle = () => this._toggleVehicleMode();
@@ -1807,7 +1811,15 @@ class Game {
             // Update camera for gameplay
             if (this.cameraController) {
                 if (this.isOnFoot && this.player) {
-                    this.cameraController.updatePlayerCamera(this.player, deltaTime);
+                    // Update player mesh position (for third-person mode)
+                    this.player.updateMesh();
+
+                    // Choose camera update based on player camera mode
+                    if (this.cameraController.playerCameraMode === 'third_person') {
+                        this.cameraController.updatePlayerThirdPersonCamera(this.player, deltaTime);
+                    } else {
+                        this.cameraController.updatePlayerCamera(this.player, deltaTime);
+                    }
                 } else if (!this.isOnFoot) {
                     // Update camera for vehicle
                     const targetMesh = this.activeVehicle === 'car' ? this.carMesh : this.planeMesh;
@@ -2104,6 +2116,16 @@ class Game {
     }
 
     _handleCameraChange() {
+        // If on foot, toggle player camera mode (first-person / third-person)
+        if (this.isOnFoot && this.player) {
+            this.cameraController.nextPlayerCameraMode();
+            // Toggle Knight model visibility based on camera mode
+            const isThirdPerson = this.cameraController.playerCameraMode === 'third_person';
+            this.player.setMeshVisible(isThirdPerson);
+            return;
+        }
+
+        // In vehicle: cycle through vehicle camera modes
         this.cameraController.nextMode();
 
         // Check if in cockpit (first-person) mode
@@ -2247,6 +2269,11 @@ class Game {
                         this.carMesh.visible = !this.cameraController.isCockpitMode;
                     }
 
+                    // Hide player mesh when in vehicle
+                    if (this.player) {
+                        this.player.setMeshVisible(false);
+                    }
+
                 } else if (isPlane) {
                     console.log('Entering Plane');
                     this.isOnFoot = false;
@@ -2259,6 +2286,11 @@ class Game {
                     // Switch to flight cam
                     const flightIndex = this.cameraController.modes.indexOf('flight');
                     if (flightIndex >= 0) this.cameraController.currentModeIndex = flightIndex;
+
+                    // Hide player mesh when in vehicle
+                    if (this.player) {
+                        this.player.setMeshVisible(false);
+                    }
                 }
             } else {
                 console.log('No vehicle nearby');
@@ -2296,6 +2328,11 @@ class Game {
             // Hide cockpit overlay if visible
             if (this.cockpitOverlay) {
                 this.cockpitOverlay.classList.add('hidden');
+            }
+
+            // Show player mesh if in third-person mode
+            if (this.player && this.cameraController.playerCameraMode === 'third_person') {
+                this.player.setMeshVisible(true);
             }
 
             // Don't nullify activeVehicle/car/plane strictly if we want them to stay valid references,
