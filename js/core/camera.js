@@ -19,8 +19,10 @@ export class CameraController {
         this.modeConfigs = {
             chase: {
                 distance: 14,
-                height: 6,
-                lookAtHeight: 1,
+                height: 8,
+                lookAtHeight: 3,
+                horizontalOffset: -2,  // GTA IV style - camera offset
+                lookAtHorizontalOffset: -1.5,  // Look-at point also offset
                 fov: 60
             },
             far: {
@@ -64,9 +66,9 @@ export class CameraController {
         this.currentLookAt = new THREE.Vector3();
         this.currentFov = 60;
 
-        // Smoothing
-        this.positionSmoothing = 5;
-        this.lookAtSmoothing = 10;
+        // Smoothing - Higher values = faster response, less lag
+        this.positionSmoothing = 12;  // Increased from 5 for less lag
+        this.lookAtSmoothing = 15;    // Increased from 10 for tighter tracking
         this.fovSmoothing = 3;
 
         // Speed-based effects
@@ -116,6 +118,17 @@ export class CameraController {
         this.enabled = true; // Control flag
 
         this._bindMouseEvents();
+    }
+
+    /**
+     * Enable/Disable Deep Space mode (3D camera behavior for loops)
+     */
+    setDeepSpaceMode(enabled) {
+        // Enable roll locking for chase mode to follow car orientation on loops
+        this.modeConfigs.chase.rollLock = enabled;
+        // Also enable for far mode if needed
+        this.modeConfigs.far.rollLock = enabled;
+        console.log(`[Camera] Deep Space Mode: ${enabled}`);
     }
 
     _bindMouseEvents() {
@@ -399,25 +412,60 @@ export class CameraController {
             return;
         }
 
-        // ==================== FLIGHT MODE ====================
+        // ==================== FLIGHT MODE / DEEP SPACE (Roll Locked) ====================
         if (config.rollLock) {
-            // Get Plane orientation vectors
+            // Smooth orbit angle interpolation (Mouse Look)
+            this.orbitAngleX = THREE.MathUtils.lerp(this.orbitAngleX, this.targetOrbitX, 10 * deltaTime);
+            this.orbitAngleY = THREE.MathUtils.lerp(this.orbitAngleY, this.targetOrbitY, 10 * deltaTime);
+
+            // Get Plane orientation matrices
             const planeRotation = new THREE.Matrix4().makeRotationFromQuaternion(target.quaternion);
             const planeUp = new THREE.Vector3(0, 1, 0).applyMatrix4(planeRotation);
 
-            // Calculate offset relative to plane orientation
-            // We want to be behind (-Z) and up (+Y) in LOCAL space
-            const offset = new THREE.Vector3(0, config.height, -config.distance);
-            offset.applyMatrix4(planeRotation); // Rotate offset by plane rotation
+            // Calculate Local Orbit Offset
+            // Start "behind" the car in local space: (0, 0, -distance)
+            // Apply Orbit Rotations relative to this local frame
+            // 1. Calculate spherical offset
+            // Standard Chase Orbit:
+            //   OrbitX (Yaw) -> Rotate around Y
+            //   OrbitY (Pitch) -> Rotate around X / Elevation
+
+            const cosX = Math.cos(this.orbitAngleX);
+            const sinX = Math.sin(this.orbitAngleX);
+            const cosY = Math.cos(this.orbitAngleY);
+            const sinY = Math.sin(this.orbitAngleY);
+
+            // Local Offset Vector constructed from orbit angles
+            // We want 0,0 to be directly behind.
+            // Horizontal circle (Yaw): 
+            //   x = r * sin(yaw)
+            //   z = -r * cos(yaw)  (negative z is behind)
+            // Vertical arc (Pitch):
+            //   Scales horizontal radius by cos(pitch)
+            //   y = r * sin(pitch)
+
+            const dist = config.distance;
+            const hRadius = dist * cosY; // Horizontal radius shrinks as we look down/up
+
+            const localX = hRadius * sinX + (config.horizontalOffset || 0); // Add horizontal offset (GTA IV style)
+            const localZ = -hRadius * cosX; // Behind (-Z)
+            const localY = config.height + dist * sinY; // Height offset + pitch height
+
+            const localOffset = new THREE.Vector3(localX, localY, localZ);
+
+            // Apply Car's Rotation to this local offset to get world offset
+            localOffset.applyMatrix4(planeRotation);
 
             // Target Position
-            const desiredPos = targetPos.clone().add(offset);
+            const desiredPos = targetPos.clone().add(localOffset);
 
-            // Smoothly move there
+            // Smoothly move position
             this.currentPosition.lerp(desiredPos, positionSmoothing * deltaTime);
 
-            // Look target (ahead of plane)
-            const lookOffset = new THREE.Vector3(0, config.lookAtHeight, 50).applyMatrix4(planeRotation);
+            // LOOK AT Target
+            // Look at the car center (plus height offset), not "ahead"
+            // This allows orbiting around the car naturally.
+            const lookOffset = new THREE.Vector3(config.lookAtHorizontalOffset || 0, config.lookAtHeight, 0).applyMatrix4(planeRotation);
             const lookTarget = targetPos.clone().add(lookOffset);
             this.currentLookAt.lerp(lookTarget, lookAtSmoothing * deltaTime);
 
@@ -446,54 +494,72 @@ export class CameraController {
         // ==================== STANDARD MODES (Chase, Far, Hood) ====================
 
         // Smooth orbit angle interpolation
-        this.orbitAngleX = THREE.MathUtils.lerp(this.orbitAngleX, this.targetOrbitX, 8 * deltaTime);
-        this.orbitAngleY = THREE.MathUtils.lerp(this.orbitAngleY, this.targetOrbitY, 8 * deltaTime);
+        this.orbitAngleX = THREE.MathUtils.lerp(this.orbitAngleX, this.targetOrbitX, 10 * deltaTime);
+        this.orbitAngleY = THREE.MathUtils.lerp(this.orbitAngleY, this.targetOrbitY, 10 * deltaTime);
 
-        // Calculate base camera offset (behind the car = negative of forward direction)
-        // Use currentDistance instead of config.distance
-        let offsetX = -targetDir.x * this.currentDistance;
-        let offsetZ = -targetDir.z * this.currentDistance;
-        let offsetY = config.height;
-
-        // Apply orbit rotation around the car
-        // Rotate the offset around Y axis (horizontal orbit)
+        // Use spherical coordinates for orbit calculation
+        // This prevents orbit center offset by calculating position relative to car center
         const cosX = Math.cos(this.orbitAngleX);
         const sinX = Math.sin(this.orbitAngleX);
-        const rotatedX = offsetX * cosX - offsetZ * sinX;
-        const rotatedZ = offsetX * sinX + offsetZ * cosX;
-        offsetX = rotatedX;
-        offsetZ = rotatedZ;
-
-        // Apply vertical orbit (pitch) - camera orbits in a sphere around the car
-        // orbitAngleY controls elevation: negative = look from above, positive = look from below
         const cosY = Math.cos(this.orbitAngleY);
         const sinY = Math.sin(this.orbitAngleY);
 
-        // Scale horizontal offset by cosY (camera gets closer horizontally when pitched)
-        const horizontalScale = cosY;
-        offsetX *= horizontalScale;
-        offsetZ *= horizontalScale;
+        // Calculate car's backward direction for base offset
+        const carBackward = new THREE.Vector3(0, 0, -1);
+        carBackward.applyQuaternion(target.quaternion);
 
-        // Height is based on config height plus vertical orbit component
-        offsetY = config.height + this.currentDistance * sinY;
+        // Calculate spherical orbit offset
+        // Base position: behind the car at currentDistance
+        // Orbit modifies this position in a sphere around the car center
+        const hRadius = this.currentDistance * cosY; // Horizontal radius shrinks when looking up/down
+        const vOffset = this.currentDistance * sinY; // Vertical offset from pitch
+
+        // Start with car's backward direction, then apply orbit rotation
+        const baseOffset = carBackward.clone().multiplyScalar(hRadius);
+
+        // Apply horizontal orbit (yaw) - rotate around world Y axis
+        // This keeps the orbit stable relative to car orientation
+        const orbitOffset = new THREE.Vector3(
+            baseOffset.x * cosX - baseOffset.z * sinX,
+            0,
+            baseOffset.x * sinX + baseOffset.z * cosX
+        );
 
         // Calculate desired camera position
         const desiredPosition = new THREE.Vector3();
         desiredPosition.copy(targetPos);
-        desiredPosition.x += offsetX;
-        desiredPosition.z += offsetZ;
-        desiredPosition.y = targetPos.y + offsetY;
+        desiredPosition.x += orbitOffset.x;
+        desiredPosition.z += orbitOffset.z;
+        desiredPosition.y = targetPos.y + config.height + vOffset;
 
-        // Smooth camera position
-        this.currentPosition.lerp(desiredPosition, positionSmoothing * deltaTime);
+        // Apply horizontal offset (GTA IV style - camera to the right)
+        if (config.horizontalOffset) {
+            const carRight = new THREE.Vector3(1, 0, 0);
+            carRight.applyQuaternion(target.quaternion);
+            desiredPosition.x += carRight.x * config.horizontalOffset;
+            desiredPosition.z += carRight.z * config.horizontalOffset;
+        }
 
-        // Calculate look-at point (the car)
+        // Smooth camera position with higher responsiveness
+        const posLerpFactor = Math.min(1.0, positionSmoothing * deltaTime);
+        this.currentPosition.lerp(desiredPosition, posLerpFactor);
+
+        // Calculate look-at point (the car center)
         const lookAtPoint = new THREE.Vector3();
         lookAtPoint.copy(targetPos);
         lookAtPoint.y += config.lookAtHeight;
 
-        // Smooth look-at
-        this.currentLookAt.lerp(lookAtPoint, lookAtSmoothing * deltaTime);
+        // Apply horizontal offset to look-at point (GTA IV style)
+        if (config.lookAtHorizontalOffset) {
+            const carRight = new THREE.Vector3(1, 0, 0);
+            carRight.applyQuaternion(target.quaternion);
+            lookAtPoint.x += carRight.x * config.lookAtHorizontalOffset;
+            lookAtPoint.z += carRight.z * config.lookAtHorizontalOffset;
+        }
+
+        // Smooth look-at with higher responsiveness
+        const lookLerpFactor = Math.min(1.0, lookAtSmoothing * deltaTime);
+        this.currentLookAt.lerp(lookAtPoint, lookLerpFactor);
 
         // Apply position with shake
         const shakeOffset = new THREE.Vector3();

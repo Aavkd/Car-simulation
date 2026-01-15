@@ -61,7 +61,10 @@ export const MazdaRX7 = {
     // ==================== TIRES ====================
     tires: {
         gripCoefficient: 1.6,   // Peak friction coefficient (better tires)
-        slipAnglePeak: 0.14,    // Radians - angle at peak grip
+        slipAnglePeak: 0.11,    // Radians - sharper response
+        pacejkaB: 11,           // Higher stiffness for sports tires
+        pacejkaC: 1.5,          // Sharper shape
+        pacejkaE: -0.4,         // Curvature factor
         rollingResistance: 0.004
     },
 
@@ -72,8 +75,10 @@ export const MazdaRX7 = {
 
     // ==================== STEERING ====================
     steering: {
-        maxAngle: 0.55,         // Radians (~31 degrees - tighter steering)
-        speed: 3.5              // Steering responsiveness (quicker response)
+        maxAngle: 0.6,          // Radians (~34 degrees - tighter steering)
+        speed: 4.2,             // Quicker steering response
+        counterSteerBoost: 1.9, // Fast counter-steer for drift control
+        highSpeedLimit: 0.55    // More reduction at high speed (stiffer feel)
     },
 
     // ==================== VISUAL CONFIGURATION ====================

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { AnimationController } from '../animation/core/AnimationController.js';
+import { ActiveRagdollController } from '../animation/physics/ActiveRagdollController.js';
 
 /**
  * Animation Set Configurations
@@ -59,6 +60,7 @@ const ANIMATION_SETS = {
 export class PlayerController {
     constructor(terrain) {
         this.terrain = terrain;
+        window.THREE = THREE; // Expose for console debugging
 
         // ==================== PLAYER SPECS ====================
         // Note: Car is scaled ~4x, so player is also scaled to match
@@ -115,8 +117,11 @@ export class PlayerController {
         this.meshVisible = false;
 
         // Animation set (can be 'basic' or 'knight')
-        this.animationSet = 'basic'; // Default to knight animations
+        this.animationSet = 'knight'; // Default to knight animations
         this.scene = null; // Store scene reference for reloading
+
+        // Active Ragdoll System (Euphoria-style physics)
+        this.ragdoll = null;
     }
 
     /**
@@ -429,6 +434,11 @@ export class PlayerController {
             this.animator.setInput('isGrounded', this.isGrounded);
             this.animator.setInput('strafeDirection', strafeDirection);
             this.animator.update(dt);
+
+            // Update Active Ragdoll System (AFTER animation update)
+            if (this.ragdoll) {
+                this.ragdoll.update(dt);
+            }
         }
     }
 
@@ -611,6 +621,20 @@ export class PlayerController {
                     // Default to Locomotion
                     this.animator.playBlendTree('Locomotion');
 
+                    // Initialize Active Ragdoll System
+                    this.ragdoll = new ActiveRagdollController(this.mesh, {
+                        terrain: this.terrain,
+                        entity: this,
+                        characterHeight: this.specs.height,
+                        onStateChange: (newState, oldState) => {
+                            console.log(`[Player] Ragdoll state: ${oldState} → ${newState}`);
+                        },
+                        onImpact: (source, magnitude) => {
+                            // Could trigger sound effects, particles, etc.
+                        }
+                    });
+                    console.log('[Player] Active Ragdoll System initialized');
+
                     // Initially hidden
                     this.mesh.visible = false;
                     this.meshLoaded = true;
@@ -738,5 +762,101 @@ export class PlayerController {
             });
             console.log(`[Player] Mesh visibility set to ${visible}, position:`, this.mesh.position);
         }
+    }
+
+    // ==================== ACTIVE RAGDOLL API ====================
+
+    /**
+     * Apply an impact force to the player (for collisions, attacks, etc.)
+     * @param {THREE.Vector3} force - Force vector (direction * magnitude)
+     * @param {THREE.Vector3} [point] - World position of impact
+     * @param {string} [source] - Source identifier ('vehicle', 'melee', 'explosion', etc.)
+     * @returns {string} Response type: 'absorbed', 'stumble', 'stagger', 'fall', 'knockdown'
+     */
+    applyImpact(force, point = null, source = 'unknown') {
+        if (!this.ragdoll) return 'absorbed';
+        return this.ragdoll.applyImpact(force, point, source);
+    }
+
+    /**
+     * Check if player has control (not falling/ragdolling)
+     * @returns {boolean} True if player can move normally
+     */
+    hasControl() {
+        if (!this.ragdoll) return true;
+        return this.ragdoll.hasControl();
+    }
+
+    /**
+     * Check if ragdoll physics is currently active
+     * @returns {boolean} True if in any physics state
+     */
+    isRagdollActive() {
+        if (!this.ragdoll) return false;
+        return this.ragdoll.isPhysicsActive();
+    }
+
+    /**
+     * Force the player to fall in a direction (for scripted events)
+     * @param {THREE.Vector3} direction - Fall direction
+     * @param {string} [intensity] - 'light', 'medium', 'heavy'
+     */
+    forceFall(direction, intensity = 'medium') {
+        if (this.ragdoll) {
+            this.ragdoll.forceFall(direction, intensity);
+        }
+    }
+
+    /**
+     * Force recovery from ragdoll state (skip to standing)
+     */
+    forceRecovery() {
+        if (this.ragdoll) {
+            this.ragdoll.forceRecovery();
+        }
+    }
+
+    /**
+     * Helper for console testing without needing global THREE
+     * @param {number} x
+     * @param {number} y
+     * @param {number} z
+     */
+    testImpact(x, y, z) {
+        if (!this.ragdoll) {
+            console.warn('Ragdoll not initialized');
+            return;
+        }
+        const force = new THREE.Vector3(x, y, z);
+        console.log(`Testing impact: ${x}, ${y}, ${z}`);
+        this.applyImpact(force, null, 'console_test');
+    }
+
+    /**
+     * Get current ragdoll state for debugging/UI
+     * @returns {Object|null} State object or null if ragdoll not initialized
+     */
+    getRagdollState() {
+        if (!this.ragdoll) return null;
+        return this.ragdoll.getState();
+    }
+
+    /**
+     * Debug: List all UNIQUE bone names in the mesh
+     */
+    debugBones() {
+        if (!this.mesh) {
+            console.log('No mesh loaded');
+            return;
+        }
+        const bones = new Set();
+        this.mesh.traverse(child => {
+            if (child.isBone) {
+                bones.add(child.name);
+            }
+        });
+        const uniqueBones = [...bones].sort();
+        console.log(`Unique bones (${uniqueBones.length}):`, uniqueBones);
+        return uniqueBones;
     }
 }

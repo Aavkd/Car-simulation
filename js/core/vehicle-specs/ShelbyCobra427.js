@@ -61,7 +61,10 @@ export const ShelbyCobra427 = {
     // ==================== TIRES ====================
     tires: {
         gripCoefficient: 1.4,   // Peak friction coefficient (period-correct tires)
-        slipAnglePeak: 0.16,    // Radians - angle at peak grip
+        slipAnglePeak: 0.14,    // Radians - vintage tire feel
+        pacejkaB: 9,            // Lower stiffness for vintage tires (more slide)
+        pacejkaC: 1.3,          // Rounder shape (less aggressive)
+        pacejkaE: -0.6,         // More curvature for gradual breakaway
         rollingResistance: 0.006
     },
 
@@ -72,8 +75,10 @@ export const ShelbyCobra427 = {
 
     // ==================== STEERING ====================
     steering: {
-        maxAngle: 0.65,         // Radians (~37 degrees - wide steering)
-        speed: 2.8              // Steering responsiveness (slightly slower, muscle car feel)
+        maxAngle: 0.7,          // Radians (~40 degrees - wide steering for muscle car)
+        speed: 3.2,             // Slightly slower, deliberate feel
+        counterSteerBoost: 2.0, // Strong counter-steer (needs it with raw power)
+        highSpeedLimit: 0.5     // Significant reduction at high speed (safer)
     },
 
     // ==================== VISUAL CONFIGURATION ====================

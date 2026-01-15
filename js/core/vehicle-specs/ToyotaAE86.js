@@ -58,7 +58,10 @@ export const ToyotaAE86 = {
     // ==================== TIRES ====================
     tires: {
         gripCoefficient: 1.5,   // Peak friction coefficient
-        slipAnglePeak: 0.15,    // Radians - angle at peak grip
+        slipAnglePeak: 0.12,    // Radians - angle at peak grip (lower for responsiveness)
+        pacejkaB: 10,           // Stiffness factor for Pacejka model
+        pacejkaC: 1.4,          // Shape factor
+        pacejkaE: -0.5,         // Curvature factor
         rollingResistance: 0.005
     },
 
@@ -69,8 +72,10 @@ export const ToyotaAE86 = {
 
     // ==================== STEERING ====================
     steering: {
-        maxAngle: 0.6,          // Radians (~34 degrees)
-        speed: 3.0              // Steering responsiveness
+        maxAngle: 0.65,          // Radians (~37 degrees)
+        speed: 4.0,              // Faster steering responsiveness
+        counterSteerBoost: 1.8,  // Multiplier when countersteering (for drift control)
+        highSpeedLimit: 0.6      // Minimum steering ratio at high speed (60% of max)
     },
 
     // ==================== VISUAL CONFIGURATION ====================

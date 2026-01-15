@@ -86,6 +86,8 @@ export class NewCarPhysicsEngine {
         this.steeringAngle = 0;
         this.maxSteeringAngle = carSpec.steering?.maxAngle || 0.85; // Increased for sharper turns (~49 degrees)
         this.steeringSpeed = carSpec.steering?.speed || 4.0; // Faster steering response
+        this.counterSteerBoost = carSpec.steering?.counterSteerBoost || 1.8; // Multiplier for countersteering
+        this.highSpeedSteerLimit = carSpec.steering?.highSpeedLimit || 0.65; // Min steering ratio at high speed
 
         // Engine
         this.engineRPM = carSpec.engine?.idleRPM || 900;
@@ -102,6 +104,17 @@ export class NewCarPhysicsEngine {
         // Tires
         this.gripCoefficient = carSpec.tires?.gripCoefficient || 1.5;
         this.rollingResistance = carSpec.tires?.rollingResistance || 0.005;
+        // Pacejka tire model parameters
+        this.pacejkaB = carSpec.tires?.pacejkaB || 10;   // Stiffness factor
+        this.pacejkaC = carSpec.tires?.pacejkaC || 1.4;  // Shape factor
+        this.pacejkaE = carSpec.tires?.pacejkaE || -0.5; // Curvature factor
+
+        // Center of gravity for weight transfer
+        this.cgHeight = carSpec.dimensions?.cgHeight || 2.4;
+
+        // Weight transfer tracking
+        this.lateralWeightTransfer = [0, 0, 0, 0]; // Per-wheel load adjustment
+        this.longitudinalWeightTransfer = 0;
 
         // ==================== DRIFT MECHANICS ====================
         // Drift parameters for lateral inertia and sliding behavior
@@ -204,8 +217,24 @@ export class NewCarPhysicsEngine {
         }
 
         // ==================== 3. STEERING INPUT ====================
-        const steerTarget = (input.steer || 0) * this.maxSteeringAngle;
-        this.steeringAngle += (steerTarget - this.steeringAngle) * Math.min(1, this.steeringSpeed * dt * 5);
+        // Speed-dependent steering limit: reduce max angle at high speed for stability
+        const speedKMH = this.getSpeedKMH();
+        const speedSteerFactor = THREE.MathUtils.lerp(1.0, this.highSpeedSteerLimit,
+            THREE.MathUtils.clamp((speedKMH - 40) / 80, 0, 1)); // Full reduction at 120+ km/h
+        const effectiveMaxSteer = this.maxSteeringAngle * speedSteerFactor;
+
+        const steerInput = input.steer || 0;
+        const steerTarget = steerInput * effectiveMaxSteer;
+
+        // Countersteering detection: faster response when steering opposite to current angle
+        const isCountersteering = Math.sign(steerTarget) !== Math.sign(this.steeringAngle) &&
+            Math.abs(this.steeringAngle) > 0.05;
+        const steerSpeed = isCountersteering ? this.steeringSpeed * this.counterSteerBoost : this.steeringSpeed;
+
+        this.steeringAngle += (steerTarget - this.steeringAngle) * Math.min(1, steerSpeed * dt * 5);
+
+        // ==================== 3.5 WEIGHT TRANSFER ====================
+        this._updateWeightTransfer(input);
 
         // ==================== 4. AIR DRAG ====================
         const speed = this.velocity.length();
@@ -440,6 +469,101 @@ export class NewCarPhysicsEngine {
 
 
     /**
+     * Update weight transfer based on acceleration and cornering
+     */
+    _updateWeightTransfer(input) {
+        const trackWidth = this.spec.dimensions?.trackWidth || 7.55;
+        const wheelBase = this.spec.dimensions?.wheelBase || 10.55;
+
+        // Get local velocity to determine lateral and longitudinal G-forces
+        const localVelocity = this.velocity.clone().applyQuaternion(this.quaternion.clone().invert());
+        const lateralSpeed = localVelocity.x;
+        const forwardSpeed = Math.abs(localVelocity.z);
+
+        // Estimate lateral G-force from cornering (simplified)
+        // Using centripetal acceleration approximation: a = v²/r, and we estimate r from steer angle
+        let lateralG = 0;
+        if (forwardSpeed > 5 && Math.abs(this.steeringAngle) > 0.01) {
+            const turnRadius = wheelBase / Math.tan(Math.abs(this.steeringAngle) + 0.01);
+            const centripetalAccel = (forwardSpeed * forwardSpeed) / turnRadius;
+            lateralG = centripetalAccel / (9.81 * this.scaleFactor);
+            // Clamp to reasonable values
+            lateralG = THREE.MathUtils.clamp(lateralG, -2.5, 2.5);
+            // Sign based on steering direction
+            if (this.steeringAngle < 0) lateralG = -lateralG;
+        }
+
+        // Longitudinal weight transfer (braking shifts weight forward)
+        const brake = input.brake || 0;
+        const throttle = input.throttle || 0;
+        this.longitudinalWeightTransfer = (brake * 0.3 - throttle * 0.15) * this.mass * 9.81;
+
+        // Lateral weight transfer calculation
+        // Transfer = (lateral_G * mass * cgHeight) / trackWidth
+        const lateralTransfer = (lateralG * this.mass * this.cgHeight) / trackWidth;
+
+        // Apply to each wheel:
+        // Left wheels (0, 2): subtract when turning right, add when turning left
+        // Right wheels (1, 3): add when turning right, subtract when turning left
+        this.lateralWeightTransfer[0] = -lateralTransfer; // Front Left
+        this.lateralWeightTransfer[1] = lateralTransfer;  // Front Right
+        this.lateralWeightTransfer[2] = -lateralTransfer; // Rear Left
+        this.lateralWeightTransfer[3] = lateralTransfer;  // Rear Right
+    }
+
+    /**
+     * Get Ackermann steering angle for a specific wheel
+     * Inner wheel turns sharper than outer for realistic cornering geometry
+     */
+    _getWheelSteerAngle(wheelIndex) {
+        if (wheelIndex >= 2) return 0; // Rear wheels don't steer
+
+        const baseAngle = this.steeringAngle;
+        if (Math.abs(baseAngle) < 0.001) return 0;
+
+        const wheelBase = this.spec.dimensions?.wheelBase || 10.55;
+        const trackWidth = this.spec.dimensions?.trackWidth || 7.55;
+
+        // Calculate turn radius from steering angle
+        const turnRadius = wheelBase / Math.tan(Math.abs(baseAngle));
+
+        // Ackermann geometry: inner wheel has sharper angle, outer has shallower
+        const isLeft = wheelIndex === 0;
+        const turningLeft = baseAngle > 0;
+        const isInnerWheel = (isLeft && turningLeft) || (!isLeft && !turningLeft);
+
+        let wheelAngle;
+        if (isInnerWheel) {
+            // Inner wheel turns more
+            wheelAngle = Math.atan(wheelBase / (turnRadius - trackWidth / 2));
+        } else {
+            // Outer wheel turns less
+            wheelAngle = Math.atan(wheelBase / (turnRadius + trackWidth / 2));
+        }
+
+        // Apply correct sign based on steering direction
+        return baseAngle > 0 ? wheelAngle : -wheelAngle;
+    }
+
+    /**
+     * Pacejka-inspired lateral force calculation (simplified Magic Formula)
+     * Provides non-linear grip that saturates at high slip angles
+     */
+    _getLateralForceFromSlip(slipAngle, normalLoad, gripMultiplier = 1.0) {
+        const B = this.pacejkaB;  // Stiffness factor
+        const C = this.pacejkaC;  // Shape factor
+        const D = normalLoad * this.gripCoefficient * gripMultiplier; // Peak value
+        const E = this.pacejkaE;  // Curvature factor
+
+        // Simplified Pacejka "Magic Formula"
+        // F = D * sin(C * atan(B*slip - E*(B*slip - atan(B*slip))))
+        const Bslip = B * slipAngle;
+        const force = D * Math.sin(C * Math.atan(Bslip - E * (Bslip - Math.atan(Bslip))));
+
+        return force;
+    }
+
+    /**
      * Compute tire forces (friction, drive, braking)
      */
     _computeTireForces(wheelIndex, dt, input, groundNormal) {
@@ -456,11 +580,12 @@ export class NewCarPhysicsEngine {
         const velAlongNormal = wheelVel.dot(groundNormal);
         const groundVel = wheelVel.clone().sub(groundNormal.clone().multiplyScalar(velAlongNormal));
 
-        // Get wheel forward direction (includes steering for front wheels)
+        // Get wheel forward direction with Ackermann steering for front wheels
         let wheelForward = this._forwardDir.clone();
         if (isFront) {
-            // Rotate by steering angle around car's up axis
-            const steerQuat = new THREE.Quaternion().setFromAxisAngle(this._upDir, this.steeringAngle);
+            // Use Ackermann steering angle for this specific wheel
+            const wheelSteerAngle = this._getWheelSteerAngle(wheelIndex);
+            const steerQuat = new THREE.Quaternion().setFromAxisAngle(this._upDir, wheelSteerAngle);
             wheelForward.applyQuaternion(steerQuat);
         }
 
@@ -471,8 +596,18 @@ export class NewCarPhysicsEngine {
         const forwardVel = groundVel.dot(wheelForward);
         const lateralVel = groundVel.dot(wheelRight);
 
-        // Normal load on this wheel (from suspension)
-        const normalLoad = this.wheelSuspensionForces[wheelIndex];
+        // Normal load on this wheel (from suspension + weight transfer)
+        let normalLoad = this.wheelSuspensionForces[wheelIndex];
+        // Apply weight transfer
+        normalLoad += this.lateralWeightTransfer[wheelIndex];
+        // Apply longitudinal weight transfer (front gets more under braking)
+        if (isFront) {
+            normalLoad += this.longitudinalWeightTransfer * 0.5;
+        } else {
+            normalLoad -= this.longitudinalWeightTransfer * 0.5;
+        }
+        // Clamp to prevent negative load
+        normalLoad = Math.max(0, normalLoad);
         if (normalLoad <= 0) return result;
 
         // Get surface friction from physics provider
@@ -506,7 +641,6 @@ export class NewCarPhysicsEngine {
                 const driveForce = wheelTorque / this.wheelRadius;
 
                 // Wheel spin model: if drive force > friction, wheel spins
-                const targetSpinVel = forwardVel / this.wheelRadius;
                 const spinAccel = (driveForce / this.mass) / this.wheelRadius;
                 this.wheelSpinVelocities[wheelIndex] += spinAccel * dt;
 
@@ -533,9 +667,9 @@ export class NewCarPhysicsEngine {
         }
 
         if (isFront && (input.brake || 0) > 0) {
-            // Front brakes
+            // Front brakes (more effective due to weight transfer)
             const brake = input.brake;
-            const brakeForce = maxFriction * brake * 0.5;
+            const brakeForce = maxFriction * brake * 0.6; // Front brakes do 60% of braking
             const brakeDir = forwardVel > 0 ? -1 : 1;
             longitudinalForce = brakeForce * brakeDir;
         }
@@ -553,25 +687,19 @@ export class NewCarPhysicsEngine {
         const groundSpeed = groundVel.length();
         let slipAngle = 0;
         if (groundSpeed > 0.5) {
-            // Slip angle = angle between velocity and wheel heading
-            const velNormalized = groundVel.clone().normalize();
-            const dotProduct = velNormalized.dot(wheelForward);
-            const clampedDot = THREE.MathUtils.clamp(dotProduct, -1, 1);
-            slipAngle = Math.acos(clampedDot);
-
-            // Determine sign of slip angle based on lateral velocity
-            if (lateralVel < 0) slipAngle = -slipAngle;
+            // Slip angle = atan2(lateral_vel, forward_vel) for accurate calculation
+            slipAngle = Math.atan2(lateralVel, Math.abs(forwardVel) + 0.1);
         }
 
         // Check if drifting based on slip angle
         const aboveThreshold = Math.abs(slipAngle) > this.driftAngleThreshold;
         const handbrakeActive = (input.handbrake || 0) > 0.5;
 
-        // ==================== LATERAL (CORNERING/DRIFTING) ====================
+        // Calculate lateral force using Pacejka-inspired model
         let lateralForce = 0;
 
-        if (Math.abs(lateralVel) > 0.05) {
-            // Base lateral grip - strong for normal cornering
+        if (Math.abs(lateralVel) > 0.05 || Math.abs(slipAngle) > 0.01) {
+            // Base lateral grip multiplier
             let lateralGripMultiplier = 1.0;
 
             // HANDBRAKE: Rear wheels lose most lateral grip (allows tail to swing out)
@@ -587,35 +715,36 @@ export class NewCarPhysicsEngine {
                     lateralGripMultiplier = this.driftGripMultiplier;
                 } else {
                     // Front keeps more grip for steering control during drift
-                    lateralGripMultiplier = 0.8;
+                    lateralGripMultiplier = 0.85;
                 }
             }
 
-            // Speed-sensitive steering boost - compensate for physics understeer at high speed
-            // At low speed (< 30 km/h): multiplier = 1.0
-            // At high speed (100+ km/h): multiplier = 1.8 for front, 1.3 for rear
+            // Use Pacejka model for non-linear tire response
+            const pacejkaForce = this._getLateralForceFromSlip(slipAngle, normalLoad, lateralGripMultiplier);
+
+            // Speed-sensitive boost for high-speed cornering
             const speedKMH = this.getSpeedKMH();
             let speedBoost = 1.0;
-            if (speedKMH > 30) {
-                const speedFactor = Math.min(1.0, (speedKMH - 30) / 70); // 0 at 30km/h, 1 at 100km/h
+            if (speedKMH > 30 && !handbrakeActive && !aboveThreshold) {
+                // Progressive boost for normal cornering, not during drift
+                const speedFactor = Math.min(1.0, (speedKMH - 30) / 80);
                 if (isFront) {
-                    speedBoost = 1.0 + speedFactor * 0.8; // Up to 1.8x at high speed
+                    speedBoost = 1.0 + speedFactor * 0.6; // Up to 1.6x at high speed
                 } else {
-                    speedBoost = 1.0 + speedFactor * 0.3; // Rear gets less boost to maintain balance
+                    speedBoost = 1.0 + speedFactor * 0.25; // Rear gets less boost
                 }
             }
 
-            // Calculate lateral friction force
-            // Strong multiplier (1.2) for responsive steering, with speed boost
-            const lateralFriction = Math.abs(lateralVel) * normalLoad * 1.2 * lateralGripMultiplier * speedBoost;
-            const maxLateralForce = maxFriction * lateralGripMultiplier * 0.95 * speedBoost;
+            // Apply Pacejka force with speed boost
+            lateralForce = -pacejkaForce * speedBoost * surfaceFriction;
 
-            // Lateral force opposes sideways motion
-            lateralForce = -Math.sign(lateralVel) * Math.min(lateralFriction, maxLateralForce);
+            // Cap at maximum friction
+            const maxLateralForce = maxFriction * lateralGripMultiplier * speedBoost;
+            lateralForce = THREE.MathUtils.clamp(lateralForce, -maxLateralForce, maxLateralForce);
 
             // Apply lateral inertia during drift - reduces force to let car carry sideways momentum
             if ((isRear && handbrakeActive) || aboveThreshold) {
-                lateralForce *= (1.0 - this.lateralInertiaFactor * 0.6);
+                lateralForce *= (1.0 - this.lateralInertiaFactor * 0.5);
             }
         }
 

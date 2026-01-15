@@ -1,103 +1,191 @@
 import * as THREE from 'three';
 import { BasePhysicsProvider, SurfaceTypes } from '../physics/physics-provider.js';
+import { DeepSpaceGenerator } from './deep-space.js';
 
 /**
- * Cosmic Generator - Infinite Psychedelic Road
- * Features:
- * - Complex composite wave path (straight sections + wild curves)
- * - Psychedelic shader effects
- * - Floating cosmic geometry
+ * Cosmic Generator - Infinite Procedural Space Road
+ * Replaces the old cosmic level with a new architecture:
+ * 1. Background: Uses DeepSpaceGenerator (Stars, Nebulas, Black Holes)
+ * 2. Road: Procedural Spline-based road with Turns, Slopes, and Corkscrews
  */
 export class CosmicGenerator extends BasePhysicsProvider {
     constructor(params = {}) {
         super();
         this.params = Object.assign({
-            roadWidth: 30,
-            segmentLength: 100000, // 100km effectively infinite for this demo
-            curveIntensity: 200,   // Amplitude of curves
-            slopeIntensity: 80,    // Amplitude of hills
+            // === Road Generation ===
+            roadWidth: 170,          // Wider road for space flight
+            segmentLength: 200000,   // Effectively infinite
+            curveIntensity: 300,     // Harder turns
+            slopeIntensity: 200,     // Steeper slopes
+            corkscrewChance: 0.3,    // Chance of barrel roll sections
+
+            // === Deep Space Background ===
+            // Chunk System
+            universeSize: 30000,     // Chunk size for celestial objects
+            renderDistance: 1,       // How many chunks to render around player
+
+            // Star Generation
+            starCount: 2000,         // Stars per chunk
+
+            // Galaxy Generation
+            galaxyCount: 1000,          // Galaxies per chunk (avg)
+            galaxyChance: 100,       // Chance to spawn galaxies in a chunk
+
+            // Nebula Generation
+            nebulaCount: 0,          // Nebulae per chunk (avg)
+            nebulaChance: 0,       // Chance to spawn nebulae in a chunk
+
+            // Black Hole Generation
+            blackHoleChance: 0.1,    // Chance per chunk to spawn a black hole
+            blackHoleBloom: 0.2,     // Multiplier for black hole glow
+            blackHoleDistortion: 0.15, // Lensing strength
+            blackHoleDiskSize: 5.0,  // Accretion disk scale
+
+            // Spatial Anomaly Generation
+            anomalyChance: 2,        // Chance per chunk (can be > 1 for guaranteed spawns)
+            anomalyBloom: 0.1,       // Multiplier for anomaly glow
+            anomalySpeed: 1.0,       // Rotation speed multiplier
+            anomalyDistortion: 0.5,  // Max glitch distortion
+
+            // Physics
+            thrustMultiplier: 100,   // Multiplier for plane speed/thrust
+            gravityScale: 1000,      // Overall gravity strength multiplier
+            minSpawnHeight: -Infinity // Allow stars everywhere
         }, params);
 
-        this.mesh = null;
-        this.material = null;
+        // --- Components ---
+        this.mesh = new THREE.Group();
+        this.roadMesh = null;
 
-        // Path Parameters for "Infinite" composite waves
-        // We use multiple frequencies to create chaos and order
-        // Low freq = general direction/large turns
-        // High freq = tight twists
-        // Modulator = creates straight sections when 0
+        // Create DeepSpaceGenerator with all customizable params
+        this.backgroundGenerator = new DeepSpaceGenerator({
+            universeSize: this.params.universeSize,
+            renderDistance: this.params.renderDistance,
+            starCount: this.params.starCount,
+            galaxyCount: this.params.galaxyCount,
+            nebulaCount: this.params.nebulaCount,
+            blackHoleChance: this.params.blackHoleChance,
+            blackHoleBloom: this.params.blackHoleBloom,
+            blackHoleDistortion: this.params.blackHoleDistortion,
+            blackHoleDiskSize: this.params.blackHoleDiskSize,
+            anomalyChance: this.params.anomalyChance,
+            anomalyBloom: this.params.anomalyBloom,
+            anomalySpeed: this.params.anomalySpeed,
+            anomalyDistortion: this.params.anomalyDistortion,
+            thrustMultiplier: this.params.thrustMultiplier,
+            gravityScale: this.params.gravityScale,
+            minSpawnHeight: this.params.minSpawnHeight
+        });
+
+        // Add background to our group
+        const bgMesh = this.backgroundGenerator.generate();
+        this.mesh.add(bgMesh);
+
+        // --- Path Parameters ---
+        // We use a set of frequencies to generate a deterministic pseudo-random path
+        // Lower frequencies = longer wavelengths = smoother transitions
+        this.seed = Math.random() * 1000;
         this.frequencies = {
-            main: 0.0015,
-            twist: 0.004,
-            elevation: 0.002,
-            modulator: 0.0005 // Very slow wave to turn curves on/off
+            // X-Axis (Turns) - Tighter curves for drifting
+            turnMacro: 0.0006,   // Big sweeping turns (one cycle per ~1650 units)
+            turnMicro: 0.0025,   // Tighter weaving for drift sections (one cycle per ~400 units)
+
+            // Y-Axis (Elevation) - Noticeable hills
+            slopeMacro: 0.0003,  // Big hills/dives (one cycle per ~3300 units)
+            slopeMicro: 0.001,   // Medium undulation (one cycle per ~1000 units)
+
+            // Banking (Corkscrews) - Gradual roll zones
+            rollFreq: 0.0004     // Infrequent roll zones
         };
     }
 
+    /**
+     * Smoothstep function for C1-continuous transitions
+     * Returns value between 0 and 1 with smooth derivative at boundaries
+     */
+    _smoothstep(t) {
+        t = Math.max(0, Math.min(1, t));
+        return t * t * (3 - 2 * t);
+    }
+
     generate() {
-        const segments = 4000;
-        const widthSegments = 20; // Higher fidelity for the wave effect
+        // Generate the Road Geometry
+        // Since we need to support "Infinite" movement, we technically should strictly generate 
+        // geometry around the camera. For this anticipated demo usage, we'll generate a 
+        // massive strip forward from Z=0.
 
-        const geometry = new THREE.PlaneGeometry(
-            this.params.roadWidth,
-            this.params.segmentLength,
-            widthSegments,
-            segments
-        );
+        const segments = 6000;
+        const widthSegments = 30; // Smooth curve interpolation
 
-        geometry.rotateX(-Math.PI / 2);
+        // Custom BufferGeometry allows us to strictly control every vertex
+        // for exact match with our physics math.
+        const geometry = new THREE.BufferGeometry();
 
-        const positions = geometry.attributes.position.array;
-        const uvs = geometry.attributes.uv.array;
+        const positions = [];
+        const normals = [];
+        const uvs = [];
+        const indices = [];
 
-        for (let i = 0; i < positions.length; i += 3) {
-            // Original plane creates a flat strip along Z encoded in positions
-            // x varies from -width/2 to width/2
-            // y is 0
-            // z varies from -length/2 to length/2 (default PlaneGeometry centers it)
-            // We want z to start at 0 and go positive for easier math, or handle the offset.
-            // PlaneGeometry centers at 0, so Z ranges [-L/2, L/2]. Let's shift it to [0, L] logic or just use Z.
-            // Using Z as is allows negative values, but our math works fine.
+        // Generation loop
+        // We generate "rings" of vertices along the Z axis
+        const zStart = -1000;
+        const zEnd = this.params.segmentLength;
+        const zStep = (zEnd - zStart) / segments;
 
-            const xLocal = positions[i];
-            const z = positions[i + 2];
+        for (let i = 0; i <= segments; i++) {
+            const z = zStart + i * zStep;
 
-            // Get path position
-            const center = this._getRoadPoint(z);
+            // Get Path Properties at this Z
+            const center = this._getPathPoint(z);
             const tangent = this._getTangent(z);
+            const up = this._getNormalVector(z); // The "Up" vector of the road surface
+            const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
 
-            // Calculate Banking (Lean into curves)
-            // Bank angle based on curvature (derivative of tangent angle)
-            // Simple robust banking: -curvature * specific_factor
-            const curvature = this._getCurvature(z);
-            const bankAngle = -curvature * 800.0; // Tuned multiplier
+            // Create Ring of vertices
+            for (let j = 0; j <= widthSegments; j++) {
+                // u goes from -0.5 to 0.5 (left to right)
+                const u = (j / widthSegments) - 0.5;
+                const xOffset = u * this.params.roadWidth;
 
-            // Construct local coordinate frame
-            // T = tangent (normalized)
-            // U = up (world Y rotated by bank)
-            // R = right ( T x U )
+                // Position: Center + Right * Offset
+                const pos = new THREE.Vector3()
+                    .copy(center)
+                    .add(right.clone().multiplyScalar(xOffset));
 
-            // Approximation for speed: 
-            // 1. Shift by Center
-            // 2. Rotate xLocal vector by Bank Angle approximated around Z axis
-            //    (since we are mostly moving Forward along Z)
+                positions.push(pos.x, pos.y, pos.z);
 
-            const cosB = Math.cos(bankAngle);
-            const sinB = Math.sin(bankAngle);
+                // Normal: Same as 'up' vector
+                normals.push(up.x, up.y, up.z);
 
-            // Apply bank rotation to the flat cross section
-            // Flat: (xLocal, 0)
-            // Rotated: (xLocal * cos, xLocal * sin)
-
-            positions[i] = center.x + xLocal * cosB;     // World X
-            positions[i + 1] = center.y + xLocal * sinB; // World Y
-            // Z stays roughly same, strictly should compress but negligible for game
+                // UVs
+                uvs.push(j / widthSegments, z / 50.0); // Tiling texture along Z
+            }
         }
 
-        geometry.computeVertexNormals();
+        // Indices
+        // Grid topology
+        const vertsPerRing = widthSegments + 1;
+        for (let i = 0; i < segments; i++) {
+            for (let j = 0; j < widthSegments; j++) {
+                const a = i * vertsPerRing + j;
+                const b = (i + 1) * vertsPerRing + j;
+                const c = i * vertsPerRing + j + 1;
+                const d = (i + 1) * vertsPerRing + j + 1;
 
-        // --- Psyschedlic Cosmic Shader ---
-        this.material = new THREE.ShaderMaterial({
+                // Two triangles
+                indices.push(a, b, d);
+                indices.push(a, d, c);
+            }
+        }
+
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+        geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+        geometry.setIndex(indices);
+
+        // --- Material ---
+        // Neon / Tron style road
+        const material = new THREE.ShaderMaterial({
             uniforms: {
                 time: { value: 0 },
                 roadWidth: { value: this.params.roadWidth }
@@ -105,234 +193,261 @@ export class CosmicGenerator extends BasePhysicsProvider {
             vertexShader: `
                 varying vec2 vUv;
                 varying vec3 vPos;
-                varying float vDist;
+                varying vec3 vNormal;
                 
                 void main() {
                     vUv = uv;
                     vPos = position;
-                    vDist = -viewMatrix[3].z; // Approx distance to camera
+                    vNormal = normal;
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }
             `,
             fragmentShader: `
                 uniform float time;
-                uniform float roadWidth;
                 varying vec2 vUv;
-                varying vec3 vPos;
+                varying vec3 vNormal;
                 
-                #define PI 3.14159265359
-
-                // Cosine based palette, 4 vec3 params
-                vec3 palette( in float t, in vec3 a, in vec3 b, in vec3 c, in vec3 d ) {
-                    return a + b*cos( 6.28318*(c*t+d) );
-                }
-
                 void main() {
-                    // Normalize UV to -1.0 to 1.0 for X
-                    vec2 uv = vUv;
-                    float xCentered = (uv.x - 0.5) * 2.0; // -1 to 1 across road
+                    // Grid effect
+                    float gridX = step(0.95, abs(vUv.x * 2.0 - 1.0)); // Edge lines
+                    float gridZ = step(0.98, fract(vUv.y * 2.0)); // Static transverse lines
                     
-                    // Moving Stripe Effect
-                    float zFlow = uv.y * 200.0 - time * 2.0;
+                    // Central line (thinner and very dim)
+                    float centerLine = (1.0 - smoothstep(0.01, 0.03, abs(vUv.x - 0.5))) * 0.15;
                     
-                    // 1. Central Pulse Line
-                    float centerGlow = 1.0 - smoothstep(0.0, 0.1, abs(xCentered));
+                    // Base Code - Much darker
+                    vec3 color = vec3(0.01, 0.0, 0.02); // Very Dark Purple base
                     
-                    // 2. Grid / Transverse Lines
-                    float gridZ = smoothstep(0.9, 0.95, fract(zFlow));
+                    // Neon Blue/Cyan highlights - Dimmed
+                    vec3 highlight = vec3(0.0, 0.6, 0.8);
                     
-                    // 3. Edge Glow
-                    float edgeGlow = smoothstep(0.5, 1.0, abs(xCentered));
+                    // Mix
+                    color += highlight * (gridX * 0.8 + gridZ * 0.4 + centerLine);
                     
-                    // 4. Plasma Background
-                    // Create swirly visual
-                    vec2 plasmaUV = uv * vec2(10.0, 100.0); // Stretch
-                    plasmaUV.y -= time;
-                    float plasma = sin(plasmaUV.y + sin(plasmaUV.x * 2.0 + time));
-                    plasma += cos(plasmaUV.x * 3.0 + time * 0.5);
-                    
-                    // Color Palette: Deep Space
-                    // Purple, Magenta, Cyan, Black
-                    vec3 col1 = vec3(0.1, 0.0, 0.2); // Dark base
-                    vec3 col2 = vec3(0.0, 0.5, 1.0); // Cyan
-                    vec3 col3 = vec3(1.0, 0.0, 0.8); // Magenta
-                    
-                    vec3 finalColor = mix(col1, col2, 0.5 + 0.5*sin(zFlow * 0.1));
-                    finalColor = mix(finalColor, col3, edgeGlow);
-                    
-                    // Add grid intensity
-                    finalColor += vec3(1.0) * gridZ * 0.5;
-                    
-                    // Add center laser
-                    finalColor += vec3(0.5, 1.0, 1.0) * centerGlow * 1.5;
-                    
-                    // Plasma pulse overlay
-                    finalColor += vec3(0.2, 0.0, 0.4) * (plasma * 0.2);
+                    // Add subtle pulse - Reduced intensity
+                    float pulse = 0.5 + 0.5 * sin(vUv.y * 0.1 + time);
+                    color += vec3(0.1, 0.0, 0.2) * pulse * 0.1;
 
-                    gl_FragColor = vec4(finalColor, 1.0);
+                    gl_FragColor = vec4(color, 1.0);
                 }
             `,
             side: THREE.DoubleSide
         });
 
-        this.mesh = new THREE.Mesh(geometry, this.material);
-        this.mesh.receiveShadow = true;
-
-        this._addDecorators();
+        this.roadMesh = new THREE.Mesh(geometry, material);
+        this.roadMesh.receiveShadow = true;
+        this.mesh.add(this.roadMesh);
 
         return this.mesh;
     }
 
-    _addDecorators() {
-        const count = 300;
-        const geoms = [
-            new THREE.IcosahedronGeometry(4, 0),
-            new THREE.TorusGeometry(3, 1, 8, 20),
-            new THREE.OctahedronGeometry(3)
-        ];
+    update(deltaTime, playerPos, camera) {
+        // Update Road Shader
+        if (this.roadMesh && this.roadMesh.material.uniforms) {
+            this.roadMesh.material.uniforms.time.value += deltaTime;
+        }
 
-        const mat = new THREE.MeshBasicMaterial({
-            color: 0x00ffff,
-            wireframe: true,
-            transparent: true,
-            opacity: 0.6
-        });
-
-        for (let i = 0; i < count; i++) {
-            const geom = geoms[Math.floor(Math.random() * geoms.length)];
-            const obj = new THREE.Mesh(geom, mat);
-
-            const z = (Math.random() - 0.5) * this.params.segmentLength;
-            const pt = this._getRoadPoint(z);
-
-            // Offset from road
-            const dist = 30 + Math.random() * 80;
-            const angle = Math.random() * Math.PI * 2;
-
-            obj.position.set(
-                pt.x + Math.cos(angle) * dist,
-                pt.y + Math.sin(angle) * dist,
-                z
-            );
-
-            obj.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
-
-            // Store orbital data for animation
-            obj.userData = {
-                orbitSpeed: (Math.random() - 0.5) * 0.5,
-                rotSpeed: new THREE.Vector3(Math.random(), Math.random(), Math.random()).multiplyScalar(0.02),
-                basePos: obj.position.clone()
-            };
-
-            this.mesh.add(obj);
+        // Delegate to Background Generator
+        if (this.backgroundGenerator) {
+            // Background needs update for chunk management and effects
+            // Pass camera to allow view-dependent effects (like Black Hole lensing)
+            this.backgroundGenerator.update(playerPos, null, deltaTime, camera);
         }
     }
 
-    update(deltaTime) {
-        if (this.material && this.material.uniforms) {
-            this.material.uniforms.time.value += deltaTime;
-        }
+    // --- Mathematical Definition of the Path ---
+    // This MUST match the geometry generation exactly for physics to work.
 
-        // Animate decorators
-        if (this.mesh) {
-            this.mesh.children.forEach(child => {
-                if (child.userData && child.userData.rotSpeed) {
-                    child.rotation.x += child.userData.rotSpeed.x;
-                    child.rotation.y += child.userData.rotSpeed.y;
+    /**
+     * Get the center position of the road at linear distance z
+     */
+    _getPathPoint(z) {
+        // Use seeded sine waves
+        const s = this.seed;
 
-                    // Bobbing / Orbit logic could go here
-                }
-            });
-        }
-    }
+        // Safe Zone: Dampen chaos near start (first 1500m)
+        // Ensure track starts at (0,0,0) and straight
+        if (z < 0) return new THREE.Vector3(0, 0, z); // Behind start is straight
 
-    // --- Math / Path Logic ---
+        // Extended safe zone with smoothstep for gradual introduction of curves
+        const safeZone = Math.min(1.0, z / 1500.0);
+        const chaos = this._smoothstep(safeZone); // Smooth C1 transition
 
-    _getRoadPoint(z) {
-        // Modulation: 0 to 1 sine wave (slow)
-        // Values near 0 imply straight road
-        const mod = Math.sin(z * this.frequencies.modulator);
-        const amount = Math.abs(mod); // Magnitude of chaotic-ness
+        // 1. Base Curve (X-Axis)
+        // Tighter turns for drift sections
+        const x = (
+            Math.sin(z * this.frequencies.turnMacro + s) * this.params.curveIntensity * 2.0 +
+            Math.sin(z * this.frequencies.turnMicro + s * 1.5) * this.params.curveIntensity * 0.8
+        ) * chaos;
 
-        // Threshold: if amount < 0.2, force straight (LERP to 0)
-        let intensity = this.params.curveIntensity * amount;
-        if (amount < 0.2) intensity *= (amount / 0.2); // Smooth fade out
-
-        // X: Composite sine
-        const x = (Math.sin(z * this.frequencies.main) + Math.sin(z * this.frequencies.twist) * 0.4) * intensity;
-
-        // Y: Composite elevation
-        // modulated by same factor? Maybe we want hills even on straight-aways? 
-        // Let's keep hills independent but related
-        const y = Math.sin(z * this.frequencies.elevation) * Math.cos(z * this.frequencies.main * 0.5) * this.params.slopeIntensity * amount;
+        // 2. Elevation (Y-Axis)
+        // Noticeable hills and valleys with smooth transitions
+        const y = (
+            Math.sin(z * this.frequencies.slopeMacro + s * 0.5) * this.params.slopeIntensity * 2.0 +
+            Math.cos(z * this.frequencies.slopeMicro + s * 0.7) * this.params.slopeIntensity * 0.8
+        ) * chaos;
 
         return new THREE.Vector3(x, y, z);
     }
 
+    /**
+     * Get the banking angle (roll) at distance z
+     * This allows for corkscrews and loops.
+     */
+    _getBankAngle(z) {
+        // Safe Zone - Use smoothstep for C1 continuity
+        // Banking starts gradually at z=1000 and is fully active by z=3000
+        const safeT = Math.min(1.0, Math.max(0, (z - 1000) / 2000.0));
+        const safeZone = this._smoothstep(safeT);
+        if (safeZone === 0) return 0;
+
+        const s = this.seed;
+
+        // Base banking based on turn curvature (Natural banking)
+        // Calculate approximate curvature using larger delta for stability
+        const delta = 5.0;
+        const x1 = this._getPathPoint(z - delta).x;
+        const x2 = this._getPathPoint(z + delta).x;
+        const xC = this._getPathPoint(z).x;
+        // Second derivative approx
+        const curvature = (x2 - 2 * xC + x1) / (delta * delta);
+
+        // Reduced banking multiplier for gentler tilt
+        let bank = -curvature * 150.0; // Gentler banking into turns
+
+        // Corkscrew modifier - very gradual
+        const rollZone = Math.sin(z * this.frequencies.rollFreq + s);
+
+        // Smooth transition into roll zones (0.85 -> 1.0 maps to 0 -> 1)
+        const rollT = Math.min(1.0, Math.max(0, (rollZone - 0.85) / 0.15));
+        const rollIntensity = this._smoothstep(rollT);
+
+        // Smoothly interpolate bank multiplier from 1x to 2x (gentler roll zones)
+        bank *= 1.0 + rollIntensity * 1.0;
+
+        // Clamp maximum bank angle to prevent extreme tilts
+        bank = Math.max(-Math.PI * 0.4, Math.min(Math.PI * 0.4, bank));
+
+        return bank * safeZone;
+    }
+
+    /**
+     * Get the tangent vector (direction of road) at z
+     */
     _getTangent(z) {
-        const delta = 0.1;
-        const p1 = this._getRoadPoint(z - delta);
-        const p2 = this._getRoadPoint(z + delta);
+        const delta = 0.5;
+        const p1 = this._getPathPoint(z - delta);
+        const p2 = this._getPathPoint(z + delta);
         return new THREE.Vector3().subVectors(p2, p1).normalize();
     }
 
-    _getCurvature(z) {
-        // Discrete derivative of tangent angle (2D x-z plane approximation is sufficient for banking)
-        // or just second derivative of X function roughly
-        const delta = 1.0;
-        const t1 = this._getTangent(z - delta);
-        const t2 = this._getTangent(z + delta);
+    /**
+     * Get the Normal (Up) vector of the road surface at z
+     * Incorporates banking.
+     */
+    _getNormalVector(z) {
+        const tangent = this._getTangent(z);
+        const bankAngle = this._getBankAngle(z);
 
-        // Signed angle change around Y
-        // Cross product y component tells us turn direction
-        const cross = new THREE.Vector3().crossVectors(t1, t2);
+        // Standard Up (World Y)
+        const worldUp = new THREE.Vector3(0, 1, 0);
 
-        // Magnitude correlates to curvature
-        return cross.y;
+        // Calculate Right vector (Tangent x WorldUp)
+        // Note: If Tangent is vertical, this breaks. 
+        // But our path equation (z linear) prevents pure vertical tangents.
+        let right = new THREE.Vector3().crossVectors(tangent, worldUp).normalize();
+
+        // Recalculate true Up (Right x Tangent) to ensure orthogonality before rotation
+        let up = new THREE.Vector3().crossVectors(right, tangent).normalize();
+
+        // Apply Banking Rotation
+        // Rotate 'up' and 'right' around 'tangent' by bankAngle
+        // We only return 'up', so just rotate 'up'.
+        up.applyAxisAngle(tangent, bankAngle);
+
+        return up;
     }
 
     // --- Physics Interface ---
 
     getHeightAt(worldX, worldZ) {
-        // 1. Find the ideal road center at this Z
-        const center = this._getRoadPoint(worldZ);
+        // Iterative Refinement to find correct Spline Parameter 's'
+        // The point (worldX, worldZ) lies on the line: C(s) + Right(s) * t
+        // We need to find 's' and 't' such that the X and Z coords match.
+        // Naive approximation: s = worldZ.
+        // We iterate to minimize the Z error.
 
-        // 2. Determine banking
-        const curvature = this._getCurvature(worldZ);
-        const bankAngle = -curvature * 800.0;
+        let s = worldZ;
+        let t = 0;
+        const iterations = 4; // 3-4 iterations are usually enough for high precision
 
-        // 3. Project worldX diff onto the banked plane
-        // Similar height derivation as Vaporwave but generalized
-        // height = center.y + (dist_from_center) * tan(bankAngle)
+        for (let i = 0; i < iterations; i++) {
+            const center = this._getPathPoint(s);
+            const tangent = this._getTangent(s);
+            const normal = this._getNormalVector(s);
+            const right = new THREE.Vector3().crossVectors(tangent, normal).normalize();
 
-        const dx = worldX - center.x;
+            // Project current error onto the road axis
+            // We want to find t such that: C.x + R.x * t = worldX  AND  C.z + R.z * t = worldZ
+            // But we can only freely choose 's' (moves C) and 't'.
+            // Let's solve for 't' using the vector dot product in 2D (XZ plane) logic?
+            // Actually, simpler: calculate 't' based on projection onto Right vector
+            // vector D = (worldX - C.x, 0, worldZ - C.z)
+            // t = D dot Right (considering only XZ usually? or 3D?)
+            // 3D projection is safer:
+            const dx = worldX - center.x;
+            const dz = worldZ - center.z;
 
-        // Check bounds (road width)
-        if (Math.abs(dx) < this.params.roadWidth * 0.6 + 5) { // generous physics bounds
-            const dy = dx * Math.tan(bankAngle);
-            return center.y + dy;
+            // t is finding lateral offset.
+            // approx: t = dx * right.x + dz * right.z; 
+            // (Assuming right is mostly in XZ plane and normalized)
+            t = dx * right.x + dz * right.z;
+
+            // Now, adjust 's' to reduce the longitudinal error.
+            // Longitudinal vector matches Tangent.
+            // longDist = dx * tangent.x + dz * tangent.z;
+
+            // This longitudinal distance is essentially "how far along the curve relative to C(s) are we?"
+            // We should add this to 's'.
+            const sOffset = dx * tangent.x + dz * tangent.z;
+            s += sOffset;
         }
 
-        return -1000; // Falling off
+        // Final Calculation with refined 's'
+        const center = this._getPathPoint(s);
+        const tangent = this._getTangent(s);
+        const normal = this._getNormalVector(s);
+        const right = new THREE.Vector3().crossVectors(tangent, normal).normalize();
+
+        // Calculate final t
+        const dx = worldX - center.x;
+        const dz = worldZ - center.z;
+        t = dx * right.x + dz * right.z;
+
+        // Check bounds
+        const halfWidth = this.params.roadWidth / 2;
+        if (Math.abs(t) <= halfWidth + 5.0) { // Increased margin for safety
+            // Calculate Y
+            // Y = C.y + Right.y * t
+            return center.y + right.y * t;
+        }
+
+        return -10000; // Abyss
     }
 
     getNormalAt(worldX, worldZ) {
-        // Compute numerical normal from 3 nearby points on the mathematical surface
-        const delta = 0.5;
-        const hC = this.getHeightAt(worldX, worldZ);
-        const hR = this.getHeightAt(worldX + delta, worldZ);
-        const hF = this.getHeightAt(worldX, worldZ + delta);
-
-        // fallback if abyss
-        if (hC < -900) return new THREE.Vector3(0, 1, 0);
-
-        const vRight = new THREE.Vector3(delta, hR - hC, 0); // Vector pointing Right
-        const vForward = new THREE.Vector3(0, hF - hC, delta); // Vector pointing Forward
-
-        // Normal is Cross(Forward, Right) -> Up
-        const norm = new THREE.Vector3().crossVectors(vForward, vRight).normalize();
-
-        return norm;
+        // Also need refinement for Normal to be consistent with Height
+        let s = worldZ;
+        for (let i = 0; i < 3; i++) {
+            const center = this._getPathPoint(s);
+            const tangent = this._getTangent(s);
+            // Optimization: Minimal recalc needed for 's' update
+            const dx = worldX - center.x;
+            const dz = worldZ - center.z;
+            const sOffset = dx * tangent.x + dz * tangent.z;
+            s += sOffset;
+        }
+        return this._getNormalVector(s);
     }
 
     getSurfaceType(worldX, worldZ) {
@@ -340,6 +455,36 @@ export class CosmicGenerator extends BasePhysicsProvider {
     }
 
     getSpawnPosition() {
+        // Road is guaranteed to be flat and at (0,0,0) for the first 500m
+        // Spawn slightly up to drop in
         return new THREE.Vector3(0, 5, 0);
+    }
+
+    // Allow for special gravity or physics tweaks
+    isDeepSpace() {
+        return true;
+    }
+
+    getGravity() {
+        // In "Deep Space" level, typical gravity is disabled or handled by attractors?
+        // But for the Road, we want "Magnetic" gravity that pulls the car onto the track locally?
+        // Or standard gravity?
+        // Use standard gravity (9.81) so the car sits on the track, 
+        // BUT the physics engine mostly cares about `getHeightAt`.
+        // If the track is inverted, gravity needs to pull "Up" relative to world (Down relative to track).
+
+        // PlanePhysics handles "isGrounded" logic.
+        // It doesn't currently support custom gravity *vectors* from the provider, only magnitude.
+        // However, it DOES align the plane to `getNormalAt`.
+
+        // If we want to ride upside down loops, we need the "downforce" logic in PlanePhysics 
+        // to dominate, or zero gravity.
+
+        return 9.81;
+    }
+
+    getGravitationalForce(playerPos) {
+        // Delegate to background for black hole pulls
+        return this.backgroundGenerator.getGravitationalForce(playerPos);
     }
 }
