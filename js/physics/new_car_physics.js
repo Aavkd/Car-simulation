@@ -130,6 +130,8 @@ export class NewCarPhysicsEngine {
         this.driftIntensity = 0;         // 0-1, how much the car is currently sliding
         this.lateralVelocity = 0;        // Tracks lateral speed for inertia
         this.currentDriftGrip = 1.0;     // Current grip multiplier (smoothed)
+        this.currentHelperTorque = 0;    // Smoothed helper torque for counter-steering
+        this.counterSteerTimer = 0;      // Time spent continuously counter-steering
 
         // Wheel spin velocities (for realistic wheel-spin)
         this.wheelSpinVelocities = [0, 0, 0, 0]; // rad/s for each wheel
@@ -234,6 +236,50 @@ export class NewCarPhysicsEngine {
 
         this.steeringAngle += (steerTarget - this.steeringAngle) * Math.min(1, steerSpeed * dt * 5);
 
+        // HELPER TORQUE: Assist rotation when counter-steering against a drift
+        let targetHelperTorque = 0;
+        
+        // If rotating significantly
+        if (Math.abs(this.angularVelocity.y) > 0.5) {
+            const yawSign = Math.sign(this.angularVelocity.y);
+            const steerSign = Math.sign(steerInput);
+            const isCounterSteering = Math.abs(steerInput) > 0.1 && steerSign !== yawSign;
+            
+            if (isCounterSteering) {
+                this.counterSteerTimer += dt;
+                
+                // Ramp up force over 0.5 seconds of holding counter-steer
+                const timeFactor = Math.min(1.0, this.counterSteerTimer * 2.0);
+                
+                const spinSpeed = Math.abs(this.angularVelocity.y);
+                const latSpeed = Math.abs(this.lateralVelocity);
+                
+                // REDUCED FACTORS: User reported previous were too strong
+                // Base: 100 (was 1000)
+                // Lateral: 50 * latSpeed (was 500)
+                // Spin: 20 * spin^2 (was 200)
+                const dynamicFactor = 100.0 + (50.0 * latSpeed) + (20.0 * spinSpeed * spinSpeed);
+                
+                // Input Sensitivity: Square the input for finer low-end control
+                // Full stick = 1.0 * 1.0 = 100% force
+                // Half stick = 0.5 * 0.5 = 25% force
+                const inputFactor = steerInput * Math.abs(steerInput);
+                
+                targetHelperTorque = inputFactor * this.mass * dynamicFactor * timeFactor;
+            } else {
+                this.counterSteerTimer = 0;
+            }
+        } else {
+            this.counterSteerTimer = 0;
+        }
+
+        // Smoothly interpolate torque to prevent jerky "snapping"
+        // fast attack (rise) for responsiveness, smooth decay
+        const lerpRate = Math.abs(targetHelperTorque) > Math.abs(this.currentHelperTorque) ? 10.0 : 5.0;
+        this.currentHelperTorque += (targetHelperTorque - this.currentHelperTorque) * Math.min(1, dt * lerpRate);
+
+        // Apply smoothed torque
+        totalTorque.y += this.currentHelperTorque;
         // ==================== 3.5 WEIGHT TRANSFER ====================
         this._updateWeightTransfer(input);
 
@@ -328,7 +374,15 @@ export class NewCarPhysicsEngine {
                 this.angularVelocity.add(localAngVelDelta.multiplyScalar(dt));
             }
         } else {
-            this.angularVelocity.multiplyScalar(this.groundAngularDamping);
+            // Ground damping
+            let damping = this.groundAngularDamping;
+
+            // SPIN DAMPENER: If rotating too fast (donut of death), apply extra damping
+            if (Math.abs(this.angularVelocity.y) > 2.5) {
+                damping *= 0.92; // Strong damping to kill excessive spin energy
+            }
+
+            this.angularVelocity.multiplyScalar(damping);
         }
 
         // ==================== 7. INTEGRATE POSITION ====================
@@ -725,8 +779,9 @@ export class NewCarPhysicsEngine {
                     // Rear loses more grip when drifting - allows oversteer
                     lateralGripMultiplier = this.driftGripMultiplier;
                 } else {
-                    // Front keeps more grip for steering control during drift
-                    lateralGripMultiplier = 0.85;
+                    // FIX: Boost front grip during drift to allow recovery/counter-steering
+                    // Was 0.85 - increased to 1.2 to give front tires "bite" when counter-steering
+                    lateralGripMultiplier = 1.2;
                 }
             }
 
