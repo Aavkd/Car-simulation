@@ -280,6 +280,12 @@ export class Toolbar {
         this.timelineToggleBtn.id = 'btn-timeline';
         group.appendChild(this.timelineToggleBtn);
 
+        // Phase 9: Toggle Ragdoll Test Panel
+        this.ragdollToggleBtn = this._createToolButton('🎭', 'Ragdoll Test',
+            () => this._toggleRagdollPanel());
+        this.ragdollToggleBtn.id = 'btn-ragdoll';
+        group.appendChild(this.ragdollToggleBtn);
+
         // Focus on Selected
         group.appendChild(this._createToolButton('🎯', 'Focus Selected (F)',
             () => this._focusSelected()));
@@ -517,6 +523,16 @@ export class Toolbar {
             if (this.editor.isPoseMode) {
                 this.editor.timelinePanel.loadKeyframes(this.editor.capturedPoses, this.currentFrame);
             }
+        }
+    }
+
+    _toggleRagdollPanel() {
+        // Phase 9: Toggle ragdoll test panel visibility
+        if (this.editor.toggleRagdollPanel) {
+            this.editor.toggleRagdollPanel();
+            // Update button state
+            const isVisible = this.editor.ragdollTestPanel?.isVisible();
+            this.ragdollToggleBtn?.classList.toggle('active', isVisible);
         }
     }
 

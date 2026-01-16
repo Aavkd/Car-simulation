@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 /**
  * Ragdoll Configuration
  * 
@@ -5,6 +7,32 @@
  * All tunable parameters for balance, impact response, and falling behaviors.
  */
 export const RagdollConfig = {
+    // ==================== PHYSICS CONFIGURATION ====================
+    physics: {
+        gravity: new THREE.Vector3(0, -20, 0),
+        friction: 0.98,
+        groundFriction: 0.6,
+        solverIterations: 5,
+
+        // Mass Configuration
+        mass: {
+            default: 1.0,
+            hips: 15.0,
+            spine: 5.0,
+            head: 3.0,
+            thigh: 3.0,
+            leg: 1.5,
+            arm: 1.0
+        },
+
+        // Constraint Configuration
+        stiffness: {
+            default: 0.8,
+            rigid: 1.0,
+            soft: 0.5
+        }
+    },
+
     // ==================== BALANCE THRESHOLDS ====================
     balance: {
         stabilityConeAngle: 15,           // Degrees from vertical before unstable

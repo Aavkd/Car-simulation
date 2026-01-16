@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { BlackHole } from '../environment/BlackHole.js';
+import { ActiveRagdollController } from '../animation/physics/ActiveRagdollController.js';
 
 /**
  * SceneObjectManager - Manages object placement, selection, and manipulation in editor
@@ -237,6 +238,55 @@ export class SceneObjectManager {
                 modified: false,
                 animations: object.userData.animations // Ensure accessible
             };
+
+            // Initializing Ragdoll Dummy
+            if (metadata.type === 'ragdoll_dummy') {
+                console.log('[SceneObjectManager] Initializing Ragdoll Dummy...');
+
+                // Create a minimal entity wrapper for the editor
+                // This mimics the structure expected by RagdollTestPanel (entity.ragdoll)
+                const entityWrapper = {
+                    name: object.userData.name,
+                    uuid: object.uuid,
+                    // Minimal properties needed for ragdoll controller
+                    specs: { height: 1.75 },
+                };
+
+                // Add mesh as non-enumerable to prevent JSON circular reference
+                Object.defineProperty(entityWrapper, 'mesh', {
+                    value: object,
+                    enumerable: false,
+                    writable: true,
+                    configurable: true
+                });
+
+                // Initialize ActiveRagdollController
+                const ragdoll = new ActiveRagdollController(object, {
+                    terrain: this.terrain,
+                    entity: entityWrapper,
+                    characterHeight: 1.75,
+                    // Editor specific: maybe we want different defaults? Use standard for now.
+                });
+
+                // Attach to wrapper as non-enumerable to prevent circular reference
+                Object.defineProperty(entityWrapper, 'ragdoll', {
+                    value: ragdoll,
+                    enumerable: false,
+                    writable: true,
+                    configurable: true
+                });
+
+                // Store entity reference in userData so AnimatorEditorController and RagdollTestPanel can find it
+                // Make it non-enumerable so it doesn't break JSON.stringify during cloning (e.g. Play Mode transition)
+                Object.defineProperty(object.userData, 'entity', {
+                    value: entityWrapper,
+                    enumerable: false,
+                    writable: true,
+                    configurable: true
+                });
+
+                console.log('[SceneObjectManager] Ragdoll Controller initialized for dummy');
+            }
 
             // Link entities for picking 
             // IMPORTANT: Removed child.userData.entity = object assignment to prevent circular references in JSON serialization during Play Mode transition.

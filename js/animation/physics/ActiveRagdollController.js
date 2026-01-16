@@ -1,8 +1,11 @@
 import * as THREE from 'three';
 import { RagdollConfig } from './RagdollConfig.js';
+import { SkeletonRegistry } from './SkeletonRegistry.js';
 import { BalanceController } from './BalanceController.js';
 import { ImpactResponseSystem } from './ImpactResponseSystem.js';
 import { ProceduralFallController } from './ProceduralFallController.js';
+import { RagdollPhysics } from './RagdollPhysics.js';
+import { PostureController } from './PostureController.js';
 
 /**
  * ActiveRagdollController
@@ -38,7 +41,23 @@ export class ActiveRagdollController {
         this.entity = options.entity || null; // Reference to PlayerController or NPC
 
         // ==================== SUB-CONTROLLERS ====================
-        this.balance = new BalanceController(mesh);
+
+        // Initialize SkeletonRegistry FIRST (shared by controllers)
+        // If options already has a registry, use it, otherwise create one
+        this.registry = options.skeletonRegistry || new SkeletonRegistry(mesh);
+
+        // Alias for internal usage (referencing the registry's storage directly)
+        this.boneRegistry = this.registry.bones;
+        this.skinnedMeshes = this.registry.skinnedMeshes;
+
+        // Posture System (Arbitrates bone rotations)
+        this.posture = new PostureController(this.registry);
+
+        this.balance = new BalanceController(mesh, {
+            ...options,
+            skeletonRegistry: this.registry,
+            postureController: this.posture
+        });
 
         this.impact = new ImpactResponseSystem(this.entity, {
             onStumble: (impact) => this._handleStumble(impact),
@@ -47,13 +66,22 @@ export class ActiveRagdollController {
             onKnockdown: (impact) => this._handleKnockdown(impact),
         });
 
+        // Pass registry to ProceduralFallController
         this.fall = new ProceduralFallController(mesh, {
             characterHeight: options.characterHeight || 5.5,
+            skeletonRegistry: this.registry,
+            postureController: this.posture,
             onFallStart: (dir, intensity) => this._onFallStart(dir, intensity),
             onHitGround: (velocity) => this._onHitGround(velocity),
             onRecoveryStart: () => this._onRecoveryStart(),
             onRecoveryComplete: () => this._onRecoveryComplete(),
         });
+
+        // ==================== PHYSICS SYSTEM ====================
+        this.physics = new RagdollPhysics({
+            terrain: this.terrain
+        });
+        this.physicsInitialized = false;
 
         // ==================== STATE ====================
         this.state = 'normal'; // normal, stumbling, staggering, falling, ragdoll, recovering
@@ -77,80 +105,81 @@ export class ActiveRagdollController {
         this.previousPosition = new THREE.Vector3();
         this.velocity = new THREE.Vector3();
 
-        // ==================== BONES FOR STUMBLE/STAGGER ====================
-        // Registry maps bone types to ARRAYS of bone objects (one per skeleton)
-        this.boneRegistry = {
-            hips: [],
-            spine: [],
-            leftArm: [],
-            rightArm: [],
-        };
-
-        // Store all SkinnedMesh children for skeleton updates
-        this.skinnedMeshes = [];
-        this._findBones();
-
         // ==================== CALLBACKS ====================
         this.onStateChange = options.onStateChange || null;
         this.onImpact = options.onImpact || null;
+
+        // Initialize physics after finding bones
+        this._initPhysics();
     }
 
     /**
-     * Find bones for stumble/stagger effects
-     * Gets bones from the actual skeleton of SkinnedMesh children
-     * to ensure modifications affect the rendered mesh
+     * Initialize Verlet physics system
+     * Create particles for key bones and constraints between them
      */
-    _findBones() {
-        // First, collect all SkinnedMesh children
-        this.skinnedMeshes = [];
-        const uniqueSkeletons = new Set();
+    _initPhysics() {
+        if (this.physicsInitialized) return;
 
-        this.mesh.traverse(child => {
-            if (child.isSkinnedMesh && child.skeleton) {
-                this.skinnedMeshes.push(child);
-                uniqueSkeletons.add(child.skeleton);
+        // We need a connected skeleton graph.
+        // boneRegistry gives us types, but we need the hierarchy.
+        // We'll traverse from hips.
+
+        if (this.boneRegistry.hips.length === 0) return;
+
+        const hips = this.boneRegistry.hips[0]; // Main skeleton hips
+
+        // Helper to add recursive bone chain
+        const addChain = (bone, parentParticle = null) => {
+            // Add particle for this bone
+            const config = RagdollConfig.physics;
+            let mass = config.mass.default;
+            const name = bone.name.toLowerCase();
+
+            if (name.includes('pelvis') || name.includes('hips')) mass = config.mass.hips;
+            else if (name.includes('spine')) mass = config.mass.spine;
+            else if (name.includes('head')) mass = config.mass.head;
+            else if (name.includes('thigh') || name.includes('upleg')) mass = config.mass.thigh;
+            else if (name.includes('calf') || name.includes('leg')) mass = config.mass.leg;
+            else if (name.includes('arm')) mass = config.mass.arm;
+
+            const particle = this.physics.addParticle(bone, mass);
+
+            // Connect to parent
+            if (parentParticle) {
+                // Determine stiffness based on joint type
+                let stiffness = config.stiffness.default;
+
+                // Spine is more rigid
+                if (name.includes('spine') || name.includes('head')) {
+                    stiffness = config.stiffness.rigid;
+                }
+
+                this.physics.addConstraint(parentParticle, particle, stiffness);
             }
-        });
 
-        console.log(`[ActiveRagdollController] Found ${this.skinnedMeshes.length} SkinnedMesh children and ${uniqueSkeletons.size} unique skeletons`);
+            // Recurse to children ONLY if they are relevant physical bones
+            // (Standard UE4/Mixamo hierarchy)
+            bone.children.forEach(child => {
+                if (!child.isBone) return;
+                const cName = child.name.toLowerCase();
 
-        if (uniqueSkeletons.size === 0) {
-            console.error('[ActiveRagdollController] No skeletons found in mesh!');
-            return;
-        }
+                // Filter out twist bones, fingers, etc. for performance
+                const relevant = [
+                    'spine', 'neck', 'head',
+                    'upperarm', 'lowerarm', 'hand',
+                    'thigh', 'calf', 'foot'
+                ];
 
-        // Iterate ALL skeletons to find bones
-        // This ensures multi-part meshes (head, body, clothes) all move together
-        uniqueSkeletons.forEach(skeleton => {
-            skeleton.bones.forEach(bone => {
-                const name = bone.name.toLowerCase();
-
-                // Pelvis / Hips (UE4: pelvis, Mixamo: hips)
-                if (name === 'pelvis' || name.includes('hips')) {
-                    if (!this.boneRegistry.hips.includes(bone)) this.boneRegistry.hips.push(bone);
-                }
-
-                // Spine (UE4: spine_01, spine_02... Mixamo: spine)
-                if (name === 'spine_01' || name === 'spine_02' || name === 'spine') {
-                    if (!this.boneRegistry.spine.includes(bone)) this.boneRegistry.spine.push(bone);
-                }
-
-                // Upper arms (UE4: upperarm_l, upperarm_r)
-                if (name === 'upperarm_l' || (name.includes('leftarm') && !name.includes('lower') && !name.includes('fore'))) {
-                    if (!this.boneRegistry.leftArm.includes(bone)) this.boneRegistry.leftArm.push(bone);
-                }
-                if (name === 'upperarm_r' || (name.includes('rightarm') && !name.includes('lower') && !name.includes('fore'))) {
-                    if (!this.boneRegistry.rightArm.includes(bone)) this.boneRegistry.rightArm.push(bone);
+                const isRelevant = relevant.some(k => cName.includes(k));
+                if (isRelevant) {
+                    addChain(child, particle);
                 }
             });
-        });
+        };
 
-        // Debug output
-        Object.keys(this.boneRegistry).forEach(key => {
-            console.log(`[ActiveRagdollController] Bones for '${key}': ${this.boneRegistry[key].length}`);
-        });
-
-        if (this.boneRegistry.hips.length === 0) console.warn('[ActiveRagdollController] CRITICAL: Pelvis not found in ANY skeleton!');
+        addChain(hips);
+        this.physicsInitialized = true;
+        console.log(`[ActiveRagdollController] Physics initialized with ${this.physics.particles.length} particles`);
     }
 
     /**
@@ -195,6 +224,9 @@ export class ActiveRagdollController {
         this.balance.applyForce(impact.force, impact.point);
         this.balance.isStable = false; // Force unstable during stumble
         this.balance.stabilityFactor = 0.6; // Reduce stability factor
+
+        // Pick a random leg to step with (0 = Left, 1 = Right)
+        this.stumbleLegIndex = Math.random() > 0.5 ? 1 : 0;
     }
 
     /**
@@ -288,6 +320,7 @@ export class ActiveRagdollController {
         this._setState('normal');
         this.physicsBlend = 0;
         this.balance.reset();
+        this.physics.matchAnimation();
     }
 
     /**
@@ -300,31 +333,27 @@ export class ActiveRagdollController {
         this.stumbleProgress += delta * stumbleConfig.stepSpeed;
         this.stumbleElapsed = (this.stumbleElapsed || 0) + delta;
 
-        // Calculate sway - Reduced intensity (0.8 -> 0.4)
-        const swayAmount = Math.sin(this.stumbleProgress * Math.PI) * 0.4;
+        // Apply visual "Step" movement (Root Motion)
+        if (this.stumbleProgress < 1.0) {
+            const stepMove = delta * stumbleConfig.stepSpeed * stumbleConfig.stepDistance;
+            const moveVec = this.stumbleDirection.clone().multiplyScalar(stepMove);
+            this.mesh.position.add(moveVec);
+        }
+
+        // Calculate sway - Reduced intensity
+        const appliedSway = Math.sin(this.stumbleProgress * Math.PI) * 0.4;
 
         // 1. Calculate the rotation axis in WORLD space
-        // This is perpendicular to both the stumble direction and UP vector
         const worldAxis = this.stumbleDirection.clone().cross(new THREE.Vector3(0, 1, 0));
-
-        if (worldAxis.lengthSq() < 0.001) {
-            worldAxis.set(1, 0, 0); // Fallback
-        }
+        if (worldAxis.lengthSq() < 0.001) worldAxis.set(1, 0, 0);
         worldAxis.normalize();
 
         // 2. Create the world-space rotation quaternion
-        const swayQuatWorld = new THREE.Quaternion().setFromAxisAngle(worldAxis, swayAmount);
+        const swayQuatWorld = new THREE.Quaternion().setFromAxisAngle(worldAxis, appliedSway);
 
-        // 3. Apply to all registered hips
+        // 3. Apply to hips (Absolute modification of current frame)
         if (this.boneRegistry.hips.length > 0) {
-
             this.boneRegistry.hips.forEach(hipBone => {
-                // To apply a WORLD rotation to a local child, we need to transform it:
-                // NewLocal = InvParentWorld * RotationWorld * ParentWorld * OldLocal
-                // But simplified for additive sway:
-                // We want: WorldRotation_New = SwayWorld * WorldRotation_Old
-                // Local_New = InvParentWorld * WorldRotation_New
-
                 // Get parent world quaternion
                 const parentQuatWorld = new THREE.Quaternion();
                 if (hipBone.parent) {
@@ -332,46 +361,85 @@ export class ActiveRagdollController {
                 }
 
                 // Convert World Sway to Local Delta
-                // DeltaLocal = InvParentWorld * SwayWorld * ParentWorld
+                // NewLocal = InvParent * (Sway * CurrentWorld)
+                //          = InvParent * Sway * (Parent * CurrentLocal)
+
+                // Optimized: calculate torque in local space
                 const invParent = parentQuatWorld.clone().invert();
-                const localSway = invParent.multiply(swayQuatWorld).multiply(parentQuatWorld);
+                // Phase 1.2: Fix quaternion mutation - use .copy() before .multiply() chain
+                const localSway = new THREE.Quaternion()
+                    .copy(invParent)
+                    .multiply(swayQuatWorld)
+                    .multiply(parentQuatWorld);
 
-                // Apply local delta (premultiply to apply "after" parent transform? No, multiply puts it on right)
-                // L_new = L_old * localSway (intrinsic rotation)
-                hipBone.quaternion.premultiply(localSway);
-            });
-
-            // Apply smaller sway to spine for flexibility
-            if (this.boneRegistry.spine.length > 0) {
-                const spineSwayWorld = new THREE.Quaternion().setFromAxisAngle(worldAxis, swayAmount * 0.5);
-
-                this.boneRegistry.spine.forEach(spineBone => {
-                    const parentQuatWorld = new THREE.Quaternion();
-                    if (spineBone.parent) spineBone.parent.getWorldQuaternion(parentQuatWorld);
-
-                    const invParent = parentQuatWorld.clone().invert();
-                    const localSway = invParent.multiply(spineSwayWorld).multiply(parentQuatWorld);
-
-                    spineBone.quaternion.premultiply(localSway);
-                });
-            }
-
-            // Update all skeletons
-            this.skinnedMeshes.forEach(skinnedMesh => {
-                if (skinnedMesh.skeleton) {
-                    skinnedMesh.skeleton.update();
-                }
+                // Apply to current animation pose via PostureController
+                this.posture.request(hipBone, 'impulse', localSway, 1.0, 'additive');
             });
 
             this.mesh.updateMatrixWorld(true);
+
+            // Apply smaller sway to spine
+            if (this.boneRegistry.spine.length > 0) {
+                const spineSwayWorld = new THREE.Quaternion().setFromAxisAngle(worldAxis, appliedSway * 0.5);
+                this.boneRegistry.spine.forEach(spineBone => {
+                    const parentQuatWorld = new THREE.Quaternion();
+                    if (spineBone.parent) spineBone.parent.getWorldQuaternion(parentQuatWorld);
+                    const invParent = parentQuatWorld.clone().invert();
+                    // Phase 1.2b: Fix quaternion mutation - use .copy() before .multiply() chain
+                    const localSway = new THREE.Quaternion()
+                        .copy(invParent)
+                        .multiply(spineSwayWorld)
+                        .multiply(parentQuatWorld);
+                    this.posture.request(spineBone, 'impulse', localSway, 1.0, 'additive');
+                });
+            }
+
+            // Update skeletons
+            this.skinnedMeshes.forEach(m => m.skeleton && m.skeleton.update());
+            this.mesh.updateMatrixWorld(true);
+
+            // 4. Procedural Leg Step
+            const stepHeight = Math.sin(this.stumbleProgress * Math.PI);
+            const stepAngle = stepHeight * 0.8;
+            const kneeBend = stepHeight * 1.5;
+
+            if (this.boneRegistry.leftUpLeg.length > 0 && this.boneRegistry.rightUpLeg.length > 0) {
+                const leftUpLeg = this.boneRegistry.leftUpLeg[0];
+                const rightUpLeg = this.boneRegistry.rightUpLeg[0];
+                const leftLeg = this.boneRegistry.leftLeg[0];
+                const rightLeg = this.boneRegistry.rightLeg[0];
+
+                if (leftUpLeg && rightUpLeg) {
+                    const isRightSwing = this.stumbleLegIndex === 1;
+                    const swingThigh = isRightSwing ? rightUpLeg : leftUpLeg;
+                    const swingCalf = isRightSwing ? rightLeg : leftLeg;
+
+                    // Thigh Step
+                    const thighQuat = new THREE.Quaternion().setFromAxisAngle(worldAxis, -stepAngle);
+
+                    const parentQuatWorld = new THREE.Quaternion();
+                    if (swingThigh.parent) swingThigh.parent.getWorldQuaternion(parentQuatWorld);
+                    const invParent = parentQuatWorld.clone().invert();
+                    // Fix quaternion mutation - use .copy() before .multiply() chain
+                    const localStep = new THREE.Quaternion()
+                        .copy(invParent)
+                        .multiply(thighQuat)
+                        .multiply(parentQuatWorld);
+                    this.posture.request(swingThigh, 'impulse', localStep, 1.0, 'additive');
+
+                    // Knee Bend (Local X axis usually)
+                    const kneeAxis = new THREE.Vector3(1, 0, 0);
+                    const kneeQuat = new THREE.Quaternion().setFromAxisAngle(kneeAxis, kneeBend);
+                    if (swingCalf) {
+                        this.posture.request(swingCalf, 'impulse', kneeQuat, 1.0, 'additive_local');
+                    }
+                }
+            }
         }
 
-        // Check recovery timing
+        // Check recovery
         const minDuration = this.stumbleMinDuration || stumbleConfig.recoveryTime;
-        if (this.stumbleElapsed < minDuration) return;
-
-        // Check completion
-        if (this.stumbleProgress >= 1) {
+        if (this.stumbleElapsed >= minDuration && this.stumbleProgress >= 1) {
             if (!this.balance.isStable && this.stumbleSteps < this.maxStumbleSteps) {
                 this.stumbleSteps++;
                 this.stumbleProgress = 0;
@@ -391,6 +459,14 @@ export class ActiveRagdollController {
 
         this.staggerTime += delta;
 
+        // Apply drift movement (stumbling around)
+        // Move later in the stagger to simulate losing ground
+        const driftSpeed = 0.8 * (Math.sin(this.staggerTime * 5) * 0.5 + 1.0); // Variable speed
+        const moveVec = this.balance.balanceDirection.clone().multiplyScalar(delta * driftSpeed);
+        // Remove Y component to keep on ground (though physics/fall controller handles Y usually)
+        moveVec.y = 0;
+        this.mesh.position.add(moveVec);
+
         // Oscillating sway
         this.staggerSway = Math.sin(this.staggerTime * staggerConfig.swaySpeed * Math.PI * 2);
         const swayAmount = this.staggerSway * staggerConfig.swayAmount;
@@ -406,8 +482,12 @@ export class ActiveRagdollController {
                 const parentQuatWorld = new THREE.Quaternion();
                 if (bone.parent) bone.parent.getWorldQuaternion(parentQuatWorld);
                 const invParent = parentQuatWorld.clone().invert();
-                const localSway = invParent.multiply(swayQuatWorld).multiply(parentQuatWorld);
-                bone.quaternion.premultiply(localSway);
+                // Phase 1.2c: Fix quaternion mutation - use .copy() before .multiply() chain
+                const localSway = new THREE.Quaternion()
+                    .copy(invParent)
+                    .multiply(swayQuatWorld)
+                    .multiply(parentQuatWorld);
+                this.posture.request(bone, 'impulse', localSway, 1.0, 'additive');
             });
         }
 
@@ -416,8 +496,8 @@ export class ActiveRagdollController {
         const leftFlail = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), armFlail + 0.3);
         const rightFlail = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -armFlail - 0.3);
 
-        this.boneRegistry.leftArm.forEach(bone => bone.quaternion.multiply(leftFlail));
-        this.boneRegistry.rightArm.forEach(bone => bone.quaternion.multiply(rightFlail));
+        this.boneRegistry.leftArm.forEach(bone => this.posture.request(bone, 'impulse', leftFlail, 1.0, 'additive_local'));
+        this.boneRegistry.rightArm.forEach(bone => this.posture.request(bone, 'impulse', rightFlail, 1.0, 'additive_local'));
 
         // Update skeletons
         this.skinnedMeshes.forEach(skinnedMesh => {
@@ -541,8 +621,23 @@ export class ActiveRagdollController {
     update(delta) {
         if (!this.enabled) return;
 
+        // ==================== STIFFNESS CONTROL ====================
+        // Drive physics stiffness based on high-level intent
+        let stiffness = 0.1; // Default loose/relaxed
+
+        if (this.state === 'stumbling' || this.state === 'staggering') {
+            stiffness = 0.6; // Firm up to regain balance
+        } else if (this.fall && this.fall.isFalling()) {
+            stiffness = this.fall.getBraceIntensity();
+        }
+
+        this.physics.setStiffnessMultiplier(stiffness);
+
         // Update velocity tracking
         this._updateVelocity(delta);
+
+        // Reset posture modifications for this frame
+        this.posture.reset();
 
         // Update sub-controllers
         this.impact.update(delta);
@@ -583,13 +678,196 @@ export class ActiveRagdollController {
 
                 // Sync physics blend
                 this.physicsBlend = this.fall.getPhysicsBlend();
+
+                // physicsBlend of 1.0 means mostly physics control
+                if (this.physicsBlend > 0.0) {
+                    // 1. Update Physics
+                    this.physics.update(delta);
+
+                    // 2. Sync Visuals (Physics -> Bones)
+                    // Only apply if blend is significant, otherwise we might just be starting
+                    this._syncPhysicsToBones(this.physicsBlend);
+                } else {
+                    // Match animation positions so physics is ready
+                    this.physics.matchAnimation();
+                }
                 break;
 
             case 'recovering':
                 this.fall.update(delta);
                 this.physicsBlend = this.fall.getPhysicsBlend();
+
+                // In recovery, we want to blend FROM physics TO animation
+                // physicsBlend goes 1 -> 0
+                if (this.physicsBlend > 0) {
+                    // Soft physics update (keep gravity working but drag towards animation)
+                    this.physics.update(delta);
+                    this._syncPhysicsToBones(this.physicsBlend);
+                }
                 break;
         }
+
+        // Apply final posture to bones
+        this.posture.apply();
+    }
+
+    /**
+     * Apply simplified physics positions to bones
+     * Iterative Forward Kinematics with World Space Unification
+     */
+    _syncPhysicsToBones(blendWeight) {
+        if (!this.physicsInitialized) return;
+
+        // 1. Set Root (Hips) Position directly
+        const hips = this.boneRegistry.hips[0];
+        const hipsParticle = this.physics.getParticlePosition(hips);
+
+        if (hips && hipsParticle) {
+            // PHASE 2: Root Anchoring (Drifting Fix)
+            if (blendWeight > 0.5) {
+                this.mesh.position.x = hipsParticle.x;
+                this.mesh.position.z = hipsParticle.z;
+
+                if (this.entity && this.entity.position) {
+                    this.entity.position.x = hipsParticle.x;
+                    this.entity.position.z = hipsParticle.z;
+                }
+                this.mesh.updateMatrixWorld(true);
+            }
+
+            // Lerp current position to physics position
+            const localPos = this.mesh.worldToLocal(hipsParticle.clone());
+            hips.position.lerp(localPos, blendWeight);
+        }
+
+        // 2. Build Constraint Map for fast lookup (Parent -> Compliance Constraint)
+        const parentToConstraint = new Map();
+        this.physics.constraints.forEach(c => {
+            // Only care about bone-to-bone constraints
+            if (!c.p1.bone || !c.p2.bone) return;
+
+            // We want constraints where p1 is the parent of p2
+            if (c.p2.bone.parent !== c.p1.bone) return;
+
+            const parent = c.p1.bone;
+            if (!parentToConstraint.has(parent)) {
+                parentToConstraint.set(parent, []);
+            }
+            parentToConstraint.get(parent).push(c);
+        });
+
+        // 3. Recursive Forward Kinematics Solver
+        // Starts at Hips and propagates calculated World Rotation down
+        const solveHierarchy = (bone, parentWorldQuat) => {
+            let currentWorldQuat = new THREE.Quaternion(); // This bone's calculated world rot
+            let didRotate = false;
+
+            // Check if this bone drives a physics constraint
+            if (parentToConstraint.has(bone)) {
+                const constraints = parentToConstraint.get(bone);
+
+                // Select best child (prioritize Spine/Neck)
+                let bestConstraint = constraints[0];
+                let highestPriority = -1;
+
+                constraints.forEach(c => {
+                    const childName = c.p2.bone.name.toLowerCase();
+                    let priority = 1;
+                    if (childName.includes('spine') || childName.includes('pelvis')) priority = 4;
+                    else if (childName.includes('neck') || childName.includes('head')) priority = 3;
+                    else if (childName.includes('thigh') || childName.includes('calf')) priority = 2;
+
+                    if (priority > highestPriority) {
+                        highestPriority = priority;
+                        bestConstraint = c;
+                    }
+                });
+
+                // Calculate Rotation using the PASSED parentWorldQuat (Physics Truth),
+                // NOT the scene graph (Frame N-1 Truth)
+                const localRot = this._applySwingTwist(
+                    bone,
+                    bestConstraint.p2.bone,
+                    bestConstraint.p1.position,
+                    bestConstraint.p2.position,
+                    blendWeight,
+                    parentWorldQuat
+                );
+
+                // Calculate OUR World Rotation to pass to children
+                // World = ParentWorld * Local
+                currentWorldQuat.copy(parentWorldQuat).multiply(localRot);
+                didRotate = true;
+            } else {
+                // Not physics driven, use animation rotation
+                // World = ParentWorld * AnimationLocal
+                currentWorldQuat.copy(parentWorldQuat).multiply(bone.quaternion);
+            }
+
+            // Recurse to children
+            bone.children.forEach(child => {
+                // Optimization: Only recurse if child is part of our known skeleton
+                // or if it has children we care about. 
+                // For safety, checking if it's a Bone type is good enough.
+                if (child.isBone) {
+                    solveHierarchy(child, currentWorldQuat);
+                }
+            });
+        };
+
+        // Start solver from Hips
+        // Hips parent world rotation is the Mesh/Scene world rotation (usually Identity or mesh rotation)
+        const meshWorldQuat = new THREE.Quaternion();
+        this.mesh.getWorldQuaternion(meshWorldQuat);
+
+        solveHierarchy(hips, meshWorldQuat);
+
+        // Update matrices once at the end
+        this.mesh.updateMatrixWorld(true);
+    }
+
+    /**
+     * Apply Swing-Twist rotation to align bone with physics target
+     * Returns the calculated Local Quaternion
+     */
+    _applySwingTwist(parentBone, childBone, parentPos, childPos, weight, parentWorldQuat) {
+        // 1. Get Bone Axis (Rest Direction) - Local Space
+        const axis = childBone.position.clone().normalize();
+
+        // 2. Decompose Current Animation Rotation into Swing & Twist
+        // Rotate axis by current quaternion to get where it points now
+        const currentDir = axis.clone().applyQuaternion(parentBone.quaternion).normalize();
+
+        // Animation Swing: Rotation from Rest Axis to Current Direction
+        const animationSwing = new THREE.Quaternion().setFromUnitVectors(axis, currentDir);
+
+        // Animation Twist: The residual rotation around the axis
+        const animationTwist = animationSwing.clone().invert().multiply(parentBone.quaternion);
+
+        // 3. Calculate Physics Swing
+        // We need the TARGET direction in the PARENT'S LOCAL SPACE
+        // LocalSpace = Inv(ParentWorld) * WorldSpace
+
+        // Target World Direction (from particles)
+        const targetDirWorld = new THREE.Vector3().subVectors(childPos, parentPos).normalize();
+
+        // Inverse of the PRE-CALCULATED Parent World Rotation
+        const invParentWorld = parentWorldQuat.clone().invert();
+
+        // Target Local Direction
+        const targetDirLocal = targetDirWorld.clone().applyQuaternion(invParentWorld);
+
+        // Physics Swing: Rotation from Rest Axis to Target Direction
+        const physicsSwing = new THREE.Quaternion().setFromUnitVectors(axis, targetDirLocal);
+
+        // 4. Combine Physics Swing + Animation Twist
+        const targetQuat = physicsSwing.multiply(animationTwist);
+
+        // 5. Apply to Posture
+        this.posture.request(parentBone, 'physics', targetQuat, weight, 'absolute');
+
+        // Return the logic rotation so we can propagate it down the chain
+        return targetQuat;
     }
 
     /**

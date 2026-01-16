@@ -1559,7 +1559,7 @@ class Game {
 
         // Handle mouse movement for player look
         document.addEventListener('mousemove', (e) => {
-            if (this.isOnFoot && document.pointerLockElement === this.canvas) {
+            if (this.isOnFoot && this.player && document.pointerLockElement === this.canvas) {
                 this.player.handleMouseLook(e.movementX, e.movementY);
             }
         });

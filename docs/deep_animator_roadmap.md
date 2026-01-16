@@ -493,6 +493,7 @@ js/editor/animator/
 | Phase 6: Onion Skin | 🟢 Medium | Low | Medium | ⏳ Planned |
 | Phase 7: Retargeting | 🟢 Medium | High | High | ⏳ Planned |
 | Phase 8: Polish | 🔵 Low | Low | Medium | ⏳ Planned |
+| Phase 9: Ragdoll Testing | 🟡 High | Medium | High | ✅ **COMPLETE** |
 
 ---
 

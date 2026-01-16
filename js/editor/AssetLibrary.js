@@ -193,6 +193,15 @@ export class AssetLibrary {
                 type: 'npc',
                 scale: 0.001 // Reduced from 0.01 to 0.001 to fix giant sizing issue.
             },
+            {
+                id: 'ragdoll_dummy',
+                name: 'Ragdoll Dummy',
+                path: 'assets/models/Knight.fbx',
+                category: 'npc',
+                icon: '😵',
+                type: 'ragdoll_dummy',
+                scale: 0.03
+            },
             // === Triggers ===
             {
                 id: 'trigger_volume',

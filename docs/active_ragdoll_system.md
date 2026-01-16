@@ -201,6 +201,23 @@ new ActiveRagdollController(mesh, {
 
 ## 🧪 Testing
 
+### Animator Editor Testing Tool (Recommended)
+
+The **Ragdoll Test Panel** in the Animator Editor provides a visual interface for testing:
+
+1. Open Animator Editor (`F8` or menu)
+2. Select an entity with a ragdoll controller
+3. Click the **🎭** button in the toolbar
+4. Use the panel to:
+   - ⚡ **Apply preset impacts** (Stumble, Stagger, Fall, Knockdown)
+   - 🎯 **Custom force vectors** with X/Y/Z sliders
+   - ▶️ **Resume/Pause simulation** to see effects in real-time
+   - 📊 **Monitor state** (current state, physics blend, stability)
+   - ⚙️ **Override config** values for live tuning
+   - 🔧 **Toggle debug** visualizations
+
+> **Note:** Entities must have an `ActiveRagdollController` attached. Currently only `PlayerController` has ragdoll support.
+
 ### Quick Test (Browser Console)
 
 You can use the new helper method which doesn't require creating Vector3 objects manually:

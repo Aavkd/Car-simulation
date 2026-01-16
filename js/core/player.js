@@ -60,6 +60,7 @@ const ANIMATION_SETS = {
 export class PlayerController {
     constructor(terrain) {
         this.terrain = terrain;
+        this.name = 'Player';
         window.THREE = THREE; // Expose for console debugging
 
         // ==================== PLAYER SPECS ====================
@@ -187,35 +188,40 @@ export class PlayerController {
         const dt = Math.min(deltaTime, 0.05);
 
         // ==================== INPUT ====================
+        // ==================== INPUT ====================
+        // If no input provided (e.g. from Animator), use empty default
+        const keys = input ? input.keys : { forward: false, backward: false, left: false, right: false, sprint: false };
+        const gamepad = input ? input.gamepad : null;
+
         // Movement input (WASD / gamepad left stick)
         let inputForward = 0;
         let inputRight = 0;
 
-        if (input.keys.forward) inputForward += 1;
-        if (input.keys.backward) inputForward -= 1;
-        if (input.keys.left) inputRight -= 1;   // Q key = strafe left
-        if (input.keys.right) inputRight += 1;  // D key = strafe right
+        if (keys.forward) inputForward += 1;
+        if (keys.backward) inputForward -= 1;
+        if (keys.left) inputRight -= 1;   // Q key = strafe left
+        if (keys.right) inputRight += 1;  // D key = strafe right
 
         // Gamepad movement (additive, don't override keyboard)
-        if (input.gamepad) {
+        if (gamepad) {
             // Left stick X for strafe
             // Use moveX (raw) instead of steering (inverted)
-            const strafe = input.gamepad.moveX !== undefined ? input.gamepad.moveX : -input.gamepad.steering;
+            const strafe = gamepad.moveX !== undefined ? gamepad.moveX : -gamepad.steering;
             if (Math.abs(strafe) > 0.1) {
                 inputRight += strafe;  // Stick right (positive) = strafe right
             }
             // Left stick Y for forward/backward (use moveY, not triggers)
-            if (input.gamepad.moveY !== undefined && Math.abs(input.gamepad.moveY) > 0.1) {
-                inputForward += input.gamepad.moveY;  // Stick up = forward
+            if (gamepad.moveY !== undefined && Math.abs(gamepad.moveY) > 0.1) {
+                inputForward += gamepad.moveY;  // Stick up = forward
             }
         }
 
         this.moveForward = inputForward;
         this.moveRight = inputRight;
-        this.isSprinting = input.keys.sprint;  // Shift key for sprint
+        this.isSprinting = keys.sprint;  // Shift key for sprint
 
         // Gamepad sprint (Square/X button)
-        if (input.gamepad && input.gamepad.sprint) {
+        if (gamepad && gamepad.sprint) {
             this.isSprinting = true;
         }
 

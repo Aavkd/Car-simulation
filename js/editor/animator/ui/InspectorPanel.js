@@ -4,6 +4,7 @@
  * 
  * Inspector panel for entity and bone inspection.
  */
+import { ControllerStatusPanel } from './ControllerStatusPanel.js';
 
 export class InspectorPanel {
     constructor(uiManager, animatorEditor) {
@@ -13,6 +14,7 @@ export class InspectorPanel {
         this.contentContainer = null;
         this.selectedEvent = null; // Track selected event for editing
         this.showAddLayerForm = false; // Toggle for Add Layer form
+        this.controllerStatusPanel = new ControllerStatusPanel();
     }
 
     build() {
@@ -61,6 +63,11 @@ export class InspectorPanel {
     }
 
     buildInspectUI() {
+        // Clean up previous controller panel if active
+        if (this.controllerStatusPanel) {
+            this.controllerStatusPanel.destroy();
+        }
+
         if (!this.editor.selectedEntity) { this._buildEmptyState(); return; }
         const entity = this.editor.selectedEntity;
         const animator = entity.animator;
@@ -98,6 +105,17 @@ export class InspectorPanel {
                 ${clipHTML}
             </div>
         `;
+
+        // Inject Controller Status Panel at the top (after Entity header)
+        if (this.controllerStatusPanel && entity) {
+            const ctrlPanelHelper = this.controllerStatusPanel.build(entity);
+            // Insert after the first child (Entity Info)
+            if (this.contentContainer.children.length > 0) {
+                this.contentContainer.insertBefore(ctrlPanelHelper, this.contentContainer.children[1]);
+            } else {
+                this.contentContainer.appendChild(ctrlPanelHelper);
+            }
+        }
     }
 
     _buildLayers(animator) {

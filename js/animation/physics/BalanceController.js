@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RagdollConfig } from './RagdollConfig.js';
+import { SkeletonRegistry } from './SkeletonRegistry.js';
 
 /**
  * BalanceController
@@ -31,40 +32,29 @@ export class BalanceController {
         // Configuration (merge with defaults)
         this.config = { ...RagdollConfig.balance, ...options };
 
+        this.registry = options.skeletonRegistry || new SkeletonRegistry(mesh);
+        this.posture = options.postureController || null;
+
         // ==================== BONES ====================
+        // Map registry categories to local convenience properties
         this.bones = {
-            hips: null,
-            spine: null,
-            spine1: null,
-            spine2: null,
-            chest: null,
-            head: null,
-            neck: null,
-            leftFoot: null,
-            rightFoot: null,
-            leftLeg: null,
-            rightLeg: null,
-            leftUpLeg: null,
-            rightUpLeg: null,
+            hips: this.registry.getBone('hips'),
+            spine: this.registry.getBone('spine'),
+            spine1: this.registry.getBone('spine1'),
+            spine2: this.registry.getBone('spine2'),
+            chest: this.registry.getBone('chest'),
+            head: this.registry.getBone('head'),
+            neck: this.registry.getBone('neck'),
+            leftFoot: this.registry.getBone('leftFoot'),
+            rightFoot: this.registry.getBone('rightFoot'),
+            leftLeg: this.registry.getBone('leftLeg'),
+            rightLeg: this.registry.getBone('rightLeg'),
+            leftUpLeg: this.registry.getBone('leftUpLeg'),
+            rightUpLeg: this.registry.getBone('rightUpLeg'),
         };
 
-        this.boneRegistry = {
-            hips: [],
-            spine: [],
-            spine1: [],
-            spine2: [],
-            chest: [],
-            head: [],
-            neck: [],
-            leftFoot: [],
-            rightFoot: [],
-            leftLeg: [],
-            rightLeg: [],
-            leftUpLeg: [],
-            rightUpLeg: [],
-            leftArm: [],
-            rightArm: [],
-        };
+        // Reference the arrays directly
+        this.boneRegistry = this.registry.bones;
 
         // ==================== STATE ====================
         this.centerOfMass = new THREE.Vector3();
@@ -93,94 +83,8 @@ export class BalanceController {
         this.isRecovering = false;
         this.recoveryProgress = 0;
 
-        // Initialize bones only (motor targets captured later)
-        this._findBones();
-    }
-
-    /**
-     * Find and cache bone references
-     * Supports Unreal Engine skeleton naming (pelvis, spine_01, thigh_l, etc.)
-     */
-    /**
-     * Find and cache bone references
-     */
-    _findBones() {
-        // Reset registry
-        Object.keys(this.boneRegistry).forEach(key => this.boneRegistry[key] = []);
-
-        this.mesh.traverse(child => {
-            if (!child.isBone) return;
-            const name = child.name.toLowerCase();
-
-            // Pelvis / Hips
-            if (name === 'pelvis' || name.includes('hips')) {
-                if (!this.bones.hips) this.bones.hips = child;
-                this.boneRegistry.hips.push(child);
-            }
-
-            // Spine chain
-            if (name === 'spine_01' || (name === 'spine' && !name.includes('_'))) {
-                if (!this.bones.spine) this.bones.spine = child;
-                this.boneRegistry.spine.push(child);
-            }
-            if (name === 'spine_02' || name === 'spine1') {
-                if (!this.bones.spine1) this.bones.spine1 = child;
-                this.boneRegistry.spine1.push(child);
-            }
-            if (name === 'spine_03' || name === 'spine_04' || name === 'spine2') {
-                if (!this.bones.spine2) this.bones.spine2 = child;
-                if (!this.bones.chest) this.bones.chest = child;
-                this.boneRegistry.spine2.push(child);
-                this.boneRegistry.chest.push(child);
-            }
-
-            // Head and neck
-            if (name === 'head') {
-                if (!this.bones.head) this.bones.head = child;
-                this.boneRegistry.head.push(child);
-            }
-            if (name === 'neck_01' || name === 'neck') {
-                if (!this.bones.neck) this.bones.neck = child;
-                this.boneRegistry.neck.push(child);
-            }
-
-            // Feet
-            if (name === 'foot_l' || name.includes('leftfoot')) {
-                if (!this.bones.leftFoot) this.bones.leftFoot = child;
-                this.boneRegistry.leftFoot.push(child);
-            }
-            if (name === 'foot_r' || name.includes('rightfoot')) {
-                if (!this.bones.rightFoot) this.bones.rightFoot = child;
-                this.boneRegistry.rightFoot.push(child);
-            }
-
-            // Lower legs
-            if (name === 'calf_l' || (name.includes('leftleg') && !name.includes('upleg'))) {
-                if (!this.bones.leftLeg) this.bones.leftLeg = child;
-                this.boneRegistry.leftLeg.push(child);
-            }
-            if (name === 'calf_r' || (name.includes('rightleg') && !name.includes('upleg'))) {
-                if (!this.bones.rightLeg) this.bones.rightLeg = child;
-                this.boneRegistry.rightLeg.push(child);
-            }
-
-            // Upper legs
-            if (name === 'thigh_l' || name.includes('leftupleg') || name.includes('leftthigh')) {
-                if (!this.bones.leftUpLeg) this.bones.leftUpLeg = child;
-                this.boneRegistry.leftUpLeg.push(child);
-            }
-            if (name === 'thigh_r' || name.includes('rightupleg') || name.includes('rightthigh')) {
-                if (!this.bones.rightUpLeg) this.bones.rightUpLeg = child;
-                this.boneRegistry.rightUpLeg.push(child);
-            }
-
-            // Arms
-            if (name.includes('upperarm_l') || name.includes('leftarm')) this.boneRegistry.leftArm.push(child);
-            if (name.includes('upperarm_r') || name.includes('rightarm')) this.boneRegistry.rightArm.push(child);
-        });
-
         const foundBones = Object.keys(this.bones).filter(k => this.bones[k]);
-        console.log(`[BalanceController] Found ${foundBones.length} primary bones. Registry: ${this.boneRegistry.hips.length} skeletons.`);
+        console.log(`[BalanceController] Found ${foundBones.length} primary bones from registry.`);
 
         if (!this.bones.hips) console.warn('[BalanceController] CRITICAL: Hips/Pelvis not found!');
     }
@@ -360,8 +264,13 @@ export class BalanceController {
             // Calculate correction blend factor
             const blendFactor = Math.min(delta * correctionSpeed * effectiveStrength, 1);
 
-            // Slerp current orientation towards target
-            bone.quaternion.slerp(targetQuat, blendFactor);
+            if (this.posture) {
+                // Request correction via PostureController
+                this.posture.request(bone, 'balance', targetQuat, blendFactor, 'absolute');
+            } else {
+                // Legacy: Slerp current orientation towards target
+                bone.quaternion.slerp(targetQuat, blendFactor);
+            }
         });
     }
 
@@ -393,10 +302,18 @@ export class BalanceController {
                     }
 
                     const invParent = parentQuatWorld.clone().invert();
-                    const localDelta = invParent.multiply(rotQuatWorld).multiply(parentQuatWorld);
+                    // Phase 1.3: Fix quaternion mutation - use .copy() before .multiply() chain
+                    const localDelta = new THREE.Quaternion()
+                        .copy(invParent)
+                        .multiply(rotQuatWorld)
+                        .multiply(parentQuatWorld);
 
                     // Apply delta
-                    bone.quaternion.premultiply(localDelta);
+                    if (this.posture) {
+                        this.posture.request(bone, 'impulse', localDelta, 1.0, 'additive');
+                    } else {
+                        bone.quaternion.premultiply(localDelta);
+                    }
                 };
 
                 // Apply to ALL hips
@@ -433,8 +350,15 @@ export class BalanceController {
         } else {
             // Direct force adds to angular momentum based on direction
             const torqueDir = new THREE.Vector3(force.z, 0, -force.x).normalize();
-            // Sensitivity: 0.025 provides visible reaction without spinning
-            this.angularMomentum.addScaledVector(torqueDir, magnitude * 0.025);
+            // Sensitivity reduced from 0.025 to 0.005 to prevent excessive spinning
+            // (0.025 * 600N = 15 units = 13 degrees/frame, way too fast)
+            this.angularMomentum.addScaledVector(torqueDir, magnitude * 0.005);
+        }
+
+        // Phase 1.1: Clamp angular momentum to prevent spinning
+        const MAX_ANGULAR_MOMENTUM = 0.3;
+        if (this.angularMomentum.length() > MAX_ANGULAR_MOMENTUM) {
+            this.angularMomentum.normalize().multiplyScalar(MAX_ANGULAR_MOMENTUM);
         }
 
         // Add to linear momentum

@@ -1,5 +1,6 @@
 import { AnimationController } from '../../animation/core/AnimationController.js';
 import { HeadLook } from '../../animation/procedural/HeadLook.js';
+import { ActiveRagdollController } from '../../animation/physics/ActiveRagdollController.js';
 
 /**
  * NPCEntity - Represents an interactive character in the world
@@ -49,6 +50,15 @@ export class NPCEntity {
             console.warn(`[NPCEntity] No animations found for ${this.name}. FSM will run in logic-only mode.`);
         }
 
+        // Initialize Active Ragdoll System (Euphoria-style physics)
+        this.ragdoll = new ActiveRagdollController(this.mesh, {
+            entity: this,
+            characterHeight: 5.5, // Matching player.js default
+            onStateChange: (newState, oldState) => {
+                // console.log(`[NPCEntity:${this.name}] Ragdoll state: ${oldState} → ${newState}`);
+            }
+        });
+
         // Setup interactive user data
         this._setupInteraction();
     }
@@ -83,6 +93,11 @@ export class NPCEntity {
             this.animator.update(deltaTime);
         }
 
+        // Update Active Ragdoll System (AFTER animation update)
+        if (this.ragdoll) {
+            this.ragdoll.update(deltaTime);
+        }
+
         // Procedural Look at Player
         if (this.headLook && window.game && window.game.player) {
             // Only look if close enough (e.g. 10 meters)
@@ -108,5 +123,45 @@ export class NPCEntity {
 
         // Visual feedback (e.g. bounce or emote)
         // this.mesh.position.y += 0.1; // Jump debug
+    }
+    // ==================== ACTIVE RAGDOLL API ====================
+
+    /**
+     * Apply an impact force to the NPC
+     * @param {THREE.Vector3} force - Force vector (direction * magnitude)
+     * @param {THREE.Vector3} [point] - World position of impact
+     * @param {string} [source] - Source identifier
+     * @returns {string} Response type: 'absorbed', 'stumble', 'stagger', 'fall', 'knockdown'
+     */
+    applyImpact(force, point = null, source = 'unknown') {
+        if (!this.ragdoll) return 'absorbed';
+        return this.ragdoll.applyImpact(force, point, source);
+    }
+
+    /**
+     * Check if NPC has control (not falling/ragdolling)
+     * @returns {boolean} True if NPC can move normally
+     */
+    hasControl() {
+        if (!this.ragdoll) return true;
+        return this.ragdoll.hasControl();
+    }
+
+    /**
+     * Check if ragdoll physics is currently active
+     * @returns {boolean} True if in any physics state
+     */
+    isRagdollActive() {
+        if (!this.ragdoll) return false;
+        return this.ragdoll.isPhysicsActive();
+    }
+
+    /**
+     * Get full ragdoll state for debugging
+     * @returns {Object}
+     */
+    getRagdollState() {
+        if (!this.ragdoll) return null;
+        return this.ragdoll.state;
     }
 }

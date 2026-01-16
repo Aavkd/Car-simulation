@@ -35,6 +35,9 @@ import { ImportDialog } from './ui/ImportDialog.js';
 import { LibraryService } from './library/LibraryService.js';
 import { LibraryPanel } from './library/LibraryPanel.js';
 
+// Phase 9: Ragdoll Testing Components
+import { RagdollTestPanel } from './ragdoll/RagdollTestPanel.js';
+
 export class AnimatorEditorController {
     constructor(game) {
         this.game = game;
@@ -106,6 +109,10 @@ export class AnimatorEditorController {
         this.libraryPanel = new LibraryPanel(this.uiManager, this.libraryService, this);
         this.isLibraryVisible = false;
 
+        // ==================== Phase 9: Ragdoll Testing ====================
+        this.ragdollTestPanel = new RagdollTestPanel(this.uiManager, this);
+        this.isRagdollPanelVisible = false;
+
 
         // Track bone transform state for undo
         this._transformStartQuaternion = null;
@@ -172,6 +179,11 @@ export class AnimatorEditorController {
         const libraryEl = this.libraryPanel.build();
         this.container.appendChild(libraryEl);
         this.libraryPanel.hide(); // Hidden by default, shown with 'L' key
+
+        // Phase 9: Build Ragdoll Test Panel
+        const ragdollEl = this.ragdollTestPanel.build();
+        this.container.appendChild(ragdollEl);
+        this.ragdollTestPanel.hide(); // Hidden by default, shown with toolbar button
 
         // Get content container reference for backwards compatibility
         this.contentContainer = this.inspectorPanel.contentContainer;
@@ -424,6 +436,20 @@ export class AnimatorEditorController {
             // We pass the mesh position as the center of orbit
             this.game.cameraController.updateOrbit(this.selectedEntity.mesh.position, dt);
         }
+
+        // Phase 9: Manual Game Loop for Ragdoll Testing
+        // If the simulation is "Resumed" (window.game.isPaused is false), we need to manually update
+        // the selected entity because the main game loop doesn't update entities in ANIMATOR state.
+        if (window.game && !window.game.isPaused && this.selectedEntity) {
+            // Option A: Full Entity Update (preferred for NPCs)
+            if (typeof this.selectedEntity.update === 'function') {
+                this.selectedEntity.update(dt);
+            }
+            // Option B: Ragdoll Only (fallback)
+            else if (this.selectedEntity.ragdoll) {
+                this.selectedEntity.ragdoll.update(dt);
+            }
+        }
     }
 
     _updateRealtimeValues() {
@@ -570,6 +596,13 @@ export class AnimatorEditorController {
             if (mesh.userData.animator) {
                 entity.animator = mesh.userData.animator;
             }
+
+            // Try to find ragdoll if it exists on the mesh or its entity ref
+            if (mesh.userData.ragdoll) {
+                entity.ragdoll = mesh.userData.ragdoll;
+            } else if (mesh.userData.entity && mesh.userData.entity.ragdoll) {
+                entity.ragdoll = mesh.userData.entity.ragdoll;
+            }
         } else {
             entity = mesh.userData.entity;
         }
@@ -611,6 +644,36 @@ export class AnimatorEditorController {
         if (this.footIK) {
             this.footIK.setEnabled(!this.footIK.enabled);
             this._buildUI();
+        }
+    }
+
+    /**
+     * Toggle ragdoll test panel visibility
+     */
+    toggleRagdollPanel() {
+        if (!this.ragdollTestPanel) return;
+
+        if (this.ragdollTestPanel.isVisible()) {
+            this.ragdollTestPanel.hide();
+            this.isRagdollPanelVisible = false;
+        } else {
+            this.ragdollTestPanel.show();
+            this.isRagdollPanelVisible = true;
+        }
+    }
+
+    /**
+     * Toggle library panel visibility
+     */
+    toggleLibraryPanel() {
+        if (!this.libraryPanel) return;
+
+        if (this.libraryPanel.isVisible()) {
+            this.libraryPanel.hide();
+            this.isLibraryVisible = false;
+        } else {
+            this.libraryPanel.show();
+            this.isLibraryVisible = true;
         }
     }
 
