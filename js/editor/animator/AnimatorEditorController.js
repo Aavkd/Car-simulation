@@ -429,7 +429,9 @@ export class AnimatorEditorController {
                 const gp = this.game.input.gamepad;
                 // Use lookX and lookY (Right Stick)
                 // Multiplier 20.0 matches Game.js gameplay camera speed
-                this.game.cameraController.handleAnalogInput(gp.lookX, gp.lookY, 20.0);
+            if (gp.lookX !== 0 || gp.lookY !== 0) {
+                this.game.cameraController.handleAnalogInput(gp.lookX, gp.lookY, 15.0);
+            }
             }
 
             // Update Orbit Position

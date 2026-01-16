@@ -1003,7 +1003,7 @@ class Game {
                         windSpeed: 50,
                         fogColor: 0x1a0b2e, // Deep violet
                         fogOpacity: 0.3,
-                        enabled: true
+                        enabled: false
                     });
                     break;
                 case 'deepspace':
@@ -1090,7 +1090,7 @@ class Game {
                 }
 
                 // Create Custom Sky based on level type
-                if (levelConfig.type === 'deepspace') {
+                if (levelConfig.type === 'deepspace' || levelConfig.type === 'cosmic') {
                     this.sky = new SkyDeepSpace(this.scene);
                 } else {
                     this.sky = new SkyVaporwave(this.scene);
@@ -1105,13 +1105,12 @@ class Game {
             }
 
             // Override fog based on specific type
-            if (levelConfig.type === 'cosmic') {
-                this.scene.fog.color.setHex(0x050011); // Almost black
-                this.bloomPass.strength = 0.8; // More bloom for cosmic
-            } else if (levelConfig.type === 'deepspace') {
-                this.scene.fog.color.setHex(0x000005); // Pure black
-                this.scene.fog.density = 0.0002; // Very clear
-                this.bloomPass.strength = 1.2; // Massive bloom for stars
+            if (levelConfig.type === 'cosmic' || levelConfig.type === 'deepspace') {
+                const isCosmic = levelConfig.type === 'cosmic';
+                
+                this.scene.fog.color.setHex(isCosmic ? 0x050011 : 0x000005);
+                this.scene.fog.density = 0.0002;
+                this.bloomPass.strength = isCosmic ? 0.8 : 1.2;
                 this.bloomPass.radius = 0.8;
                 this.bloomPass.threshold = 0.1;
 
@@ -1831,7 +1830,7 @@ class Game {
                             this.cameraController.handleAnalogInput(
                                 this.input.gamepad.lookX,
                                 this.input.gamepad.lookY,
-                                20.0
+                                10.0
                             );
                         }
                         this.cameraController.update(

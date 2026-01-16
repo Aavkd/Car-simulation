@@ -102,7 +102,11 @@ export const LevelData = {
             segmentLength: 200000,
             curveIntensity: 400,
             slopeIntensity: 150,
-            corkscrewChance: 0.3
+            corkscrewChance: 0.3,
+            universeSize: 50000,
+            starCount: 90000,
+            galaxyCount: 1500,
+            nebulaCount: 10
         }
     },
     deepspace: {

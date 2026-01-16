@@ -208,30 +208,36 @@ export class CosmicGenerator extends BasePhysicsProvider {
                 varying vec3 vNormal;
                 
                 void main() {
-                    // Grid effect
+                    // Grid effect - Keep edges for definition
                     float gridX = step(0.95, abs(vUv.x * 2.0 - 1.0)); // Edge lines
-                    float gridZ = step(0.98, fract(vUv.y * 2.0)); // Static transverse lines
                     
-                    // Central line (thinner and very dim)
-                    float centerLine = (1.0 - smoothstep(0.01, 0.03, abs(vUv.x - 0.5))) * 0.15;
+                    // Central line - increased brightness (from 0.15 to 1.0)
+                    float centerLine = (1.0 - smoothstep(0.01, 0.04, abs(vUv.x - 0.5))) * 1.0;
                     
-                    // Base Code - Much darker
-                    vec3 color = vec3(0.01, 0.0, 0.02); // Very Dark Purple base
+                    // Base Code - Very dark
+                    vec3 color = vec3(0.01, 0.0, 0.02); 
                     
-                    // Neon Blue/Cyan highlights - Dimmed
+                    // Neon Blue/Cyan highlights
                     vec3 highlight = vec3(0.0, 0.6, 0.8);
                     
-                    // Mix
-                    color += highlight * (gridX * 0.8 + gridZ * 0.4 + centerLine);
+                    // Mix - Removed gridZ (transverse lines)
+                    color += highlight * (gridX * 0.8 + centerLine);
                     
-                    // Add subtle pulse - Reduced intensity
+                    // Add subtle pulse
                     float pulse = 0.5 + 0.5 * sin(vUv.y * 0.1 + time);
                     color += vec3(0.1, 0.0, 0.2) * pulse * 0.1;
 
-                    gl_FragColor = vec4(color, 1.0);
+                    // Alpha calculation
+                    float alpha = 0.2; // Adjusted base transparency
+                    alpha += gridX * 0.5; // Edges
+                    alpha += centerLine * 0.8; // Bright center line
+
+                    gl_FragColor = vec4(color, alpha);
                 }
             `,
-            side: THREE.DoubleSide
+            side: THREE.DoubleSide,
+            transparent: true,
+            depthWrite: false
         });
 
         this.roadMesh = new THREE.Mesh(geometry, material);

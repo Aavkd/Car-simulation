@@ -93,8 +93,12 @@ export class CameraController {
 
         this.orbitSensitivity = 0.003;
         this.zoomSensitivity = 0.005; // Zoom speed
-        this.minOrbitY = -0.2;        // Min pitch (looking from below)
-        this.maxOrbitY = 1.2;         // Max pitch (looking from above, ~70 degrees)
+        this.minOrbitY = -1.5;        // Min pitch (looking from below, ~85 deg)
+        this.maxOrbitY = 1.5;         // Max pitch (looking from above, ~85 deg)
+
+        // Smooth camera follow
+        this.currentBaseRotation = new THREE.Quaternion();
+        this.isBaseRotationInit = false;
 
         this.isMouseDown = false;
         this.lastMouseX = 0;
@@ -204,7 +208,7 @@ export class CameraController {
     handleAnalogInput(x, y, factor = 1.0) {
         if (Math.abs(x) < 0.05 && Math.abs(y) < 0.05) return;
 
-        const sensitivity = 2.0 * factor; // Higher base speed for stick
+        const sensitivity = 0.5 * factor; // Reduced from 2.0 to 0.5 for better precision
         this.targetOrbitX += x * this.orbitSensitivity * sensitivity; // Multiply by orbitSensitivity (which is 0.003)
         this.targetOrbitY += y * this.orbitSensitivity * sensitivity;
 
@@ -493,6 +497,17 @@ export class CameraController {
 
         // ==================== STANDARD MODES (Chase, Far, Hood) ====================
 
+        // Initialize smooth rotation if needed
+        if (!this.isBaseRotationInit) {
+            this.currentBaseRotation.copy(target.quaternion);
+            this.isBaseRotationInit = true;
+        }
+
+        // Smoothly interpolate camera base rotation towards target rotation
+        // This decouples the camera from jittery physics and creates a fluid follow effect
+        const followSmoothing = 4.0; 
+        this.currentBaseRotation.slerp(target.quaternion, followSmoothing * deltaTime);
+
         // Smooth orbit angle interpolation
         this.orbitAngleX = THREE.MathUtils.lerp(this.orbitAngleX, this.targetOrbitX, 10 * deltaTime);
         this.orbitAngleY = THREE.MathUtils.lerp(this.orbitAngleY, this.targetOrbitY, 10 * deltaTime);
@@ -504,9 +519,9 @@ export class CameraController {
         const cosY = Math.cos(this.orbitAngleY);
         const sinY = Math.sin(this.orbitAngleY);
 
-        // Calculate car's backward direction for base offset
+        // Calculate car's backward direction for base offset using SMOOTHED rotation
         const carBackward = new THREE.Vector3(0, 0, -1);
-        carBackward.applyQuaternion(target.quaternion);
+        carBackward.applyQuaternion(this.currentBaseRotation);
 
         // Calculate spherical orbit offset
         // Base position: behind the car at currentDistance
@@ -535,7 +550,7 @@ export class CameraController {
         // Apply horizontal offset (GTA IV style - camera to the right)
         if (config.horizontalOffset) {
             const carRight = new THREE.Vector3(1, 0, 0);
-            carRight.applyQuaternion(target.quaternion);
+            carRight.applyQuaternion(this.currentBaseRotation);
             desiredPosition.x += carRight.x * config.horizontalOffset;
             desiredPosition.z += carRight.z * config.horizontalOffset;
         }
@@ -552,7 +567,7 @@ export class CameraController {
         // Apply horizontal offset to look-at point (GTA IV style)
         if (config.lookAtHorizontalOffset) {
             const carRight = new THREE.Vector3(1, 0, 0);
-            carRight.applyQuaternion(target.quaternion);
+            carRight.applyQuaternion(this.currentBaseRotation);
             lookAtPoint.x += carRight.x * config.lookAtHorizontalOffset;
             lookAtPoint.z += carRight.z * config.lookAtHorizontalOffset;
         }
