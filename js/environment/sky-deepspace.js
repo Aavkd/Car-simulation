@@ -28,7 +28,7 @@ export class SkyDeepSpace {
     }
 
     _createSkyDome() {
-        const geometry = new THREE.SphereGeometry(6000, 32, 32);
+        const geometry = new THREE.SphereGeometry(200000, 32, 32);
 
         // Pure black to very dark blue gradient
         const material = new THREE.ShaderMaterial({
