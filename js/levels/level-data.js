@@ -52,11 +52,16 @@ export const LevelData = {
     city: {
         id: 'city',
         name: 'City Streets',
-        description: 'Urban grid with tight technical corners',
+        description: 'Dense urban grid with skyscrapers, parks, and technical corners.',
         type: 'city',
         difficulty: 3,
         color: '#f472b6', // Pink accent
-        params: {}
+        params: {
+            seed: 123,
+            blockSize: 120,
+            roadWidth: 22,
+            sidewalkHeight: 0.2
+        }
     },
     everest: {
         id: 'everest',

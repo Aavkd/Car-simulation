@@ -1059,11 +1059,11 @@ class Game {
                     });
                     break;
                 case 'city':
-                    // Heavy smog
+                    // Reduced fog for better visibility during testing
                     this.wind.configure({
                         windSpeed: 30,
                         fogColor: 0x888888,
-                        fogOpacity: 0.4,
+                        fogOpacity: 0.15, // Reduced from 0.4
                         enabled: true
                     });
                     break;
@@ -1270,6 +1270,31 @@ class Game {
         // Initialize car physics with selected car spec
         const selectedCar = CAR_REGISTRY[this.selectedCarId];
         this.car = new CarPhysics(this.carMesh, this.terrain, this.scene, selectedCar.spec);
+
+        // Custom Spawn Logic per Level
+        if (levelConfig.type === 'city') {
+            // Spawn on the first avenue road to avoid being inside a building
+            const blockSize = levelConfig.params.blockSize || 140;
+            const roadWidth = levelConfig.params.roadWidth || 20;
+            const gridStep = blockSize + roadWidth;
+            // Half step is center of road between block 0 and 1
+            const spawnX = gridStep / 2;
+            
+            console.log(`[Game] City Level: Spawning at safe road position X=${spawnX}`);
+            this.car.position.set(spawnX, 2, 0);
+            this.car.physics.position.copy(this.car.position);
+            this.car.physics.velocity.set(0, 0, 0);
+            this.car.physics.angularVelocity.set(0, 0, 0);
+            this.car.physics.quaternion.set(0, 0, 0, 1); // Reset rotation
+            this.car._updateMesh();
+        } else if (levelConfig.type === 'everest') {
+            // Everest spawn (existing logic handled by terrain height, but we can enforce)
+            // Just let it fall to ground, but maybe ensure high Y
+            this.car.position.set(0, 850, 0);
+            this.car.physics.position.copy(this.car.position);
+            this.car._updateMesh();
+        }
+
         this.input.onDebugToggle = () => this.car.toggleDebug();
 
         // Pass wheel meshes to car physics for suspension animation

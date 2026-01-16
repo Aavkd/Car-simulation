@@ -2,434 +2,361 @@ import * as THREE from 'three';
 import { SurfaceTypes } from '../physics/physics-provider.js';
 
 /**
- * Perlin Noise for variation
- */
-class PerlinNoise {
-    constructor(seed = Math.random() * 10000) {
-        this.permutation = this._generatePermutation(seed);
-    }
-
-    _generatePermutation(seed) {
-        const p = [];
-        for (let i = 0; i < 256; i++) p[i] = i;
-        let n = seed;
-        for (let i = 255; i > 0; i--) {
-            n = (n * 16807) % 2147483647;
-            const j = n % (i + 1);
-            [p[i], p[j]] = [p[j], p[i]];
-        }
-        return [...p, ...p];
-    }
-
-    _fade(t) {
-        return t * t * t * (t * (t * 6 - 15) + 10);
-    }
-
-    _grad(hash, x, y) {
-        const h = hash & 7;
-        const u = h < 4 ? x : y;
-        const v = h < 4 ? y : x;
-        return ((h & 1) ? -u : u) + ((h & 2) ? -2 * v : 2 * v);
-    }
-
-    noise2D(x, y) {
-        const X = Math.floor(x) & 255;
-        const Y = Math.floor(y) & 255;
-        x -= Math.floor(x);
-        y -= Math.floor(y);
-        const u = this._fade(x);
-        const v = this._fade(y);
-        const p = this.permutation;
-        const A = p[X] + Y;
-        const B = p[X + 1] + Y;
-        return THREE.MathUtils.lerp(
-            THREE.MathUtils.lerp(this._grad(p[A], x, y), this._grad(p[B], x - 1, y), u),
-            THREE.MathUtils.lerp(this._grad(p[A + 1], x, y - 1), this._grad(p[B + 1], x - 1, y - 1), u),
-            v
-        );
-    }
-}
-
-/**
- * District definitions for varied city areas
- */
-const Districts = {
-    DOWNTOWN: {
-        name: 'Downtown',
-        blockSize: 60,
-        streetWidth: 25,
-        buildingHeight: { min: 20, max: 60 },
-        density: 0.9,  // Chance of building per block
-        color: new THREE.Color(0x4a4a5a)  // Blue-grey
-    },
-    INDUSTRIAL: {
-        name: 'Industrial',
-        blockSize: 100,
-        streetWidth: 30,
-        buildingHeight: { min: 8, max: 18 },
-        density: 0.7,
-        color: new THREE.Color(0x5a5045)  // Brown-grey
-    },
-    RESIDENTIAL: {
-        name: 'Residential',
-        blockSize: 50,
-        streetWidth: 15,
-        buildingHeight: { min: 5, max: 12 },
-        density: 0.6,
-        color: new THREE.Color(0x5a6055)  // Green-grey
-    },
-    COMMERCIAL: {
-        name: 'Commercial',
-        blockSize: 70,
-        streetWidth: 22,
-        buildingHeight: { min: 10, max: 30 },
-        density: 0.8,
-        color: new THREE.Color(0x605a50)  // Warm grey
-    },
-    PARK: {
-        name: 'Park',
-        blockSize: 120,
-        streetWidth: 12,
-        buildingHeight: { min: 0, max: 2 },
-        density: 0.1,  // Mostly open space
-        color: new THREE.Color(0x4a6a4a)  // Green
-    }
-};
-
-/**
- * City Generator - Urban grid with distinct districts
- * 10 km² city area (approx 3.16km x 3.16km square, we'll use 3.5km x 3.0km)
+ * City Generator
+ * Procedurally generates a grid-based city with districts, skyscrapers, and realistic traffic layout.
  */
 export class CityGenerator {
     constructor(params = {}) {
-        this.noise = new PerlinNoise(params.seed || 789);
+        this.seed = params.seed || 12345;
+        
+        // Dimensions
+        this.size = params.size || 6000;
+        this.blockSize = params.blockSize || 140;
+        this.roadWidth = params.roadWidth || 20;
+        
+        // Physics
+        this.groundHeight = 0;
+        this.sidewalkHeight = params.sidewalkHeight !== undefined ? params.sidewalkHeight : 0.25; // Curb height
+        this.sidewalkWidth = 5; // Fixed sidewalk width
+        
+        // Logic
+        this.avenueInterval = 4;
+        this.gridStep = this.blockSize + this.roadWidth;
 
-        // City dimensions - 10km² area
-        this.sizeX = 3500;          // 3.5km width
-        this.sizeZ = 3000;          // 3km depth (~10.5 km²)
-        this.segments = 350;        // Mesh resolution
-
-        // Building collision data
-        this.buildings = [];        // Array of building bounds for raycasting
-
-        // Road parameters
-        this.defaultBlockSize = 70;
-        this.defaultStreetWidth = 20;
-
+        // Meshes
         this.mesh = null;
-        this.heightData = [];
+        this.buildingMesh = null;
+        this.sidewalkMesh = null;
+        
+        // Cache
+        this._districtCache = new Map();
     }
 
     /**
-     * Generate the terrain and buildings
+     * Generate the city mesh
      */
     generate() {
-        // Generate flat ground with roads colored in
-        const geometry = new THREE.PlaneGeometry(
-            this.sizeX,
-            this.sizeZ,
-            this.segments,
-            Math.floor(this.segments * (this.sizeZ / this.sizeX))
-        );
+        console.log('[CityGenerator] Starting generation...');
+        this.mesh = new THREE.Group();
 
-        geometry.rotateX(-Math.PI / 2);
+        // 1. Create Base Asphalt Plane (The Roads)
+        // We make this huge so it covers everything
+        const groundGeo = new THREE.PlaneGeometry(this.size, this.size);
+        groundGeo.rotateX(-Math.PI / 2);
+        const groundMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a }); // Dark Asphalt
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.receiveShadow = true;
+        this.mesh.add(ground);
 
-        const positions = geometry.attributes.position.array;
-        const colors = [];
+        // 2. Prepare Instances
+        // We calculate how many blocks fit in the map
+        const blocksPerSide = Math.floor(this.size / this.gridStep);
+        const totalBlocks = blocksPerSide * blocksPerSide;
+        
+        console.log(`[CityGenerator] Grid size: ${blocksPerSide}x${blocksPerSide}, Total blocks: ${totalBlocks}`);
+        
+        // Sidewalk Instances (The "Islands" inside the asphalt ocean)
+        const sidewalkGeo = new THREE.BoxGeometry(1, 1, 1);
+        // Translate geometry so bottom is at 0, useful for scaling
+        sidewalkGeo.translate(0, 0.5, 0); 
+        const sidewalkMat = new THREE.MeshLambertMaterial({ color: 0x555555 }); // Concrete
+        this.sidewalkMesh = new THREE.InstancedMesh(sidewalkGeo, sidewalkMat, totalBlocks);
+        this.sidewalkMesh.receiveShadow = true;
+        this.sidewalkMesh.castShadow = true;
 
-        const gridSizeX = this.segments + 1;
-        const gridSizeZ = Math.floor(this.segments * (this.sizeZ / this.sizeX)) + 1;
+        // Building Instances
+        // We'll assume max 4 buildings per block to keep count reasonable
+        const maxBuildings = totalBlocks * 4; 
+        const buildingGeo = new THREE.BoxGeometry(1, 1, 1);
+        buildingGeo.translate(0, 0.5, 0); // Pivot at bottom
+        
+        // Restore texture material (simplified - no custom shader injection to ensure visibility)
+        const buildingMat = this._createBuildingMaterial();
+        // Force clear onBeforeCompile just in case, though we will fix the method itself
+        buildingMat.onBeforeCompile = () => {}; 
+        
+        this.buildingMesh = new THREE.InstancedMesh(buildingGeo, buildingMat, maxBuildings);
+        this.buildingMesh.receiveShadow = true;
+        this.buildingMesh.castShadow = true;
+        
+        // CRITICAL: Disable culling because the bounding sphere is not computed for the whole city
+        // The default bounding sphere is small and centered at 0,0, causing buildings to vanish when looking away
+        this.buildingMesh.frustumCulled = false;
 
-        // Initialize height data
-        this.heightData = [];
-        for (let z = 0; z < gridSizeZ; z++) {
-            this.heightData[z] = [];
-        }
+        // 3. Populate Grid
 
-        // Process each vertex
-        for (let i = 0; i < positions.length; i += 3) {
-            const x = positions[i];
-            const z = positions[i + 2];
+        // 3. Populate Grid
+        let sidewalkIdx = 0;
+        let buildingIdx = 0;
+        
+        const dummy = new THREE.Object3D();
+        const halfSize = this.size / 2;
+        const color = new THREE.Color();
 
-            // Ground is flat
-            const height = 0;
-            positions[i + 1] = height;
-
-            // Store for collision
-            const idx = i / 3;
-            const gridX = idx % gridSizeX;
-            const gridZ = Math.floor(idx / gridSizeX);
-            if (this.heightData[gridZ]) {
-                this.heightData[gridZ][gridX] = { x, z, height };
+        // Iterate grid
+        // We center the grid around 0,0
+        const range = Math.floor(blocksPerSide / 2);
+        
+        for (let x = -range; x <= range; x++) {
+            for (let z = -range; z <= range; z++) {
+                // Determine world position of block center
+                const worldX = x * this.gridStep;
+                const worldZ = z * this.gridStep;
+                
+                // Determine district type
+                const district = this._getDistrict(worldX, worldZ);
+                
+                // Check if this is an Avenue intersection
+                // (Optional: leave gap for parks or large roads)
+                
+                // 1. Add Sidewalk Block
+                // Scale it to block size
+                const currentBlockSize = this.blockSize;
+                
+                dummy.position.set(worldX, 0, worldZ);
+                dummy.scale.set(currentBlockSize, this.sidewalkHeight, currentBlockSize);
+                dummy.rotation.set(0, 0, 0);
+                dummy.updateMatrix();
+                
+                this.sidewalkMesh.setMatrixAt(sidewalkIdx++, dummy.matrix);
+                
+                // 2. Add Buildings on this block
+                if (district.type !== 'park' && district.type !== 'water') {
+                     const buildings = this._generateBuildingsForBlock(district, worldX, worldZ, currentBlockSize);
+                     
+                     buildings.forEach(b => {
+                         dummy.position.set(b.x, this.sidewalkHeight, b.z);
+                         dummy.scale.set(b.w, b.h, b.d);
+                         dummy.rotation.y = b.rot;
+                         dummy.updateMatrix();
+                         
+                         // Variation in color (vertex color)
+                         // Skyscrapers: Blueish/Glassy
+                         // Industrial: Grey/Brown
+                         // Residential: Brick/White
+                         if (district.type === 'downtown') color.setHex(0x88ccff).multiplyScalar(0.5 + Math.random() * 0.5);
+                         else if (district.type === 'commercial') color.setHex(0xaaaaaa).multiplyScalar(0.8 + Math.random() * 0.2);
+                         else color.setHex(0xddeeff).multiplyScalar(0.9 + Math.random() * 0.1);
+                         
+                         this.buildingMesh.setMatrixAt(buildingIdx, dummy.matrix);
+                         this.buildingMesh.setColorAt(buildingIdx, color);
+                         buildingIdx++;
+                     });
+                }
             }
-
-            // Calculate color based on district and position
-            const color = this._calculateGroundColor(x, z);
-            colors.push(color.r, color.g, color.b);
         }
-
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-        geometry.computeVertexNormals();
-
-        const material = new THREE.MeshLambertMaterial({
-            vertexColors: true,
-            flatShading: true,
-            side: THREE.DoubleSide
-        });
-
-        this.mesh = new THREE.Mesh(geometry, material);
-        this.mesh.receiveShadow = true;
-
-        // Generate 3D buildings
-        this._generateBuildings();
-
+        
+        this.sidewalkMesh.instanceMatrix.needsUpdate = true;
+        this.mesh.add(this.sidewalkMesh);
+        
+        console.log(`[CityGenerator] Generated ${buildingIdx} buildings.`);
+        
+        this.buildingMesh.count = buildingIdx;
+        this.buildingMesh.instanceMatrix.needsUpdate = true;
+        if (this.buildingMesh.instanceColor) this.buildingMesh.instanceColor.needsUpdate = true;
+        this.mesh.add(this.buildingMesh);
+        
+        // Add "Street Lights" (Visual only, maybe simple emissive meshes?)
+        // For performance, maybe skip or add very few.
+        
         return this.mesh;
     }
 
     /**
-     * Get district at position based on city zones
+     * Generate building layout for a single block
      */
-    _getDistrictAt(x, z) {
-        // Normalize to 0-1 range
-        const nx = (x + this.sizeX / 2) / this.sizeX;
-        const nz = (z + this.sizeZ / 2) / this.sizeZ;
-
-        // District layout:
-        // - Center: Downtown (high-rise)
-        // - North: Industrial
-        // - South: Residential
-        // - East/West edges: Commercial
-        // - Scattered: Parks
-
-        const distFromCenter = Math.sqrt(Math.pow(nx - 0.5, 2) + Math.pow(nz - 0.5, 2));
-
-        // Parks - scattered using noise
-        const parkNoise = this.noise.noise2D(x * 0.002, z * 0.002);
-        if (parkNoise > 0.6 && distFromCenter > 0.15) {
-            return Districts.PARK;
+    _generateBuildingsForBlock(district, bx, bz, blockSize) {
+        const buildings = [];
+        const margin = 2; // Setback from sidewalk edge
+        const usableSize = blockSize - (this.sidewalkWidth * 2) - margin;
+        
+        // Random seed based on position
+        const seed = Math.abs(Math.sin(bx * 12.9898 + bz * 78.233) * 43758.5453);
+        const rand = (offset) => {
+            return Math.abs(Math.sin(seed + offset) * 10000) % 1;
+        };
+        
+        if (district.type === 'downtown') {
+            // Massive Skyscraper (1 big building)
+            if (rand(1) > 0.3) {
+                const height = 80 + rand(2) * 150; // 80m to 230m
+                buildings.push({
+                    x: bx,
+                    z: bz,
+                    w: usableSize * 0.8,
+                    d: usableSize * 0.8,
+                    h: height,
+                    rot: 0
+                });
+            } else {
+                // Twin Towers
+                const w = usableSize * 0.4;
+                const h = 60 + rand(3) * 100;
+                buildings.push({ x: bx - w * 0.6, z: bz - w * 0.6, w: w, d: w, h: h * (0.9 + rand(4)*0.2), rot: 0 });
+                buildings.push({ x: bx + w * 0.6, z: bz + w * 0.6, w: w, d: w, h: h, rot: 0 });
+            }
+        } 
+        else if (district.type === 'commercial') {
+            // Mid-rise density (4 buildings or 1 block)
+            if (rand(1) > 0.5) {
+                // 4 Quadrants
+                const w = usableSize * 0.4;
+                const hBase = 20 + rand(2) * 40;
+                buildings.push({ x: bx - w*0.6, z: bz - w*0.6, w: w, d: w, h: hBase + rand(3)*10, rot: 0 });
+                buildings.push({ x: bx + w*0.6, z: bz - w*0.6, w: w, d: w, h: hBase + rand(4)*10, rot: 0 });
+                buildings.push({ x: bx - w*0.6, z: bz + w*0.6, w: w, d: w, h: hBase + rand(5)*10, rot: 0 });
+                buildings.push({ x: bx + w*0.6, z: bz + w*0.6, w: w, d: w, h: hBase + rand(6)*10, rot: 0 });
+            } else {
+                // Wide office complex
+                const h = 15 + rand(2) * 20;
+                buildings.push({ x: bx, z: bz, w: usableSize * 0.9, d: usableSize * 0.6, h: h, rot: 0 });
+            }
         }
-
-        // Downtown core
-        if (distFromCenter < 0.15) {
-            return Districts.DOWNTOWN;
-        }
-
-        // Industrial - northern part
-        if (nz < 0.25) {
-            return Districts.INDUSTRIAL;
-        }
-
-        // Residential - southern part
-        if (nz > 0.7) {
-            return Districts.RESIDENTIAL;
-        }
-
-        // Commercial - edges and remaining
-        if (nx < 0.2 || nx > 0.8) {
-            return Districts.COMMERCIAL;
-        }
-
-        // Transition zones - mix based on distance
-        if (distFromCenter < 0.3) {
-            return Districts.DOWNTOWN;
-        }
-
-        return Districts.COMMERCIAL;
-    }
-
-    /**
-     * Check if position is on a road
-     */
-    _isOnRoad(x, z) {
-        const district = this._getDistrictAt(x, z);
-        const blockSize = district.blockSize;
-        const streetWidth = district.streetWidth;
-
-        // Calculate grid position
-        const cellX = Math.abs(x % blockSize);
-        const cellZ = Math.abs(z % blockSize);
-
-        // On road if within street width from edge of block
-        return cellX < streetWidth / 2 || cellZ < streetWidth / 2;
-    }
-
-    /**
-     * Calculate ground color
-     */
-    _calculateGroundColor(x, z) {
-        const district = this._getDistrictAt(x, z);
-        const isRoad = this._isOnRoad(x, z);
-
-        const roadColor = new THREE.Color(0x2a2a2a);      // Dark asphalt
-        const parkGrass = new THREE.Color(0x4a7a4a);      // Park grass
-
-        if (isRoad) {
-            // Road with slight variation
-            const variation = this.noise.noise2D(x * 0.1, z * 0.1) * 0.03;
-            return new THREE.Color(
-                roadColor.r + variation,
-                roadColor.g + variation,
-                roadColor.b + variation
-            );
-        }
-
-        // Park areas - grass
-        if (district === Districts.PARK) {
-            const variation = this.noise.noise2D(x * 0.05, z * 0.05) * 0.1;
-            return new THREE.Color(
-                parkGrass.r + variation,
-                parkGrass.g + variation * 1.5,
-                parkGrass.b + variation
-            );
-        }
-
-        // Building footprint area - show as concrete/pavement
-        const sidewalk = new THREE.Color(0x6a6a6a);
-        const variation = this.noise.noise2D(x * 0.08, z * 0.08) * 0.05;
-        return new THREE.Color(
-            sidewalk.r + variation,
-            sidewalk.g + variation,
-            sidewalk.b + variation
-        );
-    }
-
-    /**
-     * Generate 3D building meshes
-     */
-    _generateBuildings() {
-        const buildingMaterial = new THREE.MeshLambertMaterial({
-            vertexColors: true,
-            flatShading: true
-        });
-
-        // Use instanced mesh for performance
-        const tempGeometry = new THREE.BoxGeometry(1, 1, 1);
-        const buildingMeshes = [];
-
-        // Iterate over grid to place buildings
-        const halfX = this.sizeX / 2;
-        const halfZ = this.sizeZ / 2;
-
-        for (let bx = -halfX + 50; bx < halfX - 50; bx += 80) {
-            for (let bz = -halfZ + 50; bz < halfZ - 50; bz += 80) {
-                const district = this._getDistrictAt(bx, bz);
-
-                // Skip if on road
-                if (this._isOnRoad(bx, bz)) continue;
-
-                // Random chance based on district density
-                if (Math.random() > district.density) continue;
-
-                // Building dimensions
-                const width = district.blockSize * 0.6 + Math.random() * district.blockSize * 0.2;
-                const depth = district.blockSize * 0.6 + Math.random() * district.blockSize * 0.2;
-                const height = THREE.MathUtils.lerp(
-                    district.buildingHeight.min,
-                    district.buildingHeight.max,
-                    Math.random()
-                );
-
-                // Skip very short buildings (parks)
-                if (height < 3) continue;
-
-                // Create building geometry
-                const buildingGeom = new THREE.BoxGeometry(width, height, depth);
-
-                // Color the building
-                const colors = [];
-                const baseColor = district.color.clone();
-
-                // Add variation
-                const variation = (Math.random() - 0.5) * 0.1;
-                baseColor.r += variation;
-                baseColor.g += variation;
-                baseColor.b += variation;
-
-                // Make top slightly darker
-                const positionAttribute = buildingGeom.attributes.position;
-                for (let i = 0; i < positionAttribute.count; i++) {
-                    const y = positionAttribute.getY(i);
-                    const shade = y > 0 ? 0.9 : 1.0;
-                    colors.push(baseColor.r * shade, baseColor.g * shade, baseColor.b * shade);
-                }
-
-                buildingGeom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-
-                const building = new THREE.Mesh(buildingGeom, buildingMaterial);
-                building.position.set(bx, height / 2, bz);
-                building.castShadow = true;
-                building.receiveShadow = true;
-
-                this.mesh.add(building);
-
-                // Store building bounds for collision
-                this.buildings.push({
-                    minX: bx - width / 2,
-                    maxX: bx + width / 2,
-                    minZ: bz - depth / 2,
-                    maxZ: bz + depth / 2,
-                    height: height
+        else {
+            // Residential / Suburbs
+            // Random scattering of small houses/shops
+            const w = 15;
+            const h = 5 + rand(1) * 10;
+            // Place 1-3 random buildings
+            const count = 1 + Math.floor(rand(2) * 3);
+            for(let i=0; i<count; i++) {
+                const ox = (rand(10+i) - 0.5) * (usableSize - w);
+                const oz = (rand(20+i) - 0.5) * (usableSize - w);
+                buildings.push({
+                    x: bx + ox,
+                    z: bz + oz,
+                    w: w + rand(30+i)*10,
+                    d: w + rand(40+i)*10,
+                    h: h + rand(50+i)*5,
+                    rot: 0
                 });
             }
         }
-
-        console.log(`[CityGenerator] Created ${this.buildings.length} buildings`);
+        
+        return buildings;
     }
 
     /**
-     * Get height at position - includes building collision
+     * Determine district type by world coordinates
      */
-    getHeightAt(worldX, worldZ) {
-        // Check if inside a building
-        for (const building of this.buildings) {
-            if (worldX >= building.minX && worldX <= building.maxX &&
-                worldZ >= building.minZ && worldZ <= building.maxZ) {
-                // Return building top height (car can't drive over buildings)
-                return building.height;
-            }
+    _getDistrict(x, z) {
+        const dist = Math.sqrt(x*x + z*z);
+        
+        // Central Park or Plaza?
+        if (Math.abs(x) < 200 && Math.abs(z) < 200) {
+            return { type: 'park' };
         }
-
-        // Ground level
-        return 0;
+        
+        if (dist < 800) return { type: 'downtown' };
+        if (dist < 2000) return { type: 'commercial' };
+        
+        // Check for river/water?
+        // Simple sine wave river
+        const riverPath = Math.sin(x * 0.002) * 500;
+        if (Math.abs(z - riverPath) < 100) return { type: 'water' };
+        
+        return { type: 'residential' };
+    }
+    
+    /**
+     * Physics: Get Surface Height
+     */
+    getHeightAt(x, z) {
+        // Grid Logic
+        // Normalize coordinates to grid
+        // Add half gridStep to center alignment if needed, but we generated centered at 0,0
+        // Blocks are centered at k * gridStep
+        
+        // Transform x, z to local block coords
+        const halfStep = this.gridStep / 2;
+        const relativeX = (Math.abs(x) + halfStep) % this.gridStep;
+        const relativeZ = (Math.abs(z) + halfStep) % this.gridStep;
+        
+        // Gap is the road. Block is the solid part.
+        // We need to check if we are INSIDE the block
+        // Block width = blockSize
+        // Road width = gridStep - blockSize
+        
+        // The above modulo logic is tricky with negative numbers.
+        // Better: Find nearest block center
+        const gx = Math.round(x / this.gridStep) * this.gridStep;
+        const gz = Math.round(z / this.gridStep) * this.gridStep;
+        
+        const dx = Math.abs(x - gx);
+        const dz = Math.abs(z - gz);
+        
+        // If within half blockSize, we are on the block (sidewalk)
+        if (dx < this.blockSize / 2 && dz < this.blockSize / 2) {
+            return this.sidewalkHeight;
+        }
+        
+        // Otherwise on road
+        return this.groundHeight;
     }
 
     /**
-     * Get terrain normal - flat ground or building top
+     * Physics: Get Normal
      */
-    getNormalAt(worldX, worldZ) {
-        // City is flat, normal is always up
+    getNormalAt(x, z) {
+        // We assume flat ground mostly
+        // For curbs, we could return sideways normals, but for car physics
+        // simpler is often better (vertical up).
+        // Let's stick to Up vector.
         return new THREE.Vector3(0, 1, 0);
     }
 
     /**
-     * Get surface type
+     * Physics: Get Surface Type
      */
-    getSurfaceType(worldX, worldZ) {
-        // Check if on a building
-        for (const building of this.buildings) {
-            if (worldX >= building.minX && worldX <= building.maxX &&
-                worldZ >= building.minZ && worldZ <= building.maxZ) {
-                // On a building - shouldn't happen but return high drag
-                return {
-                    type: 'building',
-                    friction: 0.1,
-                    drag: 10.0  // Very high drag to stop the car
-                };
+    getSurfaceType(x, z) {
+        if (this.getHeightAt(x, z) > 0.1) {
+            return SurfaceTypes.CONCRETE; // Sidewalk
+        }
+        return SurfaceTypes.TARMAC; // Road
+    }
+
+    /**
+     * Visuals: Create Building Material with "Windows"
+     */
+    _createBuildingMaterial() {
+        // Use a simple canvas texture for windows
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 128; // Taller for vertical windows
+        const ctx = canvas.getContext('2d');
+        
+        // Background (Building Wall)
+        ctx.fillStyle = '#222';
+        ctx.fillRect(0, 0, 64, 128);
+        
+        // Windows
+        ctx.fillStyle = '#ffeedd'; // Warm light
+        // Randomize lit windows
+        for (let y = 0; y < 16; y++) {
+            for (let x = 0; x < 4; x++) {
+                if (Math.random() > 0.4) {
+                    ctx.globalAlpha = 0.5 + Math.random() * 0.5;
+                    // Draw window rect
+                    ctx.fillRect(4 + x * 16, 4 + y * 8, 8, 4);
+                }
             }
         }
-
-        // Check if on road
-        if (this._isOnRoad(worldX, worldZ)) {
-            return SurfaceTypes.TARMAC;
-        }
-
-        // Park area
-        const district = this._getDistrictAt(worldX, worldZ);
-        if (district === Districts.PARK) {
-            return SurfaceTypes.GRASS;
-        }
-
-        // Sidewalk/pavement
-        return SurfaceTypes.TARMAC;
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.magFilter = THREE.NearestFilter;
+        
+        // Custom shader to handle world-space UV mapping (Triplanar-ish)
+        // Or simpler: just use the texture with high repeat
+        // Problem: Scaling geometry stretches texture. 
+        // We will modify the material to scale UVs by world position in Vertex Shader
+        
+        const material = new THREE.MeshLambertMaterial({
+            map: texture,
+            color: 0xffffff
+        });
+        
+        return material;
     }
 }

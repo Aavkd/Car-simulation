@@ -52,6 +52,11 @@ export const SurfaceTypes = {
         friction: 0.65,
         drag: 1.6
     },
+    CONCRETE: {
+        type: 'concrete',
+        friction: 0.95,
+        drag: 0.9
+    },
     ICE_FRICTIONLESS: {
         type: 'ice_frictionless',
         friction: 0.01,  // Near-zero friction for sliding
