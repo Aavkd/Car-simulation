@@ -21,6 +21,9 @@ export class CarPhysics {
 
         // Store the raw car spec for accessing additional properties like lights
         this.carSpec = carSpec;
+        if (this.mesh) {
+            this.mesh.userData.carSpec = carSpec;
+        }
 
         // ==================== NEW PHYSICS ENGINE ====================
         this.physics = new NewCarPhysicsEngine(carSpec || this._getDefaultSpec(), terrain);

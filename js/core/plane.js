@@ -189,6 +189,23 @@ export class PlanePhysics {
     }
 
     /**
+     * Set camera for FOV effects
+     * @param {THREE.PerspectiveCamera} camera 
+     */
+    setCamera(camera) {
+        this.camera = camera;
+        this.baseFov = camera.fov;
+    }
+
+    /**
+     * Set warp shader pass for distortion effects
+     * @param {ShaderPass} pass 
+     */
+    setWarpShader(pass) {
+        this.warpPass = pass;
+    }
+
+    /**
      * Apply thrust multiplier to physics constants and visual effects
      * @param {number} multiplier 
      */
@@ -1133,7 +1150,10 @@ export class PlanePhysics {
 
         // Reduce intensity for highest speeds to avoid visual clutter
         if (speed > 2000) {
-            targetOpacity *= 0.2;
+            targetOpacity *= 0.4;
+        }
+        if (speed > 24000) {
+            targetOpacity *= 0.4;
         }
         const currentOpacity = this.speedEffectMaterial.uniforms.opacity.value;
         this.speedEffectMaterial.uniforms.opacity.value = THREE.MathUtils.lerp(currentOpacity, targetOpacity, dt * 2.0);
@@ -1159,6 +1179,45 @@ export class PlanePhysics {
         if (this.mesh.visible && Math.random() < 0.01) {
             const mult = this.activeThrustMultiplier || 1.0;
             // console.log(`[PlanePhysics] Speed: ${Math.round(speed)} / ${Math.round(cfg.maxSpeed)} (Mult: ${mult.toFixed(1)})`);
+        }
+
+        // ========== NEW: FOV & DISTORTION EFFECT ==========
+        // Thresholds: Trigger ~10,000 km/h, Max ~30,000 km/h
+        const fovStartSpeed = 10000;
+        const fovMaxSpeed = 100000;
+
+        let fovFactor = 0;
+        if (speed > fovStartSpeed) {
+            fovFactor = (speed - fovStartSpeed) / (fovMaxSpeed - fovStartSpeed);
+            // Allow factor to go slightly above 1 for higher speeds, but we will cap the actual FOV
+            fovFactor = Math.max(0, fovFactor);
+        }
+
+        // 1. FOV Widen Effect
+        if (this.camera) {
+            // Widen FOV drastically for tunnel effect
+            // Base 60 -> Max 150/160
+            const maxFovBoost = 90.0; // +90 degrees = 150 total
+
+            // Set boost on camera userdata for CameraController to pick up
+            this.camera.userData.warpFovBoost = fovFactor * maxFovBoost;
+        }
+
+        // 2. Warp Shader Distortion
+        if (this.warpPass && this.warpPass.uniforms.distortion) {
+            // Apply radial distortion at high speed
+            // Stronger distortion (up to 1.5)
+            const targetDistortion = fovFactor * 1.0;
+
+            const currentDistortion = this.warpPass.uniforms.distortion.value;
+            this.warpPass.uniforms.distortion.value = THREE.MathUtils.lerp(currentDistortion, targetDistortion, dt * 2.0);
+        }
+
+        // DEBUG LOGGING
+        if (this.mesh.visible && Math.random() < 0.1) { // Log more frequently (5fps approx)
+            if (speed > 5000) {
+                console.log(`[Plane] Spd: ${speed.toFixed(0)} km/h | Fac: ${fovFactor.toFixed(2)} | FOV: ${this.camera.fov.toFixed(1)} (Base: ${this.baseFov}) | Dist: ${this.warpPass?.uniforms.distortion.value.toFixed(3)}`);
+            }
         }
     }
 

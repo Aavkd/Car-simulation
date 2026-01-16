@@ -15,7 +15,9 @@ export const WarpSpeedShader = {
         'blurSamples': { value: 64 },            // Number of blur samples
         'aberrationStrength': { value: 0.00005 },  // Chromatic aberration intensity (subtle)
         'vignetteStrength': { value: 0.4 },      // Edge darkening intensity (subtle)
-        'streakIntensity': { value: 0.015 }       // Light streak/star line intensity (subtle)
+        'vignetteStrength': { value: 0.4 },      // Edge darkening intensity (subtle)
+        'streakIntensity': { value: 0.015 },      // Light streak/star line intensity (subtle)
+        'distortion': { value: 0.0 }             // Radial distortion strength
     },
 
     vertexShader: `
@@ -36,6 +38,7 @@ export const WarpSpeedShader = {
         uniform float aberrationStrength;
         uniform float vignetteStrength;
         uniform float streakIntensity;
+        uniform float distortion;
 
         varying vec2 vUv;
 
@@ -55,6 +58,42 @@ export const WarpSpeedShader = {
             vec2 toCenter = center - uv;
             float dist = length(toCenter);
             vec2 dir = normalize(toCenter);
+
+            // ========== GEOMETRIC DISTORTION ==========
+            // Fisheye/Warp effect at edges
+            if (distortion > 0.001) {
+                // Strength increases with distance from center
+                float r = dist;
+                // Distortion formula: r_new = r * (1 + k * r^2)
+                // We want to stretch edges outward (pin cushion) or inward (barrel)?
+                // For hyperspace, pulling edges OUT (pin cushion) feels faster? 
+                // actually, increasing FOV makes center smaller, edges stretch.
+                
+                // Simple radial offset
+                // INVERTED for Barrel Distortion (Fisheye/Tunnel)
+                // We want to sample from FUTURE (further out) pixels to squeeze them in
+                float distortAmount = distortion * r * r; 
+                
+                // Use + instead of - to sample from further out (Barrel)
+                // Note: toCenter/dir points TO center. 
+                // uv = center - dir * dist.
+                // We want longer distance.
+                // factor > 1.0?
+                // r_new = r * (1.0 + distortion * r * r);
+                
+                float k = distortion; 
+                float r2 = r * r;
+                float f = 1.0 + k * r2;
+                
+                // New UV position based on barrel distortion
+                // We move AWAY from center effectively (sampling from further out)
+                uv = center - dir * (r * f);
+                
+                // Re-calculate derived values with new UV
+                toCenter = center - uv;
+                dist = length(toCenter);
+                dir = normalize(toCenter);
+            }
 
             // Smooth speed curve for more dramatic effect at high speeds
             float speed = smoothstep(0.0, 1.0, speedFactor);

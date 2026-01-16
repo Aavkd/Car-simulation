@@ -9,7 +9,7 @@ export class CameraController {
         this.domElement = domElement || document.body;
 
         // Camera modes
-        this.modes = ['chase', 'far', 'hood', 'cockpit', 'flight'];
+        this.modes = ['chase', 'far', 'cockpit', 'flight'];
         this.currentModeIndex = 0;
 
         // Active vehicle context ('car' or 'plane')
@@ -30,12 +30,6 @@ export class CameraController {
                 height: 8,
                 lookAtHeight: 4,
                 fov: 50
-            },
-            hood: {
-                distance: -5,
-                height: 1.2,
-                lookAtHeight: 1.5,
-                fov: 75
             },
             cockpit: {
                 distance: -3,       // Z offset (negative = back, positive = forward)
@@ -295,7 +289,16 @@ export class CameraController {
         if (!target) return;
 
 
-        const config = this.config;
+        let config = this.config;
+
+        // Check for vehicle-specific overrides
+        if (target && target.userData && target.userData.carSpec && target.userData.carSpec.camera) {
+            const vehicleConfig = target.userData.carSpec.camera[this.currentMode];
+            if (vehicleConfig) {
+                config = { ...config, ...vehicleConfig };
+            }
+        }
+
         const positionSmoothing = config.positionSmoothing || this.positionSmoothing;
         const lookAtSmoothing = config.lookAtSmoothing || this.lookAtSmoothing;
 
@@ -358,7 +361,14 @@ export class CameraController {
 
                 // Dynamic FOV
                 const speedRatio = Math.min(speed / 150, 1);
-                const targetFov = config.fov + speedRatio * 10;
+                let targetFov = config.fov + speedRatio * 10;
+
+                // Add Warp Boost (from PlanePhysics)
+                if (this.camera.userData.warpFovBoost) {
+                    targetFov += this.camera.userData.warpFovBoost;
+                    targetFov = Math.min(targetFov, 170);
+                }
+
                 this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, this.fovSmoothing * deltaTime);
                 this.camera.fov = this.currentFov;
                 this.camera.updateProjectionMatrix();
@@ -409,7 +419,14 @@ export class CameraController {
 
             // Speed-based FOV for cockpit
             const speedRatio = Math.min(speed / this.maxSpeedForFov, 1);
-            const targetFov = config.fov + speedRatio * this.maxFovIncrease * 0.7;
+            let targetFov = config.fov + speedRatio * this.maxFovIncrease * 0.7;
+
+            // Add Warp Boost (from PlanePhysics)
+            if (this.camera.userData.warpFovBoost) {
+                targetFov += this.camera.userData.warpFovBoost;
+                targetFov = Math.min(targetFov, 170);
+            }
+
             this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, this.fovSmoothing * deltaTime);
             this.camera.fov = this.currentFov;
             this.camera.updateProjectionMatrix();
@@ -485,7 +502,14 @@ export class CameraController {
 
             // Dynamic FOV
             const speedRatio = Math.min(speed / 150, 1); // 150 m/s max for FOV effect
-            const targetFov = config.fov + speedRatio * 20;
+            let targetFov = config.fov + speedRatio * 20;
+
+            // Add Warp Boost (from PlanePhysics)
+            if (this.camera.userData.warpFovBoost) {
+                targetFov += this.camera.userData.warpFovBoost;
+                targetFov = Math.min(targetFov, 170);
+            }
+
             this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, this.fovSmoothing * deltaTime);
             this.camera.fov = this.currentFov;
             this.camera.updateProjectionMatrix();
@@ -505,7 +529,7 @@ export class CameraController {
 
         // Smoothly interpolate camera base rotation towards target rotation
         // This decouples the camera from jittery physics and creates a fluid follow effect
-        const followSmoothing = 4.0; 
+        const followSmoothing = 4.0;
         this.currentBaseRotation.slerp(target.quaternion, followSmoothing * deltaTime);
 
         // Smooth orbit angle interpolation
@@ -590,7 +614,15 @@ export class CameraController {
 
         // Speed-based FOV
         const speedRatio = Math.min(speed / this.maxSpeedForFov, 1);
-        const targetFov = config.fov + speedRatio * this.maxFovIncrease;
+        let targetFov = config.fov + speedRatio * this.maxFovIncrease;
+
+        // Add Warp Boost (from PlanePhysics)
+        if (this.camera.userData.warpFovBoost) {
+            targetFov += this.camera.userData.warpFovBoost;
+            // Cap to prevent breaking rendering
+            targetFov = Math.min(targetFov, 170);
+        }
+
         this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, this.fovSmoothing * deltaTime);
         this.camera.fov = this.currentFov;
         this.camera.updateProjectionMatrix();

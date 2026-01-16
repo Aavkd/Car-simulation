@@ -19,6 +19,9 @@ import { LevelData, getAllLevels } from './levels/level-data.js';
 import { ToyotaAE86 } from './core/vehicle-specs/ToyotaAE86.js';
 import { MazdaRX7 } from './core/vehicle-specs/MazdaRX7.js';
 import { ShelbyCobra427 } from './core/vehicle-specs/ShelbyCobra427.js';
+import { FerrariF40 } from './core/vehicle-specs/FerrariF40.js';
+import { NissanGTR } from './core/vehicle-specs/NissanGTR.js';
+import { Mustang1965 } from './core/vehicle-specs/Mustang1965.js';
 import { EditorController } from './editor/EditorController.js';
 import { AnimatorEditorController } from './editor/animator/AnimatorEditorController.js';
 import { RPGManager } from './rpg/systems/RPGManager.js';
@@ -52,7 +55,28 @@ const CAR_REGISTRY = {
         name: 'Shelby Cobra 427',
         icon: '🐍',
         color: '#3498db'
-    }
+    },
+    'f40': {
+        spec: FerrariF40,
+        model: 'assets/models/1987_ferrari_f40.glb',
+        name: 'Ferrari F40',
+        icon: '🏎️',
+        color: '#e74c3c'
+    },
+    'gtr': {
+        spec: NissanGTR,
+        model: 'assets/models/Nissan GTR.glb',
+        name: 'Nissan GT-R',
+        icon: '🦖',
+        color: '#5d6d7e'
+    },
+    'mustang': {
+        spec: Mustang1965,
+        model: 'assets/models/1965_ford_mustang_convertible.glb',
+        name: '1965 Mustang',
+        icon: '🐎',
+        color: '#8e44ad'
+    },
 };
 import { PlanePhysics } from './core/plane.js';
 
@@ -1107,7 +1131,7 @@ class Game {
             // Override fog based on specific type
             if (levelConfig.type === 'cosmic' || levelConfig.type === 'deepspace') {
                 const isCosmic = levelConfig.type === 'cosmic';
-                
+
                 this.scene.fog.color.setHex(isCosmic ? 0x050011 : 0x000005);
                 this.scene.fog.density = 0.0002;
                 this.bloomPass.strength = isCosmic ? 0.8 : 1.2;
@@ -1219,9 +1243,17 @@ class Game {
             if (levelConfig.type === 'deepspace') {
                 // Higher threshold for deep space (trigger at 400km/h, max at 3000km/h)
                 this.plane.setSpeedThresholds(200, 3000);
+                if (this.warpPass) this.warpPass.enabled = true;
             } else {
                 // Default (trigger at 100km/h, max at 800km/h)
                 this.plane.setSpeedThresholds(100, 800);
+                if (this.warpPass) this.warpPass.enabled = false;
+            }
+
+            // Connect Camera and Warp Shader for distortion effects
+            this.plane.setCamera(this.camera);
+            if (this.warpPass) {
+                this.plane.setWarpShader(this.warpPass);
             }
         }
 
@@ -1582,10 +1614,23 @@ class Game {
                 (gltf) => {
                     this.carMesh = gltf.scene;
 
-                    // Scale and position adjustments - use spec modelScale or default to 1
+                    // 1. Apply Import Scale (Internal Scaling)
+                    // Scales the mesh/geometry itself, without affecting the container scale.
+                    // Useful for models imported at tiny/huge sizes (like F40).
+                    const importScale = selectedCar.spec.importScale || 1;
+                    if (importScale !== 1) {
+                        this.carMesh.children.forEach(child => {
+                            child.scale.multiplyScalar(importScale);
+                        });
+                        console.log(`[Car] Applied import scale to children: ${importScale}`);
+                    }
+
+                    // 2. Apply Model Scale (Container Scaling)
+                    // Scales the entire object including lights/effects added later.
+                    // Legacy behavior used by RX7/AE86.
                     const modelScale = selectedCar.spec.modelScale || 1;
                     this.carMesh.scale.setScalar(modelScale);
-                    console.log(`[Car] Applied model scale: ${modelScale}`);
+                    console.log(`[Car] Applied container model scale: ${modelScale}`);
 
                     // Find wheel meshes by name pattern
                     // Common naming: FL_Wheel, FR_Wheel, RL_Wheel, RR_Wheel or similar
@@ -1656,6 +1701,7 @@ class Game {
 
                     this.scene.add(this.carMesh);
                     console.log('Car model loaded successfully');
+
                     resolve();
                 },
                 (progress) => {
@@ -2131,10 +2177,19 @@ class Game {
         // Check if in cockpit (first-person) mode
         const isCockpit = this.cameraController.isCockpitMode;
 
-        // Toggle car 3D model visibility (hide in cockpit mode, except for open-top cars like Cobra)
+        // Toggle car 3D model visibility (hide in cockpit mode, except for open-top cars like Cobra or overrides)
         if (this.carMesh) {
-            // Shelby Cobra is a roadster - keep model visible in cockpit to see the body
-            const keepVisible = this.selectedCarId === 'cobra';
+            // Default: hide in cockpit unless it's the Cobra (legacy)
+            let keepVisible = this.selectedCarId === 'cobra';
+
+            // Check for spec override
+            if (this.car && this.car.carSpec &&
+                this.car.carSpec.camera &&
+                this.car.carSpec.camera.cockpit &&
+                this.car.carSpec.camera.cockpit.showModel !== undefined) {
+                keepVisible = this.car.carSpec.camera.cockpit.showModel;
+            }
+
             this.carMesh.visible = keepVisible || !isCockpit;
         }
 
