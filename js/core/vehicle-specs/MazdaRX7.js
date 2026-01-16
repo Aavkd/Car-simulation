@@ -40,45 +40,44 @@ export const MazdaRX7 = {
     },
 
     // ==================== ENGINE (Real World Values) ====================
-    // Twin-turbo 13B-REW rotary engine
+    // Twin-turbo 13B-REW rotary engine - Tuned for higher output
     engine: {
         idleRPM: 1000,
-        redlineRPM: 8000,
-        maxTorque: 294,         // Nm (REAL value - will be scaled by S²)
-        // Normalized torque curve: rotary engines have a flatter curve
-        // [low, mid-low, mid, mid-high, high RPM]
-        powerCurve: [0.5, 0.75, 0.90, 1.0, 0.95]
+        redlineRPM: 8500,       // Increased redline (was 8000)
+        maxTorque: 380,         // Increased torque for better acceleration (was 294)
+        // Normalized torque curve: boosted mid-range for faster exit speeds
+        powerCurve: [0.6, 0.85, 0.95, 1.0, 0.98]
     },
 
     // ==================== TRANSMISSION ====================
     transmission: {
         // [Reverse, Neutral, 1st, 2nd, 3rd, 4th, 5th]
         gears: [-3.48, 0, 3.48, 2.02, 1.39, 1.00, 0.72],
-        finalDrive: 4.10,
-        shiftTime: 0.18          // seconds (faster shifting)
+        finalDrive: 4.44,       // Shorter final drive for faster acceleration (was 4.10)
+        shiftTime: 0.15          // Faster shifting (was 0.18)
     },
 
     // ==================== TIRES ====================
     tires: {
-        gripCoefficient: 1.6,   // Peak friction coefficient (better tires)
-        slipAnglePeak: 0.11,    // Radians - sharper response
-        pacejkaB: 11,           // Higher stiffness for sports tires
-        pacejkaC: 1.5,          // Sharper shape
-        pacejkaE: -0.4,         // Curvature factor
+        gripCoefficient: 1.48,  // Reduced for easier drift initiation (was 1.6)
+        slipAnglePeak: 0.14,    // Increased for more controllable slides (was 0.11)
+        pacejkaB: 10,           // Slightly lower stiffness (was 11)
+        pacejkaC: 1.4,          // More progressive (was 1.5)
+        pacejkaE: -0.4,         
         rollingResistance: 0.004
     },
 
     // ==================== AERODYNAMICS ====================
     aero: {
-        downforce: 0.35         // Downforce coefficient (better aero package)
+        downforce: 0.3          // Slightly reduced to help breaking traction (was 0.35)
     },
 
     // ==================== STEERING ====================
     steering: {
-        maxAngle: 0.6,          // Radians (~34 degrees - tighter steering)
-        speed: 4.2,             // Quicker steering response
-        counterSteerBoost: 1.9, // Fast counter-steer for drift control
-        highSpeedLimit: 0.55    // More reduction at high speed (stiffer feel)
+        maxAngle: 0.72,          // Increased for deeper drift angles (~41 degrees, was 0.6)
+        speed: 4.5,              // Quicker steering for transitions (was 4.2)
+        counterSteerBoost: 2.2,  // Significantly increased for drift recovery (was 1.9)
+        highSpeedLimit: 0.5      // Allows more steering at speed (was 0.55)
     },
 
     // ==================== VISUAL CONFIGURATION ====================

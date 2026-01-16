@@ -242,7 +242,7 @@ export class NewCarPhysicsEngine {
         if (this.isBoosting) {
             // Apply strong forward force (Rocket-style boost)
             // Force = Mass * Acceleration. Target ~1.5G extra acceleration.
-            const boostAccel = 15.0 * this.scaleFactor; 
+            const boostAccel = 15.0 * this.scaleFactor;
             const boostForce = this._forwardDir.clone().multiplyScalar(this.mass * boostAccel);
             totalForce.add(boostForce);
         }
