@@ -33,6 +33,7 @@ export class InputHandler {
             pitchDown: false,
             pitchDown: false,
             hover: false,  // Vertical lift force (X key)
+            boost: false,  // Nitrous boost (X key / Cross button)
             exitPlayMode: false, // Escape key
             interact: false, // Interaction key (E / Square)
             editorToggle: false, // F9 key
@@ -180,6 +181,7 @@ export class InputHandler {
                 break;
             case 'KeyX':
                 this.keys.hover = true;
+                this.keys.boost = true;
                 break;
             case 'KeyB':
                 this.keys.airbrake = true;
@@ -282,6 +284,7 @@ export class InputHandler {
                 break;
             case 'KeyX':
                 this.keys.hover = false;
+                this.keys.boost = false;
                 break;
             case 'KeyB':
                 this.keys.airbrake = false;
@@ -333,6 +336,9 @@ export class InputHandler {
         if (this.gamepad && this.gamepad.handbrake) {
             this.handbrake = 1;
         }
+
+        // Boost
+        this.boost = this.keys.boost || (this.gamepad && this.gamepad.boost) || false;
     }
 
     _updateGamepad(deltaTime) {
@@ -368,6 +374,7 @@ export class InputHandler {
                 yawLeft: false,
                 yawRight: false,
                 hover: false,  // Hover toggle (Cross/A button) for plane
+                boost: false,  // Boost (Cross/A button) for car
                 interact: false, // Square/X button
                 airbrake: false // Space brake (Square button) - Deep Space only
             };
@@ -417,6 +424,7 @@ export class InputHandler {
 
         // Hover (Cross/A - Button 0) for plane vertical lift
         this.gamepad.hover = gp.buttons[0].pressed;
+        this.gamepad.boost = gp.buttons[0].pressed;
 
         // Camera (Right Stick - Axes 2, 3)
         // ... (lines skipped)

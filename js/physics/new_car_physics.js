@@ -126,6 +126,7 @@ export class NewCarPhysicsEngine {
 
         // Drift state tracking
         this.isDrifting = false;
+        this.isBoosting = false;
         this.driftIntensity = 0;         // 0-1, how much the car is currently sliding
         this.lateralVelocity = 0;        // Tracks lateral speed for inertia
         this.currentDriftGrip = 1.0;     // Current grip multiplier (smoothed)
@@ -235,6 +236,16 @@ export class NewCarPhysicsEngine {
 
         // ==================== 3.5 WEIGHT TRANSFER ====================
         this._updateWeightTransfer(input);
+
+        // ==================== 3.6 NITROUS BOOST ====================
+        this.isBoosting = input.boost || false;
+        if (this.isBoosting) {
+            // Apply strong forward force (Rocket-style boost)
+            // Force = Mass * Acceleration. Target ~1.5G extra acceleration.
+            const boostAccel = 15.0 * this.scaleFactor; 
+            const boostForce = this._forwardDir.clone().multiplyScalar(this.mass * boostAccel);
+            totalForce.add(boostForce);
+        }
 
         // ==================== 4. AIR DRAG ====================
         const speed = this.velocity.length();
@@ -961,6 +972,13 @@ export class NewCarPhysicsEngine {
      */
     getIsDrifting() {
         return this.isDrifting;
+    }
+
+    /**
+     * Check if car is boosting
+     */
+    getIsBoosting() {
+        return this.isBoosting;
     }
 
     /**

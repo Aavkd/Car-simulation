@@ -24,6 +24,23 @@ export class ExhaustSystem {
         this.isBrakingSequence = false;
         this.brakeSequenceTimer = 0;
         this.flameCooldown = 0;
+
+        // Nitro Light
+        this.nitroLight = new THREE.PointLight(0x00ffff, 0, 8, 2);
+        if (this.carPhysics.mesh) {
+            this.carPhysics.mesh.add(this.nitroLight);
+            
+            // Position light
+            if (this.exhaustPositions.length > 0) {
+                const avgPos = new THREE.Vector3();
+                this.exhaustPositions.forEach(p => avgPos.add(p));
+                avgPos.divideScalar(this.exhaustPositions.length);
+                avgPos.z -= 0.5; // Slightly behind
+                this.nitroLight.position.copy(avgPos);
+            } else {
+                this.nitroLight.position.set(0, 0.5, -2.5);
+            }
+        }
     }
 
     _createParticleTexture() {
@@ -171,9 +188,18 @@ export class ExhaustSystem {
         const handbrake = this.carPhysics.handbrakeInput;
         const speed = this.carPhysics.speedKmh;
 
-        // Nitrous Logic (High Speed)
-        if (speed > 130 && throttle > 0.9) {
+        // Nitrous Logic (High Speed OR Boost Input)
+        const isBoosting = this.carPhysics.physics.getIsBoosting ? this.carPhysics.physics.getIsBoosting() : false;
+        
+        if (isBoosting || (speed > 130 && throttle > 0.9)) {
             this.updateNitrous(1.0);
+            if (this.nitroLight) {
+                this.nitroLight.intensity = 5.0 + Math.random() * 3.0;
+            }
+        } else {
+            if (this.nitroLight) {
+                this.nitroLight.intensity = 0;
+            }
         }
 
         // Backfire/Flame Logic

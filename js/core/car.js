@@ -361,7 +361,8 @@ export class CarPhysics {
             throttle: this.throttleInput,
             brake: this.brakeInput,
             steer: input.steering || 0,
-            handbrake: this.handbrakeInput
+            handbrake: this.handbrakeInput,
+            boost: input.boost || false
         };
 
         // Update physics engine
