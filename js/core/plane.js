@@ -1129,7 +1129,12 @@ export class PlanePhysics {
         }
 
         // Smooth opacity transition
-        const targetOpacity = factor;
+        let targetOpacity = factor;
+
+        // Reduce intensity for highest speeds to avoid visual clutter
+        if (speed > 2000) {
+            targetOpacity *= 0.2;
+        }
         const currentOpacity = this.speedEffectMaterial.uniforms.opacity.value;
         this.speedEffectMaterial.uniforms.opacity.value = THREE.MathUtils.lerp(currentOpacity, targetOpacity, dt * 2.0);
 

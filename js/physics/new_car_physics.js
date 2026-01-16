@@ -118,11 +118,11 @@ export class NewCarPhysicsEngine {
 
         // ==================== DRIFT MECHANICS ====================
         // Drift parameters for lateral inertia and sliding behavior
-        this.driftGripMultiplier = carSpec.drift?.gripMultiplier || 0.2;     // Reduced grip when drifting (lowered for more slide)
-        this.lateralInertiaFactor = carSpec.drift?.lateralInertia || 0.6;   // How much lateral velocity is retained (increased)
-        this.handbrakeGripReduction = carSpec.drift?.handbrakeGripReduction || 0.15; // Rear grip when handbrake is pulled (lowered)
-        this.driftAngleThreshold = carSpec.drift?.angleThreshold || 0.08;    // Slip angle to trigger drift state (lowered)
-        this.driftRecoveryRate = carSpec.drift?.recoveryRate || 1;         // How fast grip recovers after drift (slower)
+        this.driftGripMultiplier = carSpec.drift?.gripMultiplier || 0.45;     // Increased grip when drifting (was 0.2)
+        this.lateralInertiaFactor = carSpec.drift?.lateralInertia || 0.4;   // Reduced lateral inertia (was 0.6)
+        this.handbrakeGripReduction = carSpec.drift?.handbrakeGripReduction || 0.15; // Rear grip when handbrake is pulled
+        this.driftAngleThreshold = carSpec.drift?.angleThreshold || 0.08;    // Slip angle to trigger drift state
+        this.driftRecoveryRate = carSpec.drift?.recoveryRate || 3.0;         // Faster recovery (was 1.0)
 
         // Drift state tracking
         this.isDrifting = false;
@@ -743,7 +743,8 @@ export class NewCarPhysicsEngine {
             lateralForce = THREE.MathUtils.clamp(lateralForce, -maxLateralForce, maxLateralForce);
 
             // Apply lateral inertia during drift - reduces force to let car carry sideways momentum
-            if ((isRear && handbrakeActive) || aboveThreshold) {
+            // MODIFY: Only apply this to REAR wheels. Front wheels need full force to steer the drift.
+            if ((isRear && handbrakeActive) || (aboveThreshold && isRear)) {
                 lateralForce *= (1.0 - this.lateralInertiaFactor * 0.5);
             }
         }

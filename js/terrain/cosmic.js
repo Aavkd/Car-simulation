@@ -241,7 +241,7 @@ export class CosmicGenerator extends BasePhysicsProvider {
         return this.mesh;
     }
 
-    update(deltaTime, playerPos, camera) {
+    update(playerPos, sky, deltaTime) {
         // Update Road Shader
         if (this.roadMesh && this.roadMesh.material.uniforms) {
             this.roadMesh.material.uniforms.time.value += deltaTime;
@@ -250,8 +250,7 @@ export class CosmicGenerator extends BasePhysicsProvider {
         // Delegate to Background Generator
         if (this.backgroundGenerator) {
             // Background needs update for chunk management and effects
-            // Pass camera to allow view-dependent effects (like Black Hole lensing)
-            this.backgroundGenerator.update(playerPos, null, deltaTime, camera);
+            this.backgroundGenerator.update(playerPos, sky, deltaTime);
         }
     }
 

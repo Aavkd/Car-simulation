@@ -3,6 +3,7 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { AnimationController } from '../animation/core/AnimationController.js';
 import { ActiveRagdollController } from '../animation/physics/ActiveRagdollController.js';
 
+
 /**
  * Animation Set Configurations
  * Easily switch between different animation sets for the player
@@ -121,7 +122,7 @@ export class PlayerController {
         this.animationSet = 'knight'; // Default to knight animations
         this.scene = null; // Store scene reference for reloading
 
-        // Active Ragdoll System (Euphoria-style physics)
+        // Active Ragdoll System
         this.ragdoll = null;
     }
 
@@ -187,7 +188,26 @@ export class PlayerController {
     update(deltaTime, input) {
         const dt = Math.min(deltaTime, 0.05);
 
-        // ==================== INPUT ====================
+        // ==================== RAGDOLL UPDATE ====================
+        if (this.ragdoll && this.ragdoll.isActive()) {
+            this.ragdoll.update(dt);
+
+            // Sync internal position to ragdoll hips (to follow the fall)
+            // Just for camera tracking. We might need to find the hips bone.
+            // For now, let's just let the mesh move away and we watch it.
+            // Better to snap player position to the mesh.
+            if (this.mesh) {
+                // this.position.copy(this.mesh.position); 
+                // Wait, mesh position might not move if we are just moving bones.
+                // In Phase 2, we are moving bones in world space.
+                // The camera follows this.position.
+                // We should probably find the Hips bone and snap this.position to it.
+                // But the mesh is child of Scene. 
+                // Let's just update the ragdoll for now.
+            }
+            return; // Skip normal movement
+        }
+
         // ==================== INPUT ====================
         // If no input provided (e.g. from Animator), use empty default
         const keys = input ? input.keys : { forward: false, backward: false, left: false, right: false, sprint: false };
@@ -441,10 +461,7 @@ export class PlayerController {
             this.animator.setInput('strafeDirection', strafeDirection);
             this.animator.update(dt);
 
-            // Update Active Ragdoll System (AFTER animation update)
-            if (this.ragdoll) {
-                this.ragdoll.update(dt);
-            }
+
         }
     }
 
@@ -627,21 +644,17 @@ export class PlayerController {
                     // Default to Locomotion
                     this.animator.playBlendTree('Locomotion');
 
-                    // Initialize Active Ragdoll System
-                    this.ragdoll = new ActiveRagdollController(this.mesh, {
-                        terrain: this.terrain,
-                        entity: this,
-                        characterHeight: this.specs.height,
-                        onStateChange: (newState, oldState) => {
-                            console.log(`[Player] Ragdoll state: ${oldState} → ${newState}`);
-                        },
-                        onImpact: (source, magnitude) => {
-                            // Could trigger sound effects, particles, etc.
-                        }
-                    });
-                    console.log('[Player] Active Ragdoll System initialized');
+                    // ========================= RAGDOLL INIT =========================
+                    try {
+                        this.ragdoll = new ActiveRagdollController(this.mesh, this.terrain);
+                    } catch (e) {
+                        console.error('[Player] Failed to initialize ActiveRagdollController:', e);
+                        this.ragdoll = null;
+                        // Use notify_user if we were in a UI context, but here just log
+                    }
 
-                    // Initially hidden
+
+                    // Initially hidden (game loop handles visibility switch)
                     this.mesh.visible = false;
                     this.meshLoaded = true;
 
@@ -714,6 +727,7 @@ export class PlayerController {
 
             this.meshLoaded = false;
             this.animator = null;
+            this.ragdoll = null; // Also reset ragdoll
 
             // Reload with new animation set
             await this.loadModel(this.scene);
@@ -730,6 +744,14 @@ export class PlayerController {
      */
     updateMesh() {
         if (!this.mesh || !this.meshLoaded) return;
+
+        // If ragdoll is active, the mesh position is controlled by physics
+        if (this.ragdoll && this.ragdoll.isActive()) {
+            // The ragdoll controller handles the mesh position and rotation
+            // We might want to update this.position based on the ragdoll's root
+            // for camera tracking, but for now, let the ragdoll control the mesh.
+            return;
+        }
 
         // Position mesh at player feet (player.position is at eye level)
         this.mesh.position.set(
@@ -770,6 +792,7 @@ export class PlayerController {
         }
     }
 
+
     // ==================== ACTIVE RAGDOLL API ====================
 
     /**
@@ -780,8 +803,12 @@ export class PlayerController {
      * @returns {string} Response type: 'absorbed', 'stumble', 'stagger', 'fall', 'knockdown'
      */
     applyImpact(force, point = null, source = 'unknown') {
-        if (!this.ragdoll) return 'absorbed';
-        return this.ragdoll.applyImpact(force, point, source);
+        if (this.ragdoll) {
+            console.log(`[Player] Applying impact: ${force.length().toFixed(1)} N from ${source}`);
+            this.ragdoll.applyImpact(force, point);
+            return 'fall';
+        }
+        return 'absorbed';
     }
 
     /**
@@ -789,8 +816,7 @@ export class PlayerController {
      * @returns {boolean} True if player can move normally
      */
     hasControl() {
-        if (!this.ragdoll) return true;
-        return this.ragdoll.hasControl();
+        return true;
     }
 
     /**
@@ -798,8 +824,7 @@ export class PlayerController {
      * @returns {boolean} True if in any physics state
      */
     isRagdollActive() {
-        if (!this.ragdoll) return false;
-        return this.ragdoll.isPhysicsActive();
+        return false;
     }
 
     /**
@@ -808,43 +833,7 @@ export class PlayerController {
      * @param {string} [intensity] - 'light', 'medium', 'heavy'
      */
     forceFall(direction, intensity = 'medium') {
-        if (this.ragdoll) {
-            this.ragdoll.forceFall(direction, intensity);
-        }
-    }
-
-    /**
-     * Force recovery from ragdoll state (skip to standing)
-     */
-    forceRecovery() {
-        if (this.ragdoll) {
-            this.ragdoll.forceRecovery();
-        }
-    }
-
-    /**
-     * Helper for console testing without needing global THREE
-     * @param {number} x
-     * @param {number} y
-     * @param {number} z
-     */
-    testImpact(x, y, z) {
-        if (!this.ragdoll) {
-            console.warn('Ragdoll not initialized');
-            return;
-        }
-        const force = new THREE.Vector3(x, y, z);
-        console.log(`Testing impact: ${x}, ${y}, ${z}`);
-        this.applyImpact(force, null, 'console_test');
-    }
-
-    /**
-     * Get current ragdoll state for debugging/UI
-     * @returns {Object|null} State object or null if ragdoll not initialized
-     */
-    getRagdollState() {
-        if (!this.ragdoll) return null;
-        return this.ragdoll.getState();
+        // Ragdoll system removed
     }
 
     /**

@@ -98,10 +98,11 @@ export const LevelData = {
         difficulty: 4,
         color: '#8b5cf6', // Violet accent
         params: {
-            roadWidth: 30,
-            segmentLength: 100000,
-            curveIntensity: 200,
-            slopeIntensity: 80
+            roadWidth: 500,
+            segmentLength: 200000,
+            curveIntensity: 400,
+            slopeIntensity: 150,
+            corkscrewChance: 0.3
         }
     },
     deepspace: {

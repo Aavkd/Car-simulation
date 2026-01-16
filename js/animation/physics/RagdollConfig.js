@@ -9,10 +9,10 @@ import * as THREE from 'three';
 export const RagdollConfig = {
     // ==================== PHYSICS CONFIGURATION ====================
     physics: {
-        gravity: new THREE.Vector3(0, -20, 0),
+        gravity: new THREE.Vector3(0, -40, 0),
         friction: 0.98,
         groundFriction: 0.6,
-        solverIterations: 5,
+        solverIterations: 10,
 
         // Mass Configuration
         mass: {
@@ -23,6 +23,20 @@ export const RagdollConfig = {
             thigh: 3.0,
             leg: 1.5,
             arm: 1.0
+        },
+
+        // Radius Configuration (Game Units - Scaled 4x from Meters)
+        // 1 meter = 4 units
+        radius: {
+            default: 0.4,
+            hips: 0.35,       // ~10cm radius (Reduced from 0.6/1.1 to fix floating)
+            spine: 0.4,      // ~17cm
+            head: 0.5,       // ~12cm
+            thigh: 0.5,      // ~12cm
+            leg: 0.35,       // ~9cm
+            arm: 0.2,        // Reduced from 0.3
+            hand: 0.15,      // Reduced from 0.2
+            foot: 0.15       // Reduced from 0.25
         },
 
         // Constraint Configuration

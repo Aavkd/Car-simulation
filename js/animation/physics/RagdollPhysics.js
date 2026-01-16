@@ -2,307 +2,250 @@ import * as THREE from 'three';
 import { RagdollConfig } from './RagdollConfig.js';
 
 /**
- * Lightweight Verlet Physics System for Active Ragdolls
- * 
- * Handles particle-based physics simulation with distance constraints
- * to approximate rigid body dynamics without a heavy physics engine.
+ * A single point mass in the physics simulation.
  */
-export class RagdollPhysics {
-    constructor(options = {}) {
-        const config = RagdollConfig.physics;
-
-        this.gravity = config.gravity.clone();
-        this.friction = config.friction;
-        this.groundFriction = config.groundFriction;
-        this.iterations = config.solverIterations;
-
-        this.particles = [];
-        this.constraints = [];
-
-        this.terrain = options.terrain || null;
-        this.colliders = options.colliders || [];
-        this.stiffnessMultiplier = 1.0;
-        this.raycaster = new THREE.Raycaster();
-        this.raycaster.firstHitOnly = true;
+export class PhysicsParticle {
+    constructor(position, mass = 1.0, radius = 0.1, isPinned = false) {
+        this.position = position.clone();
+        this.previousPosition = position.clone();
+        this.mass = mass;
+        this.radius = radius;
+        this.isPinned = isPinned; // If true, unaffected by physics (e.g., kinematic control)
+        this.forces = new THREE.Vector3();
     }
 
-    /**
-     * Add a particle tied to a bone
-     * @param {THREE.Bone} bone - The bone this particle represents
-     * @param {number} mass - Particle mass (relative)
-     * @param {number} radius - Collision radius
-     */
-    addParticle(bone, mass = 1.0, radius = 0.1) {
-        const position = new THREE.Vector3();
-        bone.getWorldPosition(position);
+    addForce(force) {
+        if (!this.isPinned) {
+            this.forces.add(force);
+        }
+    }
 
-        const particle = {
-            bone: bone,
-            position: position.clone(),
-            previousPosition: position.clone(),
-            mass: mass,
-            invMass: mass > 0 ? 1.0 / mass : 0,
-            radius: radius,
-            isLocked: false, // If true, follows animation exactly (kinematic)
-            force: new THREE.Vector3()
-        };
+    update(dt, friction, gravity) {
+        if (this.isPinned) return;
 
+        // Verlet Integration
+        // x(t+dt) = 2x(t) - x(t-dt) + a(t) * dt^2
+        // We implement it as:
+        // velocity = x - oldX
+        // nextX = x + velocity * friction + a * dt^2
+
+        const velocity = new THREE.Vector3().subVectors(this.position, this.previousPosition);
+        velocity.multiplyScalar(friction);
+
+        // Save current position as previous
+        this.previousPosition.copy(this.position);
+
+        // Apply Update
+        // pos += velocity
+        this.position.add(velocity);
+
+        // Apply Acceleration (F=ma => a=F/m) + Gravity
+        // totalAccel = gravity + forces / mass
+        const acceleration = new THREE.Vector3().copy(gravity);
+
+        // Add external forces
+        if (this.mass > 0) {
+            const forceAccel = new THREE.Vector3().copy(this.forces).divideScalar(this.mass);
+            acceleration.add(forceAccel);
+        }
+
+        // pos += accel * dt * dt
+        acceleration.multiplyScalar(dt * dt);
+        this.position.add(acceleration);
+
+        // Reset forces
+        this.forces.set(0, 0, 0);
+    }
+
+    setPosition(pos) {
+        this.position.copy(pos);
+        this.previousPosition.copy(pos); // Reset velocity
+    }
+}
+
+/**
+ * A distance constraint between two particles.
+ */
+export class PhysicsConstraint {
+    constructor(particleA, particleB, stiffness = 1.0) {
+        this.particleA = particleA;
+        this.particleB = particleB;
+        this.stiffness = stiffness;
+
+        // Calculate rest distance from initial positions
+        this.restDistance = particleA.position.distanceTo(particleB.position);
+    }
+
+    resolve() {
+        const delta = new THREE.Vector3().subVectors(this.particleA.position, this.particleB.position);
+        const distance = delta.length();
+
+        if (distance === 0) return; // Prevent division by zero
+
+        // Difference factor: (current - rest) / current
+        // We simply want to move them towards rest distance
+        const difference = (distance - this.restDistance) / distance;
+
+        // Apply stiffness
+        const scalar = difference * 0.5 * this.stiffness;
+        const correction = delta.multiplyScalar(scalar);
+
+        // Apply correction respecting mass (heavier moves less)
+        // For now, simpler equal split, or inverse mass weighting could be added.
+        // Let's stick to equal split unless one is pinned.
+
+        if (!this.particleA.isPinned) {
+            this.particleA.position.sub(correction);
+        }
+        if (!this.particleB.isPinned) {
+            this.particleB.position.add(correction);
+        }
+    }
+}
+
+/**
+ * The core lightweight physics engine.
+ */
+export class RagdollPhysics {
+    constructor() {
+        this.particles = [];
+        this.constraints = [];
+        this.gravity = RagdollConfig.physics.gravity;
+        this.friction = RagdollConfig.physics.friction;
+        this.groundFriction = RagdollConfig.physics.groundFriction;
+        this.solverIterations = RagdollConfig.physics.solverIterations;
+    }
+
+    addParticle(position, mass, radius, isPinned) {
+        const particle = new PhysicsParticle(position, mass, radius, isPinned);
         this.particles.push(particle);
         return particle;
     }
 
-    /**
-     * Set global stiffness multiplier (0.0 to 1.0+)
-     * 1.0 = Normal stiffness
-     * 0.1 = Floppy/Relaxed
-     * 2.0 = Rigid/Braced
-     * @param {number} val 
-     */
-    setStiffnessMultiplier(val) {
-        this.stiffnessMultiplier = Math.max(0, val);
+    addConstraint(particleA, particleB, stiffness) {
+        const constraint = new PhysicsConstraint(particleA, particleB, stiffness);
+        this.constraints.push(constraint);
+        return constraint;
     }
 
-    /**
-     * Add distance constraint between two particles
-     * @param {Object} p1 - First particle
-     * @param {Object} p2 - Second particle
-     * @param {number} stiffness - 0 to 1 (1 = rigid)
-     */
-    addConstraint(p1, p2, stiffness = 1.0) {
-        const dist = p1.position.distanceTo(p2.position);
+    update(dt) {
+        // 1. Update Particles (Integration)
+        for (const particle of this.particles) {
+            particle.update(dt, this.friction, this.gravity);
+        }
 
-        this.constraints.push({
-            p1,
-            p2,
-            distance: dist,
-            baseStiffness: stiffness
-        });
-    }
+        // 2. Solve Constraints (Iterative)
+        for (let i = 0; i < this.solverIterations; i++) {
+            // Distance constraints
+            for (const constraint of this.constraints) {
+                constraint.resolve();
+            }
 
-    /**
-     * Reset physics state to match current bone positions
-     * Call this when transitioning from Animation -> Ragdoll
-     */
-    matchAnimation() {
-        this.particles.forEach(p => {
-            p.bone.getWorldPosition(p.position);
-            p.previousPosition.copy(p.position);
-            p.force.set(0, 0, 0);
-        });
-    }
+            // Environment collisions (Ground)
+            this.resolveCollisions();
 
-    /**
-     * Update physics simulation
-     */
-    update(delta) {
-        // Limit delta to prevent explosion
-        const dt = Math.min(delta, 0.05);
-        const dtSq = dt * dt;
-
-        // 1. Apply Forces & Integrate Position (Verlet)
-        this.particles.forEach(p => {
-            if (p.isLocked) return;
-
-            // F = ma -> a = F/m
-            const acceleration = this.gravity.clone().add(p.force.multiplyScalar(p.invMass));
-
-            // temp = pos
-            const temp = p.position.clone();
-
-            // pos = pos + (pos - prev) * friction + a * dt^2
-            const velocity = p.position.clone().sub(p.previousPosition).multiplyScalar(this.friction);
-
-            p.position.add(velocity).add(acceleration.multiplyScalar(dtSq));
-            p.previousPosition.copy(temp);
-
-            // Reset force
-            p.force.set(0, 0, 0);
-        });
-
-        // 2. Solve Constraints
-        for (let i = 0; i < this.iterations; i++) {
-            this.constraints.forEach(c => {
-                const p1 = c.p1;
-                const p2 = c.p2;
-
-                const deltaPos = p2.position.clone().sub(p1.position);
-                const currentDist = deltaPos.length();
-
-                if (currentDist === 0) return; // Prevent divide by zero
-
-                const difference = (currentDist - c.distance) / currentDist;
-
-                // Effective Stiffness = Base * Multiplier
-                const effectiveStiffness = Math.min(1.0, c.baseStiffness * this.stiffnessMultiplier);
-
-                const correction = deltaPos.multiplyScalar(difference * effectiveStiffness);
-
-                // Distribute correction based on mass
-                const totalInvMass = p1.invMass + p2.invMass;
-                if (totalInvMass === 0) return;
-
-                const m1 = p1.invMass / totalInvMass;
-                const m2 = p2.invMass / totalInvMass;
-
-                if (!p1.isLocked) p1.position.add(correction.clone().multiplyScalar(m1));
-                if (!p2.isLocked) p2.position.sub(correction.clone().multiplyScalar(m2));
-            });
-
-            // 3. Ground Collision (Iterative)
-            // We do this inside the loop to resolve conflicts with constraints
-            this.particles.forEach(p => {
-                if (p.isLocked) return;
-                this._resolveGroundCollision(p);
-                this._resolveWallCollision(p);
-            });
+            // Self collisions (Limb vs Limb)
+            this.resolveSelfCollisions();
         }
     }
 
-    /**
-     * Resolve wall collision using Raycasts
-     * Only works if colliders are provided
-     */
-    _resolveWallCollision(p) {
-        if (this.colliders.length === 0 || p.isLocked) return;
+    resolveSelfCollisions() {
+        // Simple O(N^2) collision check
+        // Optimization: In a full engine, we'd use spatial hashing or a grid.
+        // For < 20 particles, N^2 is fine (approx 200 checks * iterations).
 
-        // Calculate velocity vector
-        const vel = p.position.clone().sub(p.previousPosition);
-        const speed = vel.length();
+        const count = this.particles.length;
+        for (let i = 0; i < count; i++) {
+            const pA = this.particles[i];
 
-        if (speed < 0.001) return;
+            for (let j = i + 1; j < count; j++) {
+                const pB = this.particles[j];
 
-        // Cast ray in direction of movement
-        const dir = vel.clone().normalize();
+                // Skip if connected by constraint (optimization + stability)
+                // We'll need a fast way to check this. 
+                // A crude way is to check the constraints list, but that turns this into O(N^3) or O(N^2 * C).
+                // Better to just push them apart unless they are neighbors.
+                // Actually, neighbors SHOULD overlap slightly at joints. pushing them apart breaks the joint.
+                // So we MUST skip neighbors.
 
-        // Start ray from slightly behind current position (previous position) to catch tunneling
-        this.raycaster.set(p.previousPosition, dir);
+                if (this.areConnected(pA, pB)) continue;
 
-        // Ray length covers the movement + radius + margin
-        const dist = speed + p.radius + 0.1;
+                const delta = new THREE.Vector3().subVectors(pA.position, pB.position);
+                const distSq = delta.lengthSq();
+                const minDist = pA.radius + pB.radius;
 
-        const intersects = this.raycaster.intersectObjects(this.colliders, true); // Recursive check
+                if (distSq < minDist * minDist && distSq > 0.0001) {
+                    const dist = Math.sqrt(distSq);
+                    const overlap = minDist - dist;
 
-        if (intersects.length > 0) {
-            const hit = intersects[0];
+                    // Push apart
+                    // Increased correction to 0.8 to firmly prevent overlap (was 0.2)
+                    const correction = delta.normalize().multiplyScalar(overlap * 0.8);
 
-            if (hit.distance < dist) {
-                // Hit a wall!
+                    // Weight by inverse mass? For now, equal split.
+                    if (!pA.isPinned) pA.position.add(correction);
+                    if (!pB.isPinned) pB.position.sub(correction);
 
-                // 1. Move particle to impact point (minus radius)
-                const pushOut = hit.point.clone().add(hit.face.normal.clone().multiplyScalar(p.radius));
-                p.position.copy(pushOut);
-
-                // 2. Reflect velocity (lossy bounce)
-                // NewVel = Vel - (1 + Coeff) * (Vel . Normal) * Normal
-                const restitution = 0.2; // Bounciness
-
-                // Calculate current velocity
-                const v = p.position.clone().sub(p.previousPosition);
-
-                // Reflect component along normal
-                const vn = v.dot(hit.face.normal);
-                if (vn < 0) {
-                    const reaction = hit.face.normal.clone().multiplyScalar(-(1 + restitution) * vn);
-                    v.add(reaction);
-
-                    // Apply checks to avoid explosion
-                    p.previousPosition.copy(p.position).sub(v);
+                    // Friction/Damping could go here
                 }
             }
         }
     }
 
-    /**
-     * Resolve particle collision with terrain
-     */
-    _resolveGroundCollision(p) {
-        if (!this.terrain) {
-            // Simple floor at 0
-            if (p.position.y < p.radius) {
-                // CRITICAL FIX: Adjust previousPosition by same delta to preserve velocity
-                // Otherwise snapping position up creates explosive upward velocity
-                const correction = p.radius - p.position.y;
-                p.position.y = p.radius;
-                p.previousPosition.y += correction; // Preserve velocity by moving prev too
-
-                // Friction
-                const velX = p.position.x - p.previousPosition.x;
-                const velZ = p.position.z - p.previousPosition.z;
-                p.previousPosition.x += velX * (1 - this.groundFriction);
-                p.previousPosition.z += velZ * (1 - this.groundFriction);
+    // Helper to check connections. 
+    // Ideally we cache this or store neighbors on particles.
+    // Given the small scale, iterating constraints is "okay" but caching is better.
+    // Let's cache it on the particle itself during setup? 
+    // Since we don't change constraints often, that's best.
+    // But modification of existing classes is risky without full refactor.
+    // Let's simple check constraints for now.
+    areConnected(pA, pB) {
+        for (const c of this.constraints) {
+            if ((c.particleA === pA && c.particleB === pB) ||
+                (c.particleA === pB && c.particleB === pA)) {
+                return true;
             }
-            return;
         }
-
-        const groundH = this.terrain.getHeightAt(p.position.x, p.position.z);
-        if (p.position.y < groundH + p.radius) {
-            // CRITICAL FIX: Adjust previousPosition by same delta to preserve velocity
-            // Without this, snapping creates (correction / dt) upward velocity = instant backflip
-            const correction = (groundH + p.radius) - p.position.y;
-            p.position.y = groundH + p.radius;
-            p.previousPosition.y += correction; // Key fix: move prev too
-
-            // Apply ground friction to velocity
-            // (In Verlet, velocity is implicit in pos - prevPos)
-            const frictionFactor = 0.5; // Slide a bit
-
-            const dx = p.position.x - p.previousPosition.x;
-            const dz = p.position.z - p.previousPosition.z;
-
-            p.previousPosition.x += dx * frictionFactor;
-            p.previousPosition.z += dz * frictionFactor;
-        }
+        return false;
     }
 
-    /**
-     * Apply forces to particles
-     */
-    applyForce(force) {
-        this.particles.forEach(p => {
-            p.force.add(force);
-        });
+    setTerrain(terrain) {
+        this.terrain = terrain;
     }
 
-    /**
-     * Apply impulse to nearest particle
-     */
-    applyImpulse(position, force) {
-        let nearest = null;
-        let minDist = Infinity;
+    resolveCollisions() {
+        // Default ground at Y=0
+        const defaultGroundY = 0;
 
-        this.particles.forEach(p => {
-            const d = p.position.distanceTo(position);
-            if (d < minDist) {
-                minDist = d;
-                nearest = p;
+        for (const particle of this.particles) {
+            let groundY = defaultGroundY;
+
+            // If terrain is available, get exact height at particle position
+            if (this.terrain) {
+                groundY = this.terrain.getHeightAt(particle.position.x, particle.position.z);
             }
-        });
 
-        if (nearest && minDist < 2.0) {
-            // approximate impulse by modifying previous position
-            // vel += impulse / mass
-            // prev = pos - newVel
-            nearest.previousPosition.sub(force.clone().multiplyScalar(nearest.invMass * 0.1));
+            // Ground collision
+            if (particle.position.y < groundY + particle.radius) {
+                const depth = (groundY + particle.radius) - particle.position.y;
+
+                // Project out of ground
+                particle.position.y += depth;
+
+                // Apply ground friction (simple impulse based friction)
+                // Estimate velocity from position change
+                const velocityX = particle.position.x - particle.previousPosition.x;
+                const velocityZ = particle.position.z - particle.previousPosition.z;
+
+                particle.previousPosition.x += velocityX * (1 - this.groundFriction);
+                particle.previousPosition.z += velocityZ * (1 - this.groundFriction);
+            }
         }
     }
 
-    /**
-     * Sync particle positions back to bones
-     * This rotates bones to "look at" their children
-     */
-    syncBones() {
-        // This is tricky for a hierarchy.
-        // Simple approach: For each constraint representing a bone,
-        // point the parent bone towards the child particle.
-
-        // We need a way to map which particle corresponds to which child bone.
-        // For now, let's assume the controller handles the rotation logic
-        // because it knows the skeleton hierarchy better.
-        // This class just provides the positions.
-    }
-
-    getParticlePosition(bone) {
-        const p = this.particles.find(p => p.bone === bone);
-        return p ? p.position : null;
+    // Helper to reset the simulation
+    clear() {
+        this.particles = [];
+        this.constraints = [];
     }
 }

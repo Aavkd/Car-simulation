@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Ragdoll Phase 1 Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #222;
+            color: #eee;
+        }
+
+        .pass {
+            color: #4f4;
+        }
+
+        .fail {
+            color: #f44;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Ragdoll Phase 1 Test</h1>
+    <div id="results">Running tests...</div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { RagdollPhysics, PhysicsParticle, PhysicsConstraint } from '../js/animation/physics/RagdollPhysics.js';
+
+        const results = document.getElementById('results');
+        const logs = [];
+
+        function log(msg, type = 'info') {
+            console.log(`[${type.toUpperCase()}] ${msg}`);
+            logs.push(`<div class="${type}">${msg}</div>`);
+            results.innerHTML = logs.join('');
+        }
+
+        async function runTests() {
+            try {
+                // Test 1: Instantiation
+                const physics = new RagdollPhysics();
+                if (physics) {
+                    log('Physics engine instantiated.', 'pass');
+                } else {
+                    throw new Error('Failed to instantiate physics engine');
+                }
+
+                // Test 2: Gravity
+                const startY = 10;
+                const particle = physics.addParticle(new THREE.Vector3(0, startY, 0), 1.0, 0.1);
+
+                // Run for a few frames
+                const dt = 0.016; // 60fps
+                for (let i = 0; i < 10; i++) {
+                    physics.update(dt);
+                }
+
+                if (particle.position.y < startY) {
+                    log(`Gravity working: Particle fell from ${startY} to ${particle.position.y.toFixed(3)}`, 'pass');
+                } else {
+                    log(`Gravity failed: Particle at ${particle.position.y}`, 'fail');
+                }
+
+                // Test 3: Ground Collision
+                // Let it fall for a long time
+                for (let i = 0; i < 200; i++) {
+                    physics.update(dt);
+                }
+
+                if (Math.abs(particle.position.y - particle.radius) < 0.1) {
+                    log(`Ground collision working: Particle at ${particle.position.y.toFixed(3)} (Radius: ${particle.radius})`, 'pass');
+                } else {
+                    log(`Ground collision failed: Particle at ${particle.position.y}`, 'fail');
+                }
+
+                // Test 4: Constraints
+                physics.clear();
+                const p1 = physics.addParticle(new THREE.Vector3(0, 10, 0), 1.0, 0.1, true); // Pinned (top)
+                const p2 = physics.addParticle(new THREE.Vector3(0, 9, 0), 1.0, 0.1, false); // Bottom
+                const constraint = physics.addConstraint(p1, p2);
+
+                const expectedDist = 1.0;
+                log(`Constraint created with rest distance: ${constraint.restDistance.toFixed(3)}`, 'info');
+
+                // Simulate swing or settle
+                for (let i = 0; i < 60; i++) {
+                    physics.update(dt);
+                }
+
+                const dist = p1.position.distanceTo(p2.position);
+                const error = Math.abs(dist - expectedDist);
+
+                if (error < 0.05) {
+                    log(`Constraint working: Distance ${dist.toFixed(3)} (Expected ${expectedDist})`, 'pass');
+                } else {
+                    log(`Constraint failed: Distance ${dist.toFixed(3)} (Expected ${expectedDist})`, 'fail');
+                }
+
+                log('ALL TESTS COMPLETED', 'pass');
+
+            } catch (e) {
+                log(`Error: ${e.message}`, 'fail');
+            }
+        }
+
+        runTests();
+    </script>
+</body>
+
+</html>

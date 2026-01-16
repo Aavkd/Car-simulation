@@ -50,14 +50,8 @@ export class NPCEntity {
             console.warn(`[NPCEntity] No animations found for ${this.name}. FSM will run in logic-only mode.`);
         }
 
-        // Initialize Active Ragdoll System (Euphoria-style physics)
-        this.ragdoll = new ActiveRagdollController(this.mesh, {
-            entity: this,
-            characterHeight: 5.5, // Matching player.js default
-            onStateChange: (newState, oldState) => {
-                // console.log(`[NPCEntity:${this.name}] Ragdoll state: ${oldState} → ${newState}`);
-            }
-        });
+        // Active Ragdoll System
+        this.ragdoll = new ActiveRagdollController(this.mesh, data.terrain);
 
         // Setup interactive user data
         this._setupInteraction();
@@ -70,6 +64,9 @@ export class NPCEntity {
         this.mesh.userData.type = 'npc';
         this.mesh.userData.entity = this;
 
+        // Also explicitly expose ragdoll to userData for tool access
+        this.mesh.userData.ragdoll = this.ragdoll;
+
         // Interaction callback
         this.mesh.userData.onInteract = () => this.onInteract();
 
@@ -79,11 +76,19 @@ export class NPCEntity {
                 child.userData.interactive = true;
                 child.userData.name = this.name;
                 child.userData.onInteract = () => this.onInteract();
+                // Link entity to mesh for easier lookup
+                child.userData.entity = this;
             }
         });
     }
 
     update(deltaTime) {
+        // ==================== RAGDOLL UPDATE ====================
+        if (this.ragdoll && this.ragdoll.isActive()) {
+            this.ragdoll.update(deltaTime);
+            return; // Skip normal behavior/animation
+        }
+
         // AI/Behavior updates (idle animation, looking at player, etc.)
         if (this.animator) {
             // Placeholder: NPCs are always grounded and idle for now
@@ -91,11 +96,6 @@ export class NPCEntity {
             this.animator.setInput('isGrounded', true);
 
             this.animator.update(deltaTime);
-        }
-
-        // Update Active Ragdoll System (AFTER animation update)
-        if (this.ragdoll) {
-            this.ragdoll.update(deltaTime);
         }
 
         // Procedural Look at Player
@@ -115,8 +115,6 @@ export class NPCEntity {
     onInteract() {
         console.log(`[NPCEntity] Interaction with ${this.name}`);
 
-
-
         if (window.game && window.game.rpgManager) {
             window.game.rpgManager.dialogueSystem.startDialogue(this.dialogueId);
         }
@@ -134,8 +132,12 @@ export class NPCEntity {
      * @returns {string} Response type: 'absorbed', 'stumble', 'stagger', 'fall', 'knockdown'
      */
     applyImpact(force, point = null, source = 'unknown') {
-        if (!this.ragdoll) return 'absorbed';
-        return this.ragdoll.applyImpact(force, point, source);
+        if (this.ragdoll) {
+            console.log(`[NPCEntity] Received impact: ${force.length().toFixed(1)} N`);
+            this.ragdoll.applyImpact(force, point);
+            return 'fall';
+        }
+        return 'absorbed';
     }
 
     /**
@@ -143,8 +145,7 @@ export class NPCEntity {
      * @returns {boolean} True if NPC can move normally
      */
     hasControl() {
-        if (!this.ragdoll) return true;
-        return this.ragdoll.hasControl();
+        return !this.ragdoll || !this.ragdoll.isActive();
     }
 
     /**
@@ -152,8 +153,7 @@ export class NPCEntity {
      * @returns {boolean} True if in any physics state
      */
     isRagdollActive() {
-        if (!this.ragdoll) return false;
-        return this.ragdoll.isPhysicsActive();
+        return this.ragdoll ? this.ragdoll.isActive() : false;
     }
 
     /**
@@ -161,7 +161,6 @@ export class NPCEntity {
      * @returns {Object}
      */
     getRagdollState() {
-        if (!this.ragdoll) return null;
-        return this.ragdoll.state;
+        return this.ragdoll;
     }
 }

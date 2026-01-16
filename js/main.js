@@ -776,7 +776,8 @@ class Game {
                         dialogueId: obj.userData.dialogueId,
                         behavior: obj.userData.behavior,
                         flags: obj.userData.flags,
-                        npcId: obj.userData.npcId
+                        npcId: obj.userData.npcId,
+                        terrain: this.terrain
                     });
 
                     // Add to tracked objects
@@ -1850,7 +1851,7 @@ class Game {
                         ? (this.car ? this.car.position : null)
                         : (this.plane ? this.plane.mesh.position : null));
                 if (playerPos) {
-                    this.terrain.update(playerPos, this.sky);
+                    this.terrain.update(playerPos, this.sky, deltaTime);
                 }
             }
 

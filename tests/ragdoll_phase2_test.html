@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Ragdoll Phase 2 Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #222;
+            color: #eee;
+        }
+
+        .pass {
+            color: #4f4;
+        }
+
+        .fail {
+            color: #f44;
+        }
+
+        .info {
+            color: #aaf;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Ragdoll Phase 2 Test: ActiveRagdollController</h1>
+    <div id="results">Running tests...</div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { ActiveRagdollController } from '../js/animation/physics/ActiveRagdollController.js';
+
+        const results = document.getElementById('results');
+        const logs = [];
+
+        function log(msg, type = 'info') {
+            console.log(`[${type.toUpperCase()}] ${msg}`);
+            logs.push(`<div class="${type}">${msg}</div>`);
+            results.innerHTML = logs.join('');
+        }
+
+        // --- Helper: Create Dummy Skeleton ---
+        function createDummySkeleton() {
+            const bones = [];
+
+            // 1. Hips (Root)
+            const hips = new THREE.Bone();
+            hips.name = 'Hips';
+            hips.position.set(0, 10, 0);
+            bones.push(hips);
+
+            // 2. Spine
+            const spine = new THREE.Bone();
+            spine.name = 'Spine';
+            spine.position.set(0, 1, 0); // Relative to Hips
+            hips.add(spine);
+            bones.push(spine);
+
+            // 3. Spine1
+            const spine1 = new THREE.Bone();
+            spine1.name = 'Spine1';
+            spine1.position.set(0, 1, 0);
+            spine.add(spine1);
+            bones.push(spine1);
+
+            // 4. Spine2
+            const spine2 = new THREE.Bone();
+            spine2.name = 'Spine2';
+            spine2.position.set(0, 1, 0);
+            spine1.add(spine2);
+            bones.push(spine2);
+
+            // 5. Head
+            const head = new THREE.Bone();
+            head.name = 'Head';
+            head.position.set(0, 1, 0);
+            spine2.add(head);
+            bones.push(head);
+
+            // 6. Left Arm Chain
+            const lArm = new THREE.Bone();
+            lArm.name = 'LeftArm'; // Mixamo Name
+            lArm.position.set(1, 0, 0);
+            spine2.add(lArm);
+            bones.push(lArm);
+
+            const lForeArm = new THREE.Bone();
+            lForeArm.name = 'LeftForeArm';
+            lForeArm.position.set(1, 0, 0);
+            lArm.add(lForeArm);
+            bones.push(lForeArm);
+
+            const lHand = new THREE.Bone();
+            lHand.name = 'LeftHand';
+            lHand.position.set(1, 0, 0);
+            lForeArm.add(lHand);
+            bones.push(lHand);
+
+            // 7. Right Arm Chain
+            const rArm = new THREE.Bone();
+            rArm.name = 'RightArm';
+            rArm.position.set(-1, 0, 0);
+            spine2.add(rArm);
+            bones.push(rArm);
+
+            const rForeArm = new THREE.Bone();
+            rForeArm.name = 'RightForeArm';
+            rForeArm.position.set(-1, 0, 0);
+            rArm.add(rForeArm);
+            bones.push(rForeArm);
+
+            const rHand = new THREE.Bone();
+            rHand.name = 'RightHand';
+            rHand.position.set(-1, 0, 0);
+            rForeArm.add(rHand);
+            bones.push(rHand);
+
+            // 8. Left Leg Chain
+            const lUpLeg = new THREE.Bone();
+            lUpLeg.name = 'LeftUpLeg';
+            lUpLeg.position.set(1, -1, 0); // Relative to Hips
+            hips.add(lUpLeg);
+            bones.push(lUpLeg);
+
+            const lLeg = new THREE.Bone();
+            lLeg.name = 'LeftLeg';
+            lLeg.position.set(0, -2, 0);
+            lUpLeg.add(lLeg);
+            bones.push(lLeg);
+
+            const lFoot = new THREE.Bone();
+            lFoot.name = 'LeftFoot';
+            lFoot.position.set(0, -2, 0);
+            lLeg.add(lFoot);
+            bones.push(lFoot);
+
+            // 9. Right Leg Chain
+            const rUpLeg = new THREE.Bone();
+            rUpLeg.name = 'RightUpLeg';
+            rUpLeg.position.set(-1, -1, 0);
+            hips.add(rUpLeg);
+            bones.push(rUpLeg);
+
+            const rLeg = new THREE.Bone();
+            rLeg.name = 'RightLeg';
+            rLeg.position.set(0, -2, 0);
+            rUpLeg.add(rLeg);
+            bones.push(rLeg);
+
+            const rFoot = new THREE.Bone();
+            rFoot.name = 'RightFoot';
+            rFoot.position.set(0, -2, 0);
+            rLeg.add(rFoot);
+            bones.push(rFoot);
+
+            // Create a fake SkinnedMesh container
+            const mesh = new THREE.SkinnedMesh();
+            const skeleton = new THREE.Skeleton(bones);
+            mesh.add(hips); // Add root to mesh
+            mesh.bind(skeleton);
+
+            // Essential: Update matrices so world positions are correct
+            mesh.updateMatrixWorld(true);
+
+            return mesh;
+        }
+
+        async function runTests() {
+            try {
+                log('Creating dummy skeleton...', 'info');
+                const mesh = createDummySkeleton();
+
+                // Get initial Hips world position
+                const hips = mesh.skeleton.bones.find(b => b.name === 'Hips');
+                const startPos = new THREE.Vector3();
+                hips.getWorldPosition(startPos);
+                log(`Initial Hips Position: ${startPos.y.toFixed(3)}`, 'info');
+
+                log('Instantiating ActiveRagdollController...', 'info');
+                const controller = new ActiveRagdollController(mesh);
+
+                if (controller) {
+                    log('Controller instantiated.', 'pass');
+                } else {
+                    throw new Error('Failed to instantiate controller');
+                }
+
+                // Verify Particles Created
+                const particleCount = controller.physics.particles.length;
+                if (particleCount > 0) {
+                    log(`Ragdoll built with ${particleCount} particles.`, 'pass');
+                } else {
+                    throw new Error('No particles created in ragdoll.');
+                }
+
+                // --- Test 1: Ragdoll OFF ---
+                log('Test 1: Ragdoll OFF (Bones should stay put)', 'info');
+                controller.update(0.1);
+
+                const currentPos = new THREE.Vector3();
+                hips.getWorldPosition(currentPos);
+
+                if (Math.abs(currentPos.y - startPos.y) < 0.001) {
+                    log('Physics not affecting bones when disabled.', 'pass');
+                } else {
+                    log(`Error: Bones moved! Y=${currentPos.y}`, 'fail');
+                }
+
+                // --- Test 2: Ragdoll ON (Collapse) ---
+                log('Test 2: Ragdoll ON (Expect Collapse)', 'info');
+                controller.setRagdollMode(true);
+
+                // Step simulation
+                const steps = 60;
+                const dt = 0.016;
+                for (let i = 0; i < steps; i++) {
+                    controller.update(dt);
+                    mesh.updateMatrixWorld(true); // Vital for scene graph to update world matrices
+                }
+
+                hips.getWorldPosition(currentPos);
+                const deltaY = startPos.y - currentPos.y;
+
+                log(`Hips fell by: ${deltaY.toFixed(3)} meters`, 'info');
+
+                if (deltaY > 1.0) {
+                    log('Character is collapsing (gravity works).', 'pass');
+                } else {
+                    log('Character did not fall enough.', 'fail');
+                }
+
+                // Ground check
+                // Run more
+                for (let i = 0; i < 200; i++) {
+                    controller.update(dt);
+                    mesh.updateMatrixWorld(true);
+                }
+
+                hips.getWorldPosition(currentPos);
+                log(`Final Hips Y: ${currentPos.y.toFixed(3)}`, 'info');
+
+                if (currentPos.y < 2.0 && currentPos.y >= 0) {
+                    log('Character settled near ground.', 'pass');
+                } else if (currentPos.y < 0) {
+                    log('Character clipped through ground!', 'fail');
+                } else {
+                    log('Character floating too high?', 'fail');
+                }
+
+            } catch (e) {
+                console.error(e);
+                log(`Error: ${e.message}`, 'fail');
+            }
+        }
+
+        runTests();
+    </script>
+</body>
+
+</html>
