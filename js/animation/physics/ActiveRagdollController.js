@@ -268,8 +268,33 @@ export class ActiveRagdollController {
         const fallDir = this.impact.getHorizontalImpactDirection();
         this.fall.startFall(fallDir, 'medium');
 
-        // Apply force to balance
-        this.balance.applyForce(impact.force, impact.point);
+        // STOP BALANCE CONTROL: We are falling, so balance logic (recovery/momentum) 
+        // should stop immediately to prevent spinning.
+        this.balance.reset();
+
+        // Apply impulse to physics particles (so they don't just drop)
+        // We need to match animation first to ensure particles start at bone positions
+        this.physics.matchAnimation();
+        
+        // Distribute force to all particles to simulate total body acceleration
+        // F = ma -> a = F/m. We want to apply velocity change.
+        // CLAMP FORCE to prevent physics explosion (tunneling/spinning)
+        const safeForce = impact.force.clone();
+        if (safeForce.length() > 100) safeForce.setLength(100);
+
+        const velocityChange = safeForce.multiplyScalar(0.02); // Tuning factor
+        // Final sanity check on velocity change
+        if (velocityChange.length() > 2.0) velocityChange.setLength(2.0);
+
+        this.physics.particles.forEach(p => {
+            if (!p.isLocked) {
+                // Modify previousPosition to induce velocity
+                // newVel = (pos - prev)
+                // We want newVel += velocityChange
+                // So prev -= velocityChange
+                p.previousPosition.sub(velocityChange);
+            }
+        });
     }
 
     /**
@@ -285,8 +310,26 @@ export class ActiveRagdollController {
         const fallDir = this.impact.getHorizontalImpactDirection();
         this.fall.startFall(fallDir, 'heavy');
 
-        // Apply large force to balance
-        this.balance.applyForce(impact.force, impact.point);
+        // STOP BALANCE CONTROL
+        this.balance.reset();
+
+        // CRITICAL: Transfer momentum to ragdoll
+        this.physics.matchAnimation();
+        
+        // Apply massive impulse
+        // CLAMP FORCE to prevent physics explosion
+        const safeForce = impact.force.clone();
+        if (safeForce.length() > 200) safeForce.setLength(200);
+
+        const velocityChange = safeForce.multiplyScalar(0.04); // Higher factor for knockdown
+        // Final sanity check
+        if (velocityChange.length() > 4.0) velocityChange.setLength(4.0);
+
+        this.physics.particles.forEach(p => {
+            if (!p.isLocked) {
+                p.previousPosition.sub(velocityChange);
+            }
+        });
     }
 
     /**

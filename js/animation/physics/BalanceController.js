@@ -350,9 +350,14 @@ export class BalanceController {
         } else {
             // Direct force adds to angular momentum based on direction
             const torqueDir = new THREE.Vector3(force.z, 0, -force.x).normalize();
-            // Sensitivity reduced from 0.025 to 0.005 to prevent excessive spinning
-            // (0.025 * 600N = 15 units = 13 degrees/frame, way too fast)
-            this.angularMomentum.addScaledVector(torqueDir, magnitude * 0.005);
+            
+            // FIX: Cap the torque contribution from a single linear force impact
+            // Prevents massive spin from massive impacts (like cars)
+            // Was: magnitude * 0.005 (which led to >50 units for 10kN force)
+            // New: Cap at 0.1 (approx 6 degrees/frame) max rotational impulse
+            const torqueMagnitude = Math.min(magnitude * 0.001, 0.1); 
+            
+            this.angularMomentum.addScaledVector(torqueDir, torqueMagnitude);
         }
 
         // Phase 1.1: Clamp angular momentum to prevent spinning

@@ -111,7 +111,13 @@ export class ProceduralFallController {
         this.previousState = 'idle';
         this.fallDirection.copy(direction).normalize();
         this.fallTime = 0;
-        this.physicsBlend = 0;
+        
+        // If heavy impact, start with full physics immediately to avoid "pop" or balance fighting
+        if (intensity === 'heavy') {
+            this.physicsBlend = 1.0;
+        } else {
+            this.physicsBlend = 0;
+        }
 
         // Set physics blend target based on intensity
         this._fallIntensity = intensity;
@@ -278,6 +284,7 @@ export class ProceduralFallController {
         );
 
         // Rotate body in fall direction
+        /* DISABLE PROCEDURAL ROTATION - Let Physics Handle Orientation
         if (this.bones.hips) {
             // Calculate rotation to face fall direction
             const fallRotationY = Math.atan2(this.fallDirection.x, this.fallDirection.z);
@@ -306,6 +313,7 @@ export class ProceduralFallController {
                 this.bones.hips.quaternion.slerp(targetQuat, delta * this.config.bodyRotationSpeed);
             }
         }
+        */
 
         // Spine curves slightly to absorb impact
         if (this.bones.spine) {
