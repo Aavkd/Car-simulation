@@ -118,11 +118,11 @@ export class NewCarPhysicsEngine {
 
         // ==================== DRIFT MECHANICS ====================
         // Drift parameters for lateral inertia and sliding behavior
-        this.driftGripMultiplier = carSpec.drift?.gripMultiplier || 0.45;     // Increased grip when drifting (was 0.2)
-        this.lateralInertiaFactor = carSpec.drift?.lateralInertia || 0.4;   // Reduced lateral inertia (was 0.6)
+        this.driftGripMultiplier = carSpec.drift?.gripMultiplier || 0.35;     // Further reduced surface friction for "looser" drift
+        this.lateralInertiaFactor = carSpec.drift?.lateralInertia || 0.80;   // High inertia to carry momentum sideways for long distances
         this.handbrakeGripReduction = carSpec.drift?.handbrakeGripReduction || 0.15; // Rear grip when handbrake is pulled
         this.driftAngleThreshold = carSpec.drift?.angleThreshold || 0.08;    // Slip angle to trigger drift state
-        this.driftRecoveryRate = carSpec.drift?.recoveryRate || 3.0;         // Faster recovery (was 1.0)
+        this.driftRecoveryRate = carSpec.drift?.recoveryRate || 1.0;         // Slow recovery to maintain drift state longer
 
         // Drift state tracking
         this.isDrifting = false;
@@ -135,6 +135,7 @@ export class NewCarPhysicsEngine {
 
         // Wheel spin velocities (for realistic wheel-spin)
         this.wheelSpinVelocities = [0, 0, 0, 0]; // rad/s for each wheel
+        this.wheelGripMultipliers = [1.0, 1.0, 1.0, 1.0]; // Current lateral grip multiplier per wheel
 
         // ==================== AIRBORNE STATE ====================
         this.isAirborne = false;              // True when no wheels are touching ground
@@ -255,12 +256,13 @@ export class NewCarPhysicsEngine {
                 const latSpeed = Math.abs(this.lateralVelocity);
 
                 // Scale by drift intensity for more graceful transitions
-                const driftFactor = 0.5 + (this.driftIntensity * 0.5);
+                // Changed to rely more on the car actually drifting (0.3 base + 0.7 intensity)
+                const driftFactor = 0.3 + (this.driftIntensity * 0.7);
 
                 // Refined Dynamic Factor: 
-                // Increased latSpeed influence slightly to help catch slides, 
-                // reduced spinSpeed squared to avoid "snapping" too hard.
-                const dynamicFactor = (1.0 + (60.0 * latSpeed) + (15.0 * spinSpeed * spinSpeed)) * driftFactor;
+                // Greatly reduced coefficients for a subtler, less "snappy" effect
+                // latSpeed: 60 -> 40, spinSpeed: 15 -> 5
+                const dynamicFactor = (1.0 + (40.0 * latSpeed) + (5.0 * spinSpeed * spinSpeed)) * driftFactor;
 
                 // Input Sensitivity: Square the input for finer low-end control
                 const inputFactor = steerInput * Math.abs(steerInput);
@@ -276,7 +278,8 @@ export class NewCarPhysicsEngine {
 
         // Smoothly interpolate torque to prevent jerky "snapping"
         // Lower lerp rates for a "softer", more organic feel
-        const lerpRate = Math.abs(targetHelperTorque) > Math.abs(this.currentHelperTorque) ? 8.0 : 3.0;
+        // Reduced from 5.0/3.0 to 2.5/2.0 for very gradual application
+        const lerpRate = Math.abs(targetHelperTorque) > Math.abs(this.currentHelperTorque) ? 2.5 : 2.0;
         this.currentHelperTorque += (targetHelperTorque - this.currentHelperTorque) * Math.min(1, dt * lerpRate);
 
         // Apply smoothed torque
@@ -779,12 +782,13 @@ export class NewCarPhysicsEngine {
 
         if (Math.abs(lateralVel) > 0.05 || Math.abs(slipAngle) > 0.01) {
             // Base lateral grip multiplier
-            let lateralGripMultiplier = 1.0;
+            // Base lateral grip multiplier target
+            let targetGrip = 1.0;
             const speedKMH = this.getSpeedKMH();
 
             // HANDBRAKE: Rear wheels lose most lateral grip (allows tail to swing out)
             if (isRear && handbrakeActive) {
-                lateralGripMultiplier = 0.1; // Only 10% grip on rear when handbrake
+                targetGrip = 0.1; // Only 10% grip on rear when handbrake
                 // Lock rear wheels
                 this.wheelSpinVelocities[wheelIndex] *= 0.85;
             }
@@ -792,18 +796,26 @@ export class NewCarPhysicsEngine {
             else if (aboveThreshold) {
                 if (isRear) {
                     // Rear loses more grip when drifting - allows oversteer
-                    lateralGripMultiplier = this.driftGripMultiplier;
+                    targetGrip = this.driftGripMultiplier;
 
                     // High speed safety: add a bit of grip back at very high speeds to prevent "ice spinning"
                     if (speedKMH > 100) {
-                        lateralGripMultiplier += 0.15;
+                        targetGrip += 0.15;
                     }
                 } else {
                     // FIX: Boost front grip during drift to allow recovery/counter-steering
                     // Was 0.85 - increased to 1.2 to give front tires "bite" when counter-steering
-                    lateralGripMultiplier = 1.2;
+                    targetGrip = 1.2;
                 }
             }
+
+            // SMOOTH TRANSITION: Lerp current grip towards target to prevent violent snapping
+            // blendSpeed of 10.0 gives ~0.1-0.2s transition time
+            const blendSpeed = 10.0;
+            this.wheelGripMultipliers[wheelIndex] += (targetGrip - this.wheelGripMultipliers[wheelIndex]) * Math.min(1.0, dt * blendSpeed);
+
+            // Use the smoothed value
+            let lateralGripMultiplier = this.wheelGripMultipliers[wheelIndex];
 
             // Use Pacejka model for non-linear tire response
             const pacejkaForce = this._getLateralForceFromSlip(slipAngle, normalLoad, lateralGripMultiplier);
