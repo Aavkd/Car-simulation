@@ -238,44 +238,45 @@ export class NewCarPhysicsEngine {
 
         // HELPER TORQUE: Assist rotation when counter-steering against a drift
         let targetHelperTorque = 0;
-        
-        // If rotating significantly
-        if (Math.abs(this.angularVelocity.y) > 0.5) {
+
+        // If rotating significantly and moving
+        if (speedKMH > 10 && Math.abs(this.angularVelocity.y) > 0.4) {
             const yawSign = Math.sign(this.angularVelocity.y);
             const steerSign = Math.sign(steerInput);
             const isCounterSteering = Math.abs(steerInput) > 0.1 && steerSign !== yawSign;
-            
+
             if (isCounterSteering) {
                 this.counterSteerTimer += dt;
-                
-                // Ramp up force over 0.5 seconds of holding counter-steer
-                const timeFactor = Math.min(1.0, this.counterSteerTimer * 2.0);
-                
+
+                // Smoother ramp up (approx 0.75s) for more progressive assistance
+                const timeFactor = Math.min(1.0, this.counterSteerTimer * 1.35);
+
                 const spinSpeed = Math.abs(this.angularVelocity.y);
                 const latSpeed = Math.abs(this.lateralVelocity);
-                
-                // REDUCED FACTORS: User reported previous were too strong
-                // Base: 100 (was 1000)
-                // Lateral: 50 * latSpeed (was 500)
-                // Spin: 20 * spin^2 (was 200)
-                const dynamicFactor = 100.0 + (50.0 * latSpeed) + (20.0 * spinSpeed * spinSpeed);
-                
+
+                // Scale by drift intensity for more graceful transitions
+                const driftFactor = 0.5 + (this.driftIntensity * 0.5);
+
+                // Refined Dynamic Factor: 
+                // Increased latSpeed influence slightly to help catch slides, 
+                // reduced spinSpeed squared to avoid "snapping" too hard.
+                const dynamicFactor = (1.0 + (60.0 * latSpeed) + (15.0 * spinSpeed * spinSpeed)) * driftFactor;
+
                 // Input Sensitivity: Square the input for finer low-end control
-                // Full stick = 1.0 * 1.0 = 100% force
-                // Half stick = 0.5 * 0.5 = 25% force
                 const inputFactor = steerInput * Math.abs(steerInput);
-                
+
                 targetHelperTorque = inputFactor * this.mass * dynamicFactor * timeFactor;
             } else {
-                this.counterSteerTimer = 0;
+                // Gradual decay of helper timer for smoother transitions when wiggling stick
+                this.counterSteerTimer = Math.max(0, this.counterSteerTimer - dt * 3.0);
             }
         } else {
-            this.counterSteerTimer = 0;
+            this.counterSteerTimer = Math.max(0, this.counterSteerTimer - dt * 5.0);
         }
 
         // Smoothly interpolate torque to prevent jerky "snapping"
-        // fast attack (rise) for responsiveness, smooth decay
-        const lerpRate = Math.abs(targetHelperTorque) > Math.abs(this.currentHelperTorque) ? 10.0 : 5.0;
+        // Lower lerp rates for a "softer", more organic feel
+        const lerpRate = Math.abs(targetHelperTorque) > Math.abs(this.currentHelperTorque) ? 8.0 : 3.0;
         this.currentHelperTorque += (targetHelperTorque - this.currentHelperTorque) * Math.min(1, dt * lerpRate);
 
         // Apply smoothed torque
@@ -377,9 +378,22 @@ export class NewCarPhysicsEngine {
             // Ground damping
             let damping = this.groundAngularDamping;
 
+            // High speed stability: Increase damping as speed increases
+            const speedKMH = this.getSpeedKMH();
+            if (speedKMH > 50) {
+                // Add progressive damping at high speeds to prevent twitchiness
+                const stabilityFactor = Math.min(1.0, (speedKMH - 50) / 150);
+                damping *= (1.0 - stabilityFactor * 0.05);
+            }
+
             // SPIN DAMPENER: If rotating too fast (donut of death), apply extra damping
-            if (Math.abs(this.angularVelocity.y) > 2.5) {
-                damping *= 0.92; // Strong damping to kill excessive spin energy
+            // Lower threshold at high speeds to catch spins earlier
+            const spinThreshold = speedKMH > 100 ? 1.5 : 2.5;
+            if (Math.abs(this.angularVelocity.y) > spinThreshold) {
+                // Progressive damping based on how much we exceeded threshold
+                const excess = Math.abs(this.angularVelocity.y) - spinThreshold;
+                const dampFactor = 0.92 - Math.min(0.1, excess * 0.05);
+                damping *= dampFactor;
             }
 
             this.angularVelocity.multiplyScalar(damping);
@@ -766,6 +780,7 @@ export class NewCarPhysicsEngine {
         if (Math.abs(lateralVel) > 0.05 || Math.abs(slipAngle) > 0.01) {
             // Base lateral grip multiplier
             let lateralGripMultiplier = 1.0;
+            const speedKMH = this.getSpeedKMH();
 
             // HANDBRAKE: Rear wheels lose most lateral grip (allows tail to swing out)
             if (isRear && handbrakeActive) {
@@ -778,6 +793,11 @@ export class NewCarPhysicsEngine {
                 if (isRear) {
                     // Rear loses more grip when drifting - allows oversteer
                     lateralGripMultiplier = this.driftGripMultiplier;
+
+                    // High speed safety: add a bit of grip back at very high speeds to prevent "ice spinning"
+                    if (speedKMH > 100) {
+                        lateralGripMultiplier += 0.15;
+                    }
                 } else {
                     // FIX: Boost front grip during drift to allow recovery/counter-steering
                     // Was 0.85 - increased to 1.2 to give front tires "bite" when counter-steering
@@ -789,15 +809,22 @@ export class NewCarPhysicsEngine {
             const pacejkaForce = this._getLateralForceFromSlip(slipAngle, normalLoad, lateralGripMultiplier);
 
             // Speed-sensitive boost for high-speed cornering
-            const speedKMH = this.getSpeedKMH();
             let speedBoost = 1.0;
-            if (speedKMH > 30 && !handbrakeActive && !aboveThreshold) {
-                // Progressive boost for normal cornering, not during drift
+
+            // Apply speed boost.
+            // For Front: Apply even during drift (to allow counter-steer control).
+            // For Rear: Only apply when NOT drifting (to allow slide initiation).
+            if (speedKMH > 30 && !handbrakeActive) {
                 const speedFactor = Math.min(1.0, (speedKMH - 30) / 80);
+
                 if (isFront) {
-                    speedBoost = 1.0 + speedFactor * 0.6; // Up to 1.6x at high speed
-                } else {
-                    speedBoost = 1.0 + speedFactor * 0.25; // Rear gets less boost
+                    // Front always gets boost at speed to maintain steering authority
+                    // Slightly reduced if drifting
+                    const boostScalar = aboveThreshold ? 0.4 : 0.6;
+                    speedBoost = 1.0 + speedFactor * boostScalar;
+                } else if (!aboveThreshold) {
+                    // Rear only boosts if grip is maintained
+                    speedBoost = 1.0 + speedFactor * 0.25;
                 }
             }
 
