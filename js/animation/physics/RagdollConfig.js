@@ -10,7 +10,7 @@ export const RagdollConfig = {
     // ==================== PHYSICS CONFIGURATION ====================
     physics: {
         gravity: new THREE.Vector3(0, -40, 0),
-        friction: 0.98,
+        friction: 0.95,  // Increased damping (was 0.98) for better stability
         groundFriction: 0.6,
         solverIterations: 20,  // Increased from 10 for better constraint stability
 

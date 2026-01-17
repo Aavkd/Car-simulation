@@ -95,13 +95,18 @@ export class PhysicsConstraint {
         const scalar = difference * this.stiffness;
 
         // Weight correction by inverse mass (lighter moves more)
+        // Also update previousPosition to prevent velocity injection
         if (!this.particleA.isPinned) {
             const ratioA = invMassA / totalInvMass;
-            this.particleA.position.sub(delta.clone().multiplyScalar(scalar * ratioA));
+            const correction = delta.clone().multiplyScalar(scalar * ratioA);
+            this.particleA.position.sub(correction);
+            this.particleA.previousPosition.sub(correction);
         }
         if (!this.particleB.isPinned) {
             const ratioB = invMassB / totalInvMass;
-            this.particleB.position.add(delta.clone().multiplyScalar(scalar * ratioB));
+            const correction = delta.clone().multiplyScalar(scalar * ratioB);
+            this.particleB.position.add(correction);
+            this.particleB.previousPosition.add(correction);
         }
     }
 }
@@ -129,6 +134,11 @@ export class RagdollPhysics {
     }
 
     addParticle(position, mass, radius, isPinned) {
+        // Add tiny perturbation to prevent 2D collapse when particles are coplanar
+        const jitter = 0.001;
+        position.x += (Math.random() - 0.5) * jitter;
+        position.z += (Math.random() - 0.5) * jitter;
+        
         const particle = new PhysicsParticle(position, mass, radius, isPinned);
         this.particles.push(particle);
         return particle;
@@ -185,15 +195,40 @@ export class RagdollPhysics {
                 angular.resolve();
             }
 
-            // Environment collisions (Ground)
-            this.resolveCollisions();
-
-            // Self collisions (Limb vs Limb)
-            this.resolveSelfCollisions();
+            // Collisions every 4th iteration (reduces from 21 to 6 passes for stability)
+            if (i % 4 === 0) {
+                this.resolveCollisions();
+                this.resolveSelfCollisions();
+            }
         }
 
         // 3. Final collision pass (prevents residual penetration)
         this.resolveCollisions();
+        this.resolveSelfCollisions();
+
+        // 4. Safety net: Clamp extreme velocities to prevent explosion
+        this._clampVelocities();
+    }
+
+    /**
+     * Clamp particle velocities to prevent physics explosion
+     */
+    _clampVelocities() {
+        const MAX_VELOCITY = 50; // units per step
+        const _velocity = new THREE.Vector3();
+
+        for (const particle of this.particles) {
+            if (particle.isPinned) continue;
+
+            _velocity.subVectors(particle.position, particle.previousPosition);
+            const speed = _velocity.length();
+
+            if (speed > MAX_VELOCITY) {
+                // Scale velocity back to max
+                _velocity.multiplyScalar(MAX_VELOCITY / speed);
+                particle.previousPosition.copy(particle.position).sub(_velocity);
+            }
+        }
     }
 
     resolveSelfCollisions() {
@@ -229,13 +264,18 @@ export class RagdollPhysics {
                     const normal = delta.normalize();
 
                     // Push apart weighted by inverse mass
+                    // Also update previousPosition to prevent velocity injection
                     if (!pA.isPinned) {
                         const ratioA = invMassA / totalInvMass;
-                        pA.position.add(normal.clone().multiplyScalar(overlap * ratioA));
+                        const correction = normal.clone().multiplyScalar(overlap * ratioA);
+                        pA.position.add(correction);
+                        pA.previousPosition.add(correction);
                     }
                     if (!pB.isPinned) {
                         const ratioB = invMassB / totalInvMass;
-                        pB.position.sub(normal.clone().multiplyScalar(overlap * ratioB));
+                        const correction = normal.clone().multiplyScalar(overlap * ratioB);
+                        pB.position.sub(correction);
+                        pB.previousPosition.sub(correction);
                     }
                 }
             }
@@ -255,69 +295,31 @@ export class RagdollPhysics {
     resolveCollisions() {
         // Default ground at Y=0
         const defaultGroundY = 0;
-        // Reusable vectors to avoid GC pressure
-        const groundNormal = new THREE.Vector3();
-        const surfacePoint = new THREE.Vector3();
-        const toParticle = new THREE.Vector3();
-        const velocity = new THREE.Vector3();
-        const tangentVelocity = new THREE.Vector3();
 
         for (const particle of this.particles) {
             let groundY = defaultGroundY;
-            groundNormal.set(0, 1, 0); // Default up
 
-            // If terrain is available, get exact height and normal at particle position
+            // If terrain is available, get exact height at particle position
             if (this.terrain) {
                 groundY = this.terrain.getHeightAt(particle.position.x, particle.position.z);
-                
-                // Get terrain normal if available (Phase 3 - slope handling)
-                if (typeof this.terrain.getNormalAt === 'function') {
-                    const normal = this.terrain.getNormalAt(
-                        particle.position.x, 
-                        particle.position.z
-                    );
-                    if (normal) {
-                        groundNormal.copy(normal);
-                    }
-                }
             }
 
-            // Calculate penetration along terrain normal
-            surfacePoint.set(
-                particle.position.x,
-                groundY,
-                particle.position.z
-            );
-            toParticle.subVectors(particle.position, surfacePoint);
-            const signedDistance = toParticle.dot(groundNormal);
+            // Ground collision check
+            if (particle.position.y < groundY + particle.radius) {
+                // 1. Save horizontal velocity BEFORE position correction
+                const velocityX = particle.position.x - particle.previousPosition.x;
+                const velocityZ = particle.position.z - particle.previousPosition.z;
 
-            // Ground collision - using signed distance along normal
-            if (signedDistance < particle.radius) {
-                const penetration = particle.radius - signedDistance;
+                // 2. Project position out of ground
+                particle.position.y = groundY + particle.radius;
 
-                // Project out along normal (works for both flat and sloped terrain)
-                particle.position.add(
-                    groundNormal.clone().multiplyScalar(penetration)
-                );
+                // 3. Zero vertical velocity by setting previousPosition.y = position.y
+                particle.previousPosition.y = particle.position.y;
 
-                // Calculate velocity and zero component in normal direction
-                velocity.subVectors(particle.position, particle.previousPosition);
-                const normalVelocity = velocity.dot(groundNormal);
-
-                if (normalVelocity < 0) {
-                    // Moving into ground - remove that velocity component
-                    particle.previousPosition.add(
-                        groundNormal.clone().multiplyScalar(normalVelocity)
-                    );
-                }
-
-                // Apply friction to tangential velocity only
-                tangentVelocity.copy(velocity).sub(
-                    groundNormal.clone().multiplyScalar(velocity.dot(groundNormal))
-                );
-                particle.previousPosition.add(
-                    tangentVelocity.multiplyScalar(1 - this.groundFriction)
-                );
+                // 4. Apply ground friction to horizontal velocity
+                //    Subtract reduced velocity from position to set previousPosition
+                particle.previousPosition.x = particle.position.x - velocityX * this.groundFriction;
+                particle.previousPosition.z = particle.position.z - velocityZ * this.groundFriction;
             }
         }
     }

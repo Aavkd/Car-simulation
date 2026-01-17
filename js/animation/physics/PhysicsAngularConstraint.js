@@ -188,10 +188,18 @@ export class PhysicsAngularConstraint {
         this._correction.normalize().multiplyScalar(childLength);
 
         // Move child to new position (only if not pinned)
+        // Also update previousPosition to prevent velocity injection
         if (!this.child.isPinned) {
+            // Calculate the position delta
+            const oldPos = this.child.position.clone();
+            
             this.child.position
                 .copy(this.pivot.position)
                 .add(this._correction);
+            
+            // Apply same delta to previousPosition to maintain velocity
+            const delta = new THREE.Vector3().subVectors(this.child.position, oldPos);
+            this.child.previousPosition.add(delta);
         }
     }
 

@@ -342,25 +342,28 @@
             
             const startY = 8;
             
+            // Helper to add tiny Z perturbation for 3D behavior (breaks 2D symmetry)
+            const jitter = () => (Math.random() - 0.5) * 0.02;
+            
             // Create particles
             particles = {
-                hips: physics.addParticle(new THREE.Vector3(0, startY, 0), 15.0, 0.35, false),
-                spine: physics.addParticle(new THREE.Vector3(0, startY + 1, 0), 5.0, 0.4, false),
-                spine1: physics.addParticle(new THREE.Vector3(0, startY + 2, 0), 5.0, 0.4, false),
-                spine2: physics.addParticle(new THREE.Vector3(0, startY + 3, 0), 5.0, 0.4, false),
-                head: physics.addParticle(new THREE.Vector3(0, startY + 4, 0), 3.0, 0.5, false),
-                leftArm: physics.addParticle(new THREE.Vector3(-1, startY + 3, 0), 1.0, 0.2, false),
-                leftForearm: physics.addParticle(new THREE.Vector3(-2, startY + 3, 0), 1.0, 0.2, false),
-                leftHand: physics.addParticle(new THREE.Vector3(-3, startY + 3, 0), 0.5, 0.15, false),
-                rightArm: physics.addParticle(new THREE.Vector3(1, startY + 3, 0), 1.0, 0.2, false),
-                rightForearm: physics.addParticle(new THREE.Vector3(2, startY + 3, 0), 1.0, 0.2, false),
-                rightHand: physics.addParticle(new THREE.Vector3(3, startY + 3, 0), 0.5, 0.15, false),
-                leftUpLeg: physics.addParticle(new THREE.Vector3(-0.5, startY - 1, 0), 3.0, 0.5, false),
-                leftLeg: physics.addParticle(new THREE.Vector3(-0.5, startY - 3, 0), 1.5, 0.35, false),
-                leftFoot: physics.addParticle(new THREE.Vector3(-0.5, startY - 4.85, 0), 0.5, 0.15, false),
-                rightUpLeg: physics.addParticle(new THREE.Vector3(0.5, startY - 1, 0), 3.0, 0.5, false),
-                rightLeg: physics.addParticle(new THREE.Vector3(0.5, startY - 3, 0), 1.5, 0.35, false),
-                rightFoot: physics.addParticle(new THREE.Vector3(0.5, startY - 4.85, 0), 0.5, 0.15, false),
+                hips: physics.addParticle(new THREE.Vector3(0, startY, jitter()), 15.0, 0.35, false),
+                spine: physics.addParticle(new THREE.Vector3(0, startY + 1, jitter()), 5.0, 0.4, false),
+                spine1: physics.addParticle(new THREE.Vector3(0, startY + 2, jitter()), 5.0, 0.4, false),
+                spine2: physics.addParticle(new THREE.Vector3(0, startY + 3, jitter()), 5.0, 0.4, false),
+                head: physics.addParticle(new THREE.Vector3(0, startY + 4, jitter()), 3.0, 0.5, false),
+                leftArm: physics.addParticle(new THREE.Vector3(-1, startY + 3, jitter()), 1.0, 0.2, false),
+                leftForearm: physics.addParticle(new THREE.Vector3(-2, startY + 3, jitter()), 1.0, 0.2, false),
+                leftHand: physics.addParticle(new THREE.Vector3(-3, startY + 3, jitter()), 0.5, 0.15, false),
+                rightArm: physics.addParticle(new THREE.Vector3(1, startY + 3, jitter()), 1.0, 0.2, false),
+                rightForearm: physics.addParticle(new THREE.Vector3(2, startY + 3, jitter()), 1.0, 0.2, false),
+                rightHand: physics.addParticle(new THREE.Vector3(3, startY + 3, jitter()), 0.5, 0.15, false),
+                leftUpLeg: physics.addParticle(new THREE.Vector3(-0.5, startY - 1, jitter()), 3.0, 0.5, false),
+                leftLeg: physics.addParticle(new THREE.Vector3(-0.5, startY - 3, jitter()), 1.5, 0.35, false),
+                leftFoot: physics.addParticle(new THREE.Vector3(-0.5, startY - 4.85, jitter()), 0.5, 0.15, false),
+                rightUpLeg: physics.addParticle(new THREE.Vector3(0.5, startY - 1, jitter()), 3.0, 0.5, false),
+                rightLeg: physics.addParticle(new THREE.Vector3(0.5, startY - 3, jitter()), 1.5, 0.35, false),
+                rightFoot: physics.addParticle(new THREE.Vector3(0.5, startY - 4.85, jitter()), 0.5, 0.15, false),
             };
             
             // Distance constraints
