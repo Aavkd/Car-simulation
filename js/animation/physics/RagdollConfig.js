@@ -10,9 +10,15 @@ export const RagdollConfig = {
     // ==================== PHYSICS CONFIGURATION ====================
     physics: {
         gravity: new THREE.Vector3(0, -40, 0),
-        friction: 0.95,  // Increased damping (was 0.98) for better stability
-        groundFriction: 0.6,
+        friction: 0.95,  // Air damping (velocity retained per frame when airborne)
+        groundFriction: 0.15,  // Ground friction - lower = more friction (velocity retained when grounded)
+        groundedFriction: 0.85,  // Damping applied to grounded particles (stronger than air)
         solverIterations: 20,  // Increased from 10 for better constraint stability
+        
+        // Sleep system thresholds
+        sleepVelocityThreshold: 0.02,  // Minimum velocity before zeroing out
+        sleepEnergyThreshold: 0.5,     // Total kinetic energy threshold for sleep
+        sleepFramesRequired: 30,       // Frames at rest before sleeping
 
         // Mass Configuration
         mass: {
