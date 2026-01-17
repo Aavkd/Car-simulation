@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Ragdoll Phase 4 - Interactive Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', monospace; 
+            background: #1a1a2e;
+            color: #eee;
+            overflow: hidden;
+        }
+        #canvas { display: block; }
+        
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            min-width: 280px;
+            z-index: 100;
+        }
+        
+        #ui h1 {
+            font-size: 18px;
+            margin-bottom: 10px;
+            color: #4fc3f7;
+        }
+        
+        #ui h2 {
+            font-size: 14px;
+            margin: 15px 0 8px 0;
+            color: #81c784;
+            border-bottom: 1px solid #333;
+            padding-bottom: 5px;
+        }
+        
+        .control-row {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            font-size: 13px;
+        }
+        
+        .control-row label {
+            flex: 1;
+            color: #aaa;
+        }
+        
+        .control-row span {
+            color: #fff;
+            font-weight: bold;
+            min-width: 50px;
+            text-align: right;
+        }
+        
+        button {
+            padding: 8px 16px;
+            margin: 5px 5px 5px 0;
+            border: none;
+            border-radius: 4px;
+            background: #4fc3f7;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        button:hover {
+            background: #81d4fa;
+        }
+        
+        button.danger {
+            background: #e57373;
+        }
+        
+        button.danger:hover {
+            background: #ef5350;
+        }
+        
+        .test-indicator {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            margin-left: 5px;
+        }
+        
+        .test-pass { background: #4caf50; color: #fff; }
+        .test-fail { background: #f44336; color: #fff; }
+        .test-pending { background: #ff9800; color: #000; }
+        
+        #stats {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 12px;
+        }
+        
+        #stats .stat-row {
+            margin: 5px 0;
+        }
+        
+        #stats .stat-value {
+            color: #4fc3f7;
+            font-weight: bold;
+        }
+        
+        #instructions {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 12px;
+            text-align: center;
+        }
+        
+        #instructions kbd {
+            background: #333;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin: 0 2px;
+        }
+        
+        #test-results {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 11px;
+            max-width: 300px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        #test-results h3 {
+            color: #4fc3f7;
+            margin-bottom: 10px;
+        }
+        
+        .test-item {
+            margin: 4px 0;
+            padding: 3px 0;
+            border-bottom: 1px solid #333;
+        }
+        
+        .test-item.pass::before {
+            content: "[PASS] ";
+            color: #4caf50;
+        }
+        
+        .test-item.fail::before {
+            content: "[FAIL] ";
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    
+    <div id="ui">
+        <h1>Ragdoll Phase 4 Demo</h1>
+        
+        <h2>Controls</h2>
+        <button onclick="dropRagdoll()">Drop Ragdoll</button>
+        <button onclick="resetRagdoll()">Reset Position</button>
+        <button onclick="applyImpulse()" class="danger">Apply Impulse</button>
+        
+        <h2>Terrain</h2>
+        <button onclick="setTerrain('flat')">Flat Ground</button>
+        <button onclick="setTerrain('slope')">30 Slope</button>
+        <button onclick="setTerrain('steep')">45 Slope</button>
+        
+        <h2>Live Tests</h2>
+        <div class="control-row">
+            <label>Ground Collision</label>
+            <span id="test-ground" class="test-indicator test-pending">...</span>
+        </div>
+        <div class="control-row">
+            <label>Joint Limits</label>
+            <span id="test-joints" class="test-indicator test-pending">...</span>
+        </div>
+        <div class="control-row">
+            <label>Self-Collision</label>
+            <span id="test-self" class="test-indicator test-pending">...</span>
+        </div>
+        <div class="control-row">
+            <label>Constraint Stability</label>
+            <span id="test-constraints" class="test-indicator test-pending">...</span>
+        </div>
+        
+        <h2>Run Automated Tests</h2>
+        <button onclick="runAllTests()">Run All Tests</button>
+    </div>
+    
+    <div id="stats">
+        <div class="stat-row">FPS: <span id="fps" class="stat-value">--</span></div>
+        <div class="stat-row">Particles: <span id="particle-count" class="stat-value">--</span></div>
+        <div class="stat-row">Constraints: <span id="constraint-count" class="stat-value">--</span></div>
+        <div class="stat-row">Hips Y: <span id="hips-y" class="stat-value">--</span></div>
+        <div class="stat-row">Min Y: <span id="min-y" class="stat-value">--</span></div>
+    </div>
+    
+    <div id="instructions">
+        <kbd>Left Click + Drag</kbd> Rotate Camera | 
+        <kbd>Right Click + Drag</kbd> Pan | 
+        <kbd>Scroll</kbd> Zoom |
+        <kbd>Space</kbd> Drop Ragdoll |
+        <kbd>R</kbd> Reset
+    </div>
+    
+    <div id="test-results">
+        <h3>Test Results</h3>
+        <div id="test-list"></div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { RagdollPhysics, PhysicsParticle, PhysicsConstraint } from '../js/animation/physics/RagdollPhysics.js';
+        import { PhysicsAngularConstraint } from '../js/animation/physics/PhysicsAngularConstraint.js';
+        import { RagdollConfig } from '../js/animation/physics/RagdollConfig.js';
+        
+        // ==================== SCENE SETUP ====================
+        
+        const canvas = document.getElementById('canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x1a1a2e);
+        renderer.shadowMap.enabled = true;
+        
+        const scene = new THREE.Scene();
+        
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(8, 6, 12);
+        
+        const controls = new OrbitControls(camera, canvas);
+        controls.target.set(0, 3, 0);
+        controls.update();
+        
+        // Lighting
+        const ambient = new THREE.AmbientLight(0x404040, 0.5);
+        scene.add(ambient);
+        
+        const directional = new THREE.DirectionalLight(0xffffff, 1);
+        directional.position.set(10, 20, 10);
+        directional.castShadow = true;
+        directional.shadow.mapSize.width = 2048;
+        directional.shadow.mapSize.height = 2048;
+        scene.add(directional);
+        
+        // Grid
+        const grid = new THREE.GridHelper(20, 20, 0x444444, 0x333333);
+        scene.add(grid);
+        
+        // Ground plane (visual only)
+        let groundMesh;
+        let currentTerrainType = 'flat';
+        
+        function createGround(type) {
+            if (groundMesh) scene.remove(groundMesh);
+            
+            let geometry, rotation = 0;
+            const material = new THREE.MeshStandardMaterial({ 
+                color: 0x2d5a27, 
+                roughness: 0.8,
+                side: THREE.DoubleSide
+            });
+            
+            if (type === 'flat') {
+                geometry = new THREE.PlaneGeometry(30, 30);
+                rotation = -Math.PI / 2;
+            } else if (type === 'slope') {
+                geometry = new THREE.PlaneGeometry(30, 30);
+                rotation = -Math.PI / 2 + Math.PI / 6; // 30 degrees
+            } else if (type === 'steep') {
+                geometry = new THREE.PlaneGeometry(30, 30);
+                rotation = -Math.PI / 2 + Math.PI / 4; // 45 degrees
+            }
+            
+            groundMesh = new THREE.Mesh(geometry, material);
+            groundMesh.rotation.x = rotation;
+            groundMesh.receiveShadow = true;
+            scene.add(groundMesh);
+            
+            currentTerrainType = type;
+        }
+        
+        createGround('flat');
+        
+        // ==================== RAGDOLL PHYSICS ====================
+        
+        const physics = new RagdollPhysics();
+        const particleMeshes = new Map();
+        const constraintLines = [];
+        let particles = {};
+        
+        // Mock terrain for physics
+        const terrains = {
+            flat: {
+                getHeightAt: (x, z) => 0,
+                getNormalAt: (x, z) => new THREE.Vector3(0, 1, 0)
+            },
+            slope: {
+                getHeightAt: (x, z) => z * Math.tan(Math.PI / 6),
+                getNormalAt: (x, z) => new THREE.Vector3(0, Math.cos(Math.PI / 6), -Math.sin(Math.PI / 6)).normalize()
+            },
+            steep: {
+                getHeightAt: (x, z) => z * Math.tan(Math.PI / 4),
+                getNormalAt: (x, z) => new THREE.Vector3(0, Math.cos(Math.PI / 4), -Math.sin(Math.PI / 4)).normalize()
+            }
+        };
+        
+        physics.setTerrain(terrains.flat);
+        
+        function createRagdoll() {
+            physics.clear();
+            particleMeshes.forEach(mesh => scene.remove(mesh));
+            particleMeshes.clear();
+            constraintLines.forEach(line => scene.remove(line));
+            constraintLines.length = 0;
+            
+            const startY = 8;
+            
+            // Create particles
+            particles = {
+                hips: physics.addParticle(new THREE.Vector3(0, startY, 0), 15.0, 0.35, false),
+                spine: physics.addParticle(new THREE.Vector3(0, startY + 1, 0), 5.0, 0.4, false),
+                spine1: physics.addParticle(new THREE.Vector3(0, startY + 2, 0), 5.0, 0.4, false),
+                spine2: physics.addParticle(new THREE.Vector3(0, startY + 3, 0), 5.0, 0.4, false),
+                head: physics.addParticle(new THREE.Vector3(0, startY + 4, 0), 3.0, 0.5, false),
+                leftArm: physics.addParticle(new THREE.Vector3(-1, startY + 3, 0), 1.0, 0.2, false),
+                leftForearm: physics.addParticle(new THREE.Vector3(-2, startY + 3, 0), 1.0, 0.2, false),
+                leftHand: physics.addParticle(new THREE.Vector3(-3, startY + 3, 0), 0.5, 0.15, false),
+                rightArm: physics.addParticle(new THREE.Vector3(1, startY + 3, 0), 1.0, 0.2, false),
+                rightForearm: physics.addParticle(new THREE.Vector3(2, startY + 3, 0), 1.0, 0.2, false),
+                rightHand: physics.addParticle(new THREE.Vector3(3, startY + 3, 0), 0.5, 0.15, false),
+                leftUpLeg: physics.addParticle(new THREE.Vector3(-0.5, startY - 1, 0), 3.0, 0.5, false),
+                leftLeg: physics.addParticle(new THREE.Vector3(-0.5, startY - 3, 0), 1.5, 0.35, false),
+                leftFoot: physics.addParticle(new THREE.Vector3(-0.5, startY - 4.85, 0), 0.5, 0.15, false),
+                rightUpLeg: physics.addParticle(new THREE.Vector3(0.5, startY - 1, 0), 3.0, 0.5, false),
+                rightLeg: physics.addParticle(new THREE.Vector3(0.5, startY - 3, 0), 1.5, 0.35, false),
+                rightFoot: physics.addParticle(new THREE.Vector3(0.5, startY - 4.85, 0), 0.5, 0.15, false),
+            };
+            
+            // Distance constraints
+            physics.addConstraint(particles.hips, particles.spine, 1.0);
+            physics.addConstraint(particles.spine, particles.spine1, 1.0);
+            physics.addConstraint(particles.spine1, particles.spine2, 1.0);
+            physics.addConstraint(particles.spine2, particles.head, 1.0);
+            physics.addConstraint(particles.spine2, particles.leftArm, 1.0);
+            physics.addConstraint(particles.leftArm, particles.leftForearm, 1.0);
+            physics.addConstraint(particles.leftForearm, particles.leftHand, 1.0);
+            physics.addConstraint(particles.spine2, particles.rightArm, 1.0);
+            physics.addConstraint(particles.rightArm, particles.rightForearm, 1.0);
+            physics.addConstraint(particles.rightForearm, particles.rightHand, 1.0);
+            physics.addConstraint(particles.hips, particles.leftUpLeg, 1.0);
+            physics.addConstraint(particles.leftUpLeg, particles.leftLeg, 1.0);
+            physics.addConstraint(particles.leftLeg, particles.leftFoot, 1.0);
+            physics.addConstraint(particles.hips, particles.rightUpLeg, 1.0);
+            physics.addConstraint(particles.rightUpLeg, particles.rightLeg, 1.0);
+            physics.addConstraint(particles.rightLeg, particles.rightFoot, 1.0);
+            
+            // Angular constraints
+            const cfg = RagdollConfig.joints;
+            const p = (name) => particles[name];
+            physics.angularConstraints.push(new PhysicsAngularConstraint(p('hips'), p('spine'), p('spine1'), cfg.spine));
+            physics.angularConstraints.push(new PhysicsAngularConstraint(p('spine'), p('spine1'), p('spine2'), cfg.spine));
+            physics.angularConstraints.push(new PhysicsAngularConstraint(p('spine1'), p('spine2'), p('head'), cfg.neck));
+            physics.angularConstraints.push(new PhysicsAngularConstraint(p('spine2'), p('leftArm'), p('leftForearm'), cfg.shoulder));
+            physics.angularConstraints.push(new PhysicsAngularConstraint(p('leftArm'), p('leftForearm'), p('leftHand'), cfg.elbow));
+            physics.angularConstraints.push(new PhysicsAngularConstraint(p('spine2'), p('rightArm'), p('rightForearm'), cfg.shoulder));
+            physics.angularConstraints.push(new PhysicsAngularConstraint(p('rightArm'), p('rightForearm'), p('rightHand'), cfg.elbow));
+            physics.angularConstraints.push(new PhysicsAngularConstraint(p('hips'), p('leftUpLeg'), p('leftLeg'), cfg.hip));
+            physics.angularConstraints.push(new PhysicsAngularConstraint(p('leftUpLeg'), p('leftLeg'), p('leftFoot'), cfg.knee));
+            physics.angularConstraints.push(new PhysicsAngularConstraint(p('hips'), p('rightUpLeg'), p('rightLeg'), cfg.hip));
+            physics.angularConstraints.push(new PhysicsAngularConstraint(p('rightUpLeg'), p('rightLeg'), p('rightFoot'), cfg.knee));
+            
+            // Create visual meshes
+            const colors = {
+                hips: 0xff6b6b, spine: 0xffa94d, spine1: 0xffd43b, spine2: 0x69db7c,
+                head: 0x4dabf7, leftArm: 0x748ffc, leftForearm: 0x9775fa, leftHand: 0xda77f2,
+                rightArm: 0x748ffc, rightForearm: 0x9775fa, rightHand: 0xda77f2,
+                leftUpLeg: 0xf06595, leftLeg: 0xe64980, leftFoot: 0xc2255c,
+                rightUpLeg: 0xf06595, rightLeg: 0xe64980, rightFoot: 0xc2255c
+            };
+            
+            for (const [name, particle] of Object.entries(particles)) {
+                const geometry = new THREE.SphereGeometry(particle.radius, 16, 16);
+                const material = new THREE.MeshStandardMaterial({ color: colors[name] || 0xffffff });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.castShadow = true;
+                scene.add(mesh);
+                particleMeshes.set(particle, mesh);
+            }
+            
+            // Create constraint lines
+            for (const c of physics.constraints) {
+                const material = new THREE.LineBasicMaterial({ color: 0x666666 });
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(6);
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                const line = new THREE.Line(geometry, material);
+                scene.add(line);
+                constraintLines.push({ line, constraint: c });
+            }
+        }
+        
+        createRagdoll();
+        
+        // ==================== SIMULATION LOOP ====================
+        
+        let lastTime = performance.now();
+        let frameCount = 0;
+        let fpsTime = 0;
+        let currentFps = 0;
+        
+        function updateStats() {
+            document.getElementById('fps').textContent = currentFps.toFixed(0);
+            document.getElementById('particle-count').textContent = physics.particles.length;
+            document.getElementById('constraint-count').textContent = physics.constraints.length + physics.angularConstraints.length;
+            
+            if (particles.hips) {
+                document.getElementById('hips-y').textContent = particles.hips.position.y.toFixed(2);
+            }
+            
+            let minY = Infinity;
+            for (const p of physics.particles) {
+                const groundY = physics.terrain ? physics.terrain.getHeightAt(p.position.x, p.position.z) : 0;
+                const aboveGround = p.position.y - groundY;
+                minY = Math.min(minY, aboveGround);
+            }
+            document.getElementById('min-y').textContent = minY.toFixed(2);
+        }
+        
+        function updateLiveTests() {
+            // Ground collision test
+            let allAboveGround = true;
+            for (const p of physics.particles) {
+                const groundY = physics.terrain ? physics.terrain.getHeightAt(p.position.x, p.position.z) : 0;
+                if (p.position.y < groundY + p.radius - 0.1) {
+                    allAboveGround = false;
+                    break;
+                }
+            }
+            const groundEl = document.getElementById('test-ground');
+            groundEl.textContent = allAboveGround ? 'PASS' : 'FAIL';
+            groundEl.className = 'test-indicator ' + (allAboveGround ? 'test-pass' : 'test-fail');
+            
+            // Joint limits test (check if any angle is extreme)
+            let jointsOk = true;
+            for (const ac of physics.angularConstraints) {
+                const angle = ac.getCurrentAngle();
+                if (isNaN(angle)) {
+                    jointsOk = false;
+                    break;
+                }
+            }
+            const jointsEl = document.getElementById('test-joints');
+            jointsEl.textContent = jointsOk ? 'PASS' : 'FAIL';
+            jointsEl.className = 'test-indicator ' + (jointsOk ? 'test-pass' : 'test-fail');
+            
+            // Self-collision (check for overlapping non-connected particles)
+            let selfOk = true;
+            for (let i = 0; i < physics.particles.length; i++) {
+                for (let j = i + 1; j < physics.particles.length; j++) {
+                    const pA = physics.particles[i];
+                    const pB = physics.particles[j];
+                    if (physics.areConnected(pA, pB)) continue;
+                    const dist = pA.position.distanceTo(pB.position);
+                    const minDist = pA.radius + pB.radius;
+                    if (dist < minDist * 0.5) {
+                        selfOk = false;
+                        break;
+                    }
+                }
+            }
+            const selfEl = document.getElementById('test-self');
+            selfEl.textContent = selfOk ? 'PASS' : 'FAIL';
+            selfEl.className = 'test-indicator ' + (selfOk ? 'test-pass' : 'test-fail');
+            
+            // Constraint stability
+            let maxStretch = 0;
+            for (const c of physics.constraints) {
+                const dist = c.particleA.position.distanceTo(c.particleB.position);
+                const stretch = Math.abs(dist - c.restDistance) / c.restDistance;
+                maxStretch = Math.max(maxStretch, stretch);
+            }
+            const constraintsOk = maxStretch < 0.5;
+            const constraintsEl = document.getElementById('test-constraints');
+            constraintsEl.textContent = constraintsOk ? `PASS (${(maxStretch*100).toFixed(0)}%)` : `FAIL (${(maxStretch*100).toFixed(0)}%)`;
+            constraintsEl.className = 'test-indicator ' + (constraintsOk ? 'test-pass' : 'test-fail');
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const now = performance.now();
+            const dt = (now - lastTime) / 1000;
+            lastTime = now;
+            
+            // FPS calculation
+            frameCount++;
+            fpsTime += dt;
+            if (fpsTime >= 1) {
+                currentFps = frameCount / fpsTime;
+                frameCount = 0;
+                fpsTime = 0;
+            }
+            
+            // Physics update
+            physics.update(dt);
+            
+            // Sync visuals
+            for (const [particle, mesh] of particleMeshes) {
+                mesh.position.copy(particle.position);
+            }
+            
+            // Update constraint lines
+            for (const { line, constraint } of constraintLines) {
+                const positions = line.geometry.attributes.position.array;
+                positions[0] = constraint.particleA.position.x;
+                positions[1] = constraint.particleA.position.y;
+                positions[2] = constraint.particleA.position.z;
+                positions[3] = constraint.particleB.position.x;
+                positions[4] = constraint.particleB.position.y;
+                positions[5] = constraint.particleB.position.z;
+                line.geometry.attributes.position.needsUpdate = true;
+            }
+            
+            updateStats();
+            updateLiveTests();
+            
+            renderer.render(scene, camera);
+        }
+        
+        animate();
+        
+        // ==================== USER CONTROLS ====================
+        
+        window.dropRagdoll = function() {
+            createRagdoll();
+        };
+        
+        window.resetRagdoll = function() {
+            createRagdoll();
+            // Pin in place briefly
+            for (const p of physics.particles) {
+                p.previousPosition.copy(p.position);
+            }
+        };
+        
+        window.applyImpulse = function() {
+            const impulse = new THREE.Vector3(
+                (Math.random() - 0.5) * 2000,
+                Math.random() * 1000,
+                (Math.random() - 0.5) * 2000
+            );
+            particles.hips.addForce(impulse);
+        };
+        
+        window.setTerrain = function(type) {
+            physics.setTerrain(terrains[type]);
+            createGround(type);
+            createRagdoll();
+        };
+        
+        window.runAllTests = function() {
+            const testList = document.getElementById('test-list');
+            testList.innerHTML = '';
+            
+            const tests = [
+                { name: 'Ground Collision', fn: testGroundCollision },
+                { name: 'Velocity Zero on Impact', fn: testVelocityZero },
+                { name: 'Mass Weighting', fn: testMassWeighting },
+                { name: 'Fixed Timestep', fn: testFixedTimestep },
+                { name: 'Knee Hyperextension', fn: testKneeLimit },
+                { name: 'Elbow Limit', fn: testElbowLimit },
+                { name: 'Slope Collision', fn: testSlopeCollision },
+                { name: 'No NaN Values', fn: testNoNaN },
+            ];
+            
+            let passed = 0;
+            for (const test of tests) {
+                const result = test.fn();
+                const div = document.createElement('div');
+                div.className = 'test-item ' + (result ? 'pass' : 'fail');
+                div.textContent = test.name;
+                testList.appendChild(div);
+                if (result) passed++;
+            }
+            
+            const summary = document.createElement('div');
+            summary.style.marginTop = '10px';
+            summary.style.fontWeight = 'bold';
+            summary.style.color = passed === tests.length ? '#4caf50' : '#f44336';
+            summary.textContent = `${passed}/${tests.length} tests passed`;
+            testList.appendChild(summary);
+        };
+        
+        // ==================== TEST FUNCTIONS ====================
+        
+        function testGroundCollision() {
+            const testPhysics = new RagdollPhysics();
+            const p = testPhysics.addParticle(new THREE.Vector3(0, 50, 0), 1.0, 0.5, false);
+            testPhysics.update(0.1);
+            return p.position.y >= p.radius;
+        }
+        
+        function testVelocityZero() {
+            const testPhysics = new RagdollPhysics();
+            const p = testPhysics.addParticle(new THREE.Vector3(0, 5, 0), 1.0, 0.5, false);
+            p.previousPosition.y = 10;
+            for (let i = 0; i < 60; i++) testPhysics._step(1/60);
+            const vy = p.position.y - p.previousPosition.y;
+            return vy >= 0;
+        }
+        
+        function testMassWeighting() {
+            const heavy = new PhysicsParticle(new THREE.Vector3(0, 5, 0), 15.0, 0.35, false);
+            const light = new PhysicsParticle(new THREE.Vector3(1, 5, 0), 0.5, 0.15, false);
+            const c = new PhysicsConstraint(heavy, light, 1.0);
+            light.position.x += 1.0;
+            const heavyStart = heavy.position.x;
+            const lightStart = light.position.x;
+            c.resolve();
+            const heavyMove = Math.abs(heavy.position.x - heavyStart);
+            const lightMove = Math.abs(light.position.x - lightStart);
+            return lightMove / (heavyMove + 0.0001) > 10;
+        }
+        
+        function testFixedTimestep() {
+            const testPhysics = new RagdollPhysics();
+            testPhysics.addParticle(new THREE.Vector3(0, 10, 0), 1.0, 0.5, false);
+            const steps = testPhysics.update(0.5);
+            return steps <= 8;
+        }
+        
+        function testKneeLimit() {
+            const hip = new PhysicsParticle(new THREE.Vector3(0, 10, 0), 15.0, 0.35, true);
+            const knee = new PhysicsParticle(new THREE.Vector3(0, 8, 0), 3.0, 0.5, false);
+            const ankle = new PhysicsParticle(new THREE.Vector3(0, 5.5, 0.5), 1.5, 0.35, false);
+            const c = new PhysicsAngularConstraint(hip, knee, ankle, RagdollConfig.joints.knee);
+            for (let i = 0; i < 10; i++) c.resolve();
+            const angle = c.getCurrentAngle();
+            return !isNaN(angle) && angle <= Math.PI + 0.1;
+        }
+        
+        function testElbowLimit() {
+            const shoulder = new PhysicsParticle(new THREE.Vector3(0, 10, 0), 5.0, 0.4, true);
+            const elbow = new PhysicsParticle(new THREE.Vector3(2, 10, 0), 1.0, 0.2, false);
+            const wrist = new PhysicsParticle(new THREE.Vector3(3, 10, -0.5), 0.5, 0.15, false);
+            const c = new PhysicsAngularConstraint(shoulder, elbow, wrist, RagdollConfig.joints.elbow);
+            for (let i = 0; i < 20; i++) c.resolve();
+            const angle = c.getCurrentAngle();
+            return !isNaN(angle) && angle <= Math.PI + 0.1;
+        }
+        
+        function testSlopeCollision() {
+            const testPhysics = new RagdollPhysics();
+            testPhysics.setTerrain(terrains.steep);
+            const p = testPhysics.addParticle(new THREE.Vector3(0, 1.5, 2), 1.0, 0.2, false);
+            testPhysics.resolveCollisions();
+            const groundY = terrains.steep.getHeightAt(0, p.position.z);
+            return p.position.y >= groundY + p.radius - 0.1;
+        }
+        
+        function testNoNaN() {
+            const testPhysics = new RagdollPhysics();
+            for (let i = 0; i < 5; i++) {
+                const p = testPhysics.addParticle(
+                    new THREE.Vector3(Math.random() * 10, 10 + Math.random() * 5, Math.random() * 10),
+                    1.0, 0.3, false
+                );
+                p.addForce(new THREE.Vector3(Math.random() * 1000 - 500, Math.random() * 500, Math.random() * 1000 - 500));
+            }
+            for (let i = 0; i < 100; i++) testPhysics.update(1/60);
+            for (const p of testPhysics.particles) {
+                if (isNaN(p.position.x) || isNaN(p.position.y) || isNaN(p.position.z)) return false;
+            }
+            return true;
+        }
+        
+        // ==================== KEYBOARD CONTROLS ====================
+        
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                dropRagdoll();
+                e.preventDefault();
+            } else if (e.code === 'KeyR') {
+                resetRagdoll();
+            }
+        });
+        
+        // ==================== RESIZE ====================
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+    </script>
+</body>
+</html>
