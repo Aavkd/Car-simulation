@@ -12,7 +12,7 @@ export const RagdollConfig = {
         gravity: new THREE.Vector3(0, -40, 0),
         friction: 0.98,
         groundFriction: 0.6,
-        solverIterations: 10,
+        solverIterations: 20,  // Increased from 10 for better constraint stability
 
         // Mass Configuration
         mass: {

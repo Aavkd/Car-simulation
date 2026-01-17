@@ -83,22 +83,25 @@ export class PhysicsConstraint {
         if (distance === 0) return; // Prevent division by zero
 
         // Difference factor: (current - rest) / current
-        // We simply want to move them towards rest distance
         const difference = (distance - this.restDistance) / distance;
 
-        // Apply stiffness
-        const scalar = difference * 0.5 * this.stiffness;
-        const correction = delta.multiplyScalar(scalar);
+        // Inverse mass weighting - lighter particles move more
+        const invMassA = this.particleA.isPinned ? 0 : 1 / this.particleA.mass;
+        const invMassB = this.particleB.isPinned ? 0 : 1 / this.particleB.mass;
+        const totalInvMass = invMassA + invMassB;
 
-        // Apply correction respecting mass (heavier moves less)
-        // For now, simpler equal split, or inverse mass weighting could be added.
-        // Let's stick to equal split unless one is pinned.
+        if (totalInvMass === 0) return; // Both pinned
 
+        const scalar = difference * this.stiffness;
+
+        // Weight correction by inverse mass (lighter moves more)
         if (!this.particleA.isPinned) {
-            this.particleA.position.sub(correction);
+            const ratioA = invMassA / totalInvMass;
+            this.particleA.position.sub(delta.clone().multiplyScalar(scalar * ratioA));
         }
         if (!this.particleB.isPinned) {
-            this.particleB.position.add(correction);
+            const ratioB = invMassB / totalInvMass;
+            this.particleB.position.add(delta.clone().multiplyScalar(scalar * ratioB));
         }
     }
 }
@@ -110,10 +113,16 @@ export class RagdollPhysics {
     constructor() {
         this.particles = [];
         this.constraints = [];
+        this.angularConstraints = []; // For Phase 2 angular constraints
         this.gravity = RagdollConfig.physics.gravity;
         this.friction = RagdollConfig.physics.friction;
         this.groundFriction = RagdollConfig.physics.groundFriction;
         this.solverIterations = RagdollConfig.physics.solverIterations;
+
+        // Fixed timestep sub-stepping
+        this.accumulator = 0;
+        this.fixedDeltaTime = 1 / 60; // 60 Hz physics
+        this.maxSubSteps = 8; // Prevent spiral of death
     }
 
     addParticle(position, mass, radius, isPinned) {
@@ -129,6 +138,22 @@ export class RagdollPhysics {
     }
 
     update(dt) {
+        // Fixed timestep sub-stepping for stability
+        this.accumulator += dt;
+        let steps = 0;
+
+        while (this.accumulator >= this.fixedDeltaTime && steps < this.maxSubSteps) {
+            this._step(this.fixedDeltaTime);
+            this.accumulator -= this.fixedDeltaTime;
+            steps++;
+        }
+    }
+
+    /**
+     * Internal physics step at fixed timestep
+     * @param {number} dt - Fixed delta time
+     */
+    _step(dt) {
         // 1. Update Particles (Integration)
         for (const particle of this.particles) {
             particle.update(dt, this.friction, this.gravity);
@@ -136,9 +161,14 @@ export class RagdollPhysics {
 
         // 2. Solve Constraints (Iterative)
         for (let i = 0; i < this.solverIterations; i++) {
-            // Distance constraints
+            // Distance constraints first
             for (const constraint of this.constraints) {
                 constraint.resolve();
+            }
+
+            // Angular constraints (joint limits) - Phase 2
+            for (const angular of this.angularConstraints) {
+                angular.resolve();
             }
 
             // Environment collisions (Ground)
@@ -147,6 +177,9 @@ export class RagdollPhysics {
             // Self collisions (Limb vs Limb)
             this.resolveSelfCollisions();
         }
+
+        // 3. Final collision pass (prevents residual penetration)
+        this.resolveCollisions();
     }
 
     resolveSelfCollisions() {
@@ -162,12 +195,6 @@ export class RagdollPhysics {
                 const pB = this.particles[j];
 
                 // Skip if connected by constraint (optimization + stability)
-                // We'll need a fast way to check this. 
-                // A crude way is to check the constraints list, but that turns this into O(N^3) or O(N^2 * C).
-                // Better to just push them apart unless they are neighbors.
-                // Actually, neighbors SHOULD overlap slightly at joints. pushing them apart breaks the joint.
-                // So we MUST skip neighbors.
-
                 if (this.areConnected(pA, pB)) continue;
 
                 const delta = new THREE.Vector3().subVectors(pA.position, pB.position);
@@ -178,15 +205,24 @@ export class RagdollPhysics {
                     const dist = Math.sqrt(distSq);
                     const overlap = minDist - dist;
 
-                    // Push apart
-                    // Increased correction to 0.8 to firmly prevent overlap (was 0.2)
-                    const correction = delta.normalize().multiplyScalar(overlap * 0.8);
+                    // Inverse mass weighting - lighter particles move more
+                    const invMassA = pA.isPinned ? 0 : 1 / pA.mass;
+                    const invMassB = pB.isPinned ? 0 : 1 / pB.mass;
+                    const totalInvMass = invMassA + invMassB;
 
-                    // Weight by inverse mass? For now, equal split.
-                    if (!pA.isPinned) pA.position.add(correction);
-                    if (!pB.isPinned) pB.position.sub(correction);
+                    if (totalInvMass === 0) continue; // Both pinned
 
-                    // Friction/Damping could go here
+                    const normal = delta.normalize();
+
+                    // Push apart weighted by inverse mass
+                    if (!pA.isPinned) {
+                        const ratioA = invMassA / totalInvMass;
+                        pA.position.add(normal.clone().multiplyScalar(overlap * ratioA));
+                    }
+                    if (!pB.isPinned) {
+                        const ratioB = invMassB / totalInvMass;
+                        pB.position.sub(normal.clone().multiplyScalar(overlap * ratioB));
+                    }
                 }
             }
         }
@@ -227,18 +263,16 @@ export class RagdollPhysics {
 
             // Ground collision
             if (particle.position.y < groundY + particle.radius) {
-                const depth = (groundY + particle.radius) - particle.position.y;
+                // FIX: Correct BOTH positions to zero vertical velocity
+                // This prevents particles from tunneling back through the ground
+                particle.position.y = groundY + particle.radius;
+                particle.previousPosition.y = particle.position.y; // Zero out Y velocity
 
-                // Project out of ground
-                particle.position.y += depth;
-
-                // Apply ground friction (simple impulse based friction)
-                // Estimate velocity from position change
+                // Apply ground friction to horizontal velocity only
                 const velocityX = particle.position.x - particle.previousPosition.x;
                 const velocityZ = particle.position.z - particle.previousPosition.z;
-
-                particle.previousPosition.x += velocityX * (1 - this.groundFriction);
-                particle.previousPosition.z += velocityZ * (1 - this.groundFriction);
+                particle.previousPosition.x = particle.position.x - velocityX * this.groundFriction;
+                particle.previousPosition.z = particle.position.z - velocityZ * this.groundFriction;
             }
         }
     }
