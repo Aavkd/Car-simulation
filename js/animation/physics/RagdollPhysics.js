@@ -281,5 +281,6 @@ export class RagdollPhysics {
     clear() {
         this.particles = [];
         this.constraints = [];
+        this.angularConstraints = [];
     }
 }

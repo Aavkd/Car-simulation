@@ -129,5 +129,96 @@ export const RagdollConfig = {
         showSupportBase: false,           // Show support polygon
         showForces: false,                // Show impact forces
         logStateChanges: true,            // Log state transitions
+    },
+
+    // ==================== JOINT LIMITS ====================
+    // Anatomical swing-twist limits per joint type
+    // 
+    // swingMin/swingMax: Define the bend range
+    //   - For hinge joints: 0 = straight, positive = flexed
+    //   - For ball joints: Cone angle from parent axis
+    // 
+    // type: 'ball' (shoulder/hip), 'hinge' (elbow/knee), or 'saddle' (wrist/ankle)
+    // stiffness: How strongly the constraint is enforced (0-1)
+    joints: {
+        // Spine joints - limited flexion/extension, moderate twist
+        spine: {
+            type: 'ball',
+            swingMin: -Math.PI / 6,      // -30° (back extension)
+            swingMax: Math.PI / 4,        // +45° (forward flexion)
+            twistMin: -Math.PI / 6,
+            twistMax: Math.PI / 6,
+            stiffness: 0.9
+        },
+        
+        // Neck - more mobile than spine
+        neck: {
+            type: 'ball',
+            swingMin: -Math.PI / 4,       // -45°
+            swingMax: Math.PI / 3,        // +60°
+            twistMin: -Math.PI / 3,
+            twistMax: Math.PI / 3,
+            stiffness: 0.8
+        },
+        
+        // Shoulder - high mobility ball joint
+        shoulder: {
+            type: 'ball',
+            swingMin: -Math.PI / 2,       // -90° (arm behind)
+            swingMax: Math.PI * 0.8,      // +144° (arm overhead)
+            twistMin: -Math.PI / 2,       // Internal rotation
+            twistMax: Math.PI / 2,        // External rotation
+            stiffness: 0.7
+        },
+        
+        // Elbow - hinge joint, no hyperextension
+        elbow: {
+            type: 'hinge',
+            swingMin: 0,                  // No hyperextension (straight arm)
+            swingMax: Math.PI * 0.85,     // ~150° flexion
+            twistMin: 0,
+            twistMax: 0,
+            stiffness: 0.95
+        },
+        
+        // Wrist - limited ball joint
+        wrist: {
+            type: 'ball',
+            swingMin: -Math.PI / 4,
+            swingMax: Math.PI / 3,
+            twistMin: -Math.PI / 2,       // Pronation
+            twistMax: Math.PI / 2,        // Supination
+            stiffness: 0.8
+        },
+        
+        // Hip - ball joint with anatomical limits
+        hip: {
+            type: 'ball',
+            swingMin: -Math.PI / 6,       // -30° extension (leg back)
+            swingMax: Math.PI * 0.6,      // +108° flexion (leg forward)
+            twistMin: -Math.PI / 4,       // Internal rotation
+            twistMax: Math.PI / 3,        // External rotation
+            stiffness: 0.85
+        },
+        
+        // Knee - hinge joint, slight hyperextension allowed
+        knee: {
+            type: 'hinge',
+            swingMin: -Math.PI / 36,      // -5° slight hyperextension
+            swingMax: Math.PI * 0.8,      // ~144° flexion
+            twistMin: 0,
+            twistMax: 0,
+            stiffness: 0.95
+        },
+        
+        // Ankle - limited ball joint
+        ankle: {
+            type: 'ball',
+            swingMin: -Math.PI / 6,       // Plantarflexion
+            swingMax: Math.PI / 4,        // Dorsiflexion
+            twistMin: -Math.PI / 6,
+            twistMax: Math.PI / 6,
+            stiffness: 0.8
+        }
     }
 };

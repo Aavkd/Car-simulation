@@ -429,9 +429,9 @@ export class AnimatorEditorController {
                 const gp = this.game.input.gamepad;
                 // Use lookX and lookY (Right Stick)
                 // Multiplier 20.0 matches Game.js gameplay camera speed
-            if (gp.lookX !== 0 || gp.lookY !== 0) {
-                this.game.cameraController.handleAnalogInput(gp.lookX, gp.lookY, 15.0);
-            }
+                if (gp.lookX !== 0 || gp.lookY !== 0) {
+                    this.game.cameraController.handleAnalogInput(gp.lookX, gp.lookY, 15.0);
+                }
             }
 
             // Update Orbit Position
@@ -507,8 +507,9 @@ export class AnimatorEditorController {
             return;
         }
 
-        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        const rect = this.game.renderer.domElement.getBoundingClientRect();
+        this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
         this.raycaster.setFromCamera(this.mouse, this.game.camera);
 

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RagdollPhysics } from './RagdollPhysics.js';
 import { SkeletonRegistry } from './SkeletonRegistry.js';
 import { RagdollConfig } from './RagdollConfig.js';
+import { PhysicsAngularConstraint } from './PhysicsAngularConstraint.js';
 
 export class ActiveRagdollController {
     constructor(mesh, terrain = null) {
@@ -97,6 +98,56 @@ export class ActiveRagdollController {
         this._link('hips', 'rightUpLeg');
         this._link('rightUpLeg', 'rightLeg');
         this._link('rightLeg', 'rightFoot');
+
+        // 3. Create Angular Constraints (Joint Limits)
+        this._createAngularConstraints();
+    }
+
+    /**
+     * Create angular constraints for anatomical joint limits
+     * These prevent hyperextension and unnatural poses
+     */
+    _createAngularConstraints() {
+        const cfg = RagdollConfig.joints;
+        
+        // Helper to get particle by bone name
+        const p = (name) => {
+            const item = this.boneParticles.get(name);
+            return item ? item.particle : null;
+        };
+        
+        // Spine chain: hips → spine → spine1 → spine2 → head
+        this._addAngular(p('hips'), p('spine'), p('spine1'), cfg.spine);
+        this._addAngular(p('spine'), p('spine1'), p('spine2'), cfg.spine);
+        this._addAngular(p('spine1'), p('spine2'), p('head'), cfg.neck);
+        
+        // Left Arm: spine2 → leftArm → leftForearm → leftHand
+        this._addAngular(p('spine2'), p('leftArm'), p('leftForearm'), cfg.shoulder);
+        this._addAngular(p('leftArm'), p('leftForearm'), p('leftHand'), cfg.elbow);
+        
+        // Right Arm: spine2 → rightArm → rightForearm → rightHand
+        this._addAngular(p('spine2'), p('rightArm'), p('rightForearm'), cfg.shoulder);
+        this._addAngular(p('rightArm'), p('rightForearm'), p('rightHand'), cfg.elbow);
+        
+        // Left Leg: hips → leftUpLeg → leftLeg → leftFoot
+        this._addAngular(p('hips'), p('leftUpLeg'), p('leftLeg'), cfg.hip);
+        this._addAngular(p('leftUpLeg'), p('leftLeg'), p('leftFoot'), cfg.knee);
+        
+        // Right Leg: hips → rightUpLeg → rightLeg → rightFoot
+        this._addAngular(p('hips'), p('rightUpLeg'), p('rightLeg'), cfg.hip);
+        this._addAngular(p('rightUpLeg'), p('rightLeg'), p('rightFoot'), cfg.knee);
+        
+        console.log(`[ActiveRagdollController] Created ${this.physics.angularConstraints.length} angular constraints`);
+    }
+
+    /**
+     * Add an angular constraint if all particles exist
+     */
+    _addAngular(parent, pivot, child, limits) {
+        if (parent && pivot && child) {
+            const constraint = new PhysicsAngularConstraint(parent, pivot, child, limits);
+            this.physics.angularConstraints.push(constraint);
+        }
     }
 
     _createParticle(boneType, mass, radius) {
