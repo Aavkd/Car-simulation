@@ -13,33 +13,48 @@
 ## Phase 1: Critical Core Fixes (Day 1, ~4 hours)
 
 ### 1.1 Fix Ground Penetration Velocity Bug
-File: js/animation/physics/RagdollPhysics.js
-Function: resolveCollisions()
-Lines: ~216-243
-Current Problem:
+
+**File:** `js/animation/physics/RagdollPhysics.js`  
+**Function:** `resolveCollisions()`  
+**Lines:** ~216-243
+**Current Problem:**
+```javascript
 // BUG: Only corrects position.y, leaving previousPosition with downward velocity
 particle.position.y += depth;
-Required Change:
+```
+
+**Required Change:**
+```javascript
 // Fix: Correct BOTH positions to zero vertical velocity
 particle.position.y = groundY + particle.radius;
 particle.previousPosition.y = particle.position.y; // Zero out Y velocity
+
 // Apply ground friction to horizontal velocity only
 const velocityX = particle.position.x - particle.previousPosition.x;
 const velocityZ = particle.position.z - particle.previousPosition.z;
 particle.previousPosition.x = particle.position.x - velocityX * this.groundFriction;
 particle.previousPosition.z = particle.position.z - velocityZ * this.groundFriction;
-Acceptance Test: Particle dropped from height should settle at groundY + radius without bouncing through.
+```
+
+**Acceptance Test:** Particle dropped from height should settle at `groundY + radius` without bouncing through.
+
 ---
-1.2 Implement Mass-Weighted Constraint Resolution
-File: js/animation/physics/RagdollPhysics.js
-Class: PhysicsConstraint
-Function: resolve()
-Lines: ~79-103
-Current Problem:
+
+### 1.2 Implement Mass-Weighted Constraint Resolution
+
+**File:** `js/animation/physics/RagdollPhysics.js`  
+**Class:** `PhysicsConstraint`  
+**Function:** `resolve()`  
+**Lines:** ~79-103
+**Current Problem:**
+```javascript
 // Equal split regardless of mass
 this.particleA.position.sub(correction);
 this.particleB.position.add(correction);
-Required Change:
+```
+
+**Required Change:**
+```javascript
 resolve() {
     const delta = new THREE.Vector3().subVectors(this.particleA.position, this.particleB.position);
     const distance = delta.length();
@@ -65,13 +80,18 @@ resolve() {
         this.particleB.position.add(delta.clone().multiplyScalar(scalar * ratioB));
     }
 }
-Acceptance Test: Hips (15kg) should barely move when hand (0.5kg) is pulled.
+```
+
+**Acceptance Test:** Hips (15kg) should barely move when hand (0.5kg) is pulled.
+
 ---
-1.3 Implement Fixed Timestep Sub-stepping
-File: js/animation/physics/RagdollPhysics.js
-Class: RagdollPhysics
-Function: update(dt) → step(fixedDt) + update(dt)
-Lines: ~131-150
+
+### 1.3 Implement Fixed Timestep Sub-stepping
+
+**File:** `js/animation/physics/RagdollPhysics.js`  
+**Class:** `RagdollPhysics`  
+**Function:** `update(dt)` → `step(fixedDt)` + `update(dt)`  
+**Lines:** ~131-150
 Required Change:
 constructor() {
     // ... existing code ...
@@ -661,13 +681,59 @@ Add tests for:
 2. Mass-weighted constraints
 3. Angular constraint limits
 4. Sub-stepping stability
-4.2 Update Browser Test
-File: tests/ragdoll_phase1_test.html
+### 4.2 Update Browser Test
+**File:** `tests/ragdoll_phase1_test.html`
 Add visual tests for:
 1. Knee hyperextension prevention
 2. Elbow bend limits
 3. Spine flexibility
 4. Fall on sloped terrain
+
+---
+
+### Phase 4 Success Criteria
+
+| ID | Criterion | Test Method | Pass Condition |
+|----|-----------|-------------|----------------|
+| P4-SC1 | **Node.js Tests Pass** | Run `node tests/ragdoll_verify.mjs` | Exit code 0, all assertions pass |
+| P4-SC2 | **Browser Tests Pass** | Open `tests/ragdoll_phase1_test.html` | All test indicators show green/PASS |
+| P4-SC3 | **No Console Errors** | Enable ragdoll in browser, check console | Zero errors, warnings acceptable |
+| P4-SC4 | **Performance Target** | Enable ragdoll, measure FPS | Maintains > 55 FPS with single ragdoll active |
+| P4-SC5 | **Multi-Ragdoll Performance** | Spawn 5 ragdolls simultaneously | Maintains > 45 FPS |
+| P4-SC6 | **Test Coverage** | Count test assertions | Minimum 15 test cases across all files |
+
+**Integration Validation:**
+- [ ] `node tests/ragdoll_verify.mjs` exits with code 0
+- [ ] `tests/ragdoll_phase1_test.html` shows all green
+- [ ] `tests/ragdoll_phase2_test.html` shows all green  
+- [ ] In-game: Player can trigger ragdoll via impact and settles naturally
+- [ ] In-game: NPC ragdolls work identically to player
+
+---
+
+## Overall Project Success Criteria
+
+### Minimum Viable (Must Pass)
+| Criterion | Description |
+|-----------|-------------|
+| **No Ground Clipping** | Limbs never go below terrain surface |
+| **No Self-Intersection** | Limbs never pass through each other |
+| **Anatomical Poses** | Joints stay within human range of motion |
+| **Stable Settling** | Ragdoll comes to rest without jitter |
+
+### Target (Should Pass)  
+| Criterion | Description |
+|-----------|-------------|
+| **Slope Handling** | Works correctly on non-flat terrain |
+| **Performance** | > 55 FPS with active ragdoll |
+| **Mass Realism** | Heavy parts move less than light parts |
+
+### Stretch (Nice to Have)
+| Criterion | Description |
+|-----------|-------------|
+| **Multi-Ragdoll** | 5+ simultaneous ragdolls at > 45 FPS |
+| **Zero Warnings** | No console warnings during normal use |
+
 ---
 Summary: Files Changed
 | File | Action | Changes |
@@ -704,4 +770,28 @@ Risk Assessment
 | Performance regression | Low | Neighbor cache + limited iterations |
 | Quaternion NaN propagation | Low | Fallback to cached/computed stable axes |
 | Joint limits conflict with distance constraints | Medium | Process distance before angular in solver |
+
 ---
+
+## Quick Reference Checklist
+
+### Before Starting Implementation
+- [ ] Read through all phases and understand dependencies
+- [ ] Verify access to all files listed in "Files Changed" table
+- [ ] Run existing tests to establish baseline: `node tests/ragdoll_verify.mjs`
+
+### After Each Phase
+- [ ] **Phase 1 Complete:** Run ground penetration test, verify no tunneling
+- [ ] **Phase 2 Complete:** Check knee/elbow limits visually in browser
+- [ ] **Phase 3 Complete:** Test on sloped terrain, verify no NaN errors
+- [ ] **Phase 4 Complete:** All automated tests pass
+
+### Final Sign-Off
+- [ ] All Phase Success Criteria tables have passing entries
+- [ ] Visual validation checkboxes all checked
+- [ ] Performance benchmarks met (> 55 FPS)
+- [ ] No console errors in production use
+
+---
+
+
