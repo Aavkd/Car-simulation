@@ -60,7 +60,8 @@ export const LevelData = {
             seed: 123,
             blockSize: 120,
             roadWidth: 22,
-            sidewalkHeight: 0.2
+            sidewalkHeight: 0.2,
+            size: 40000
         }
     },
     everest: {

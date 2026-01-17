@@ -4,7 +4,7 @@ import { SurfaceTypes } from '../physics/physics-provider.js';
 /**
  * Perlin Noise implementation for terrain generation
  */
-class PerlinNoise {
+export class PerlinNoise {
     constructor(seed = Math.random() * 10000) {
         this.permutation = this._generatePermutation(seed);
     }

@@ -1063,8 +1063,8 @@ class Game {
                     this.wind.configure({
                         windSpeed: 30,
                         fogColor: 0x888888,
-                        fogOpacity: 0.15, // Reduced from 0.4
-                        enabled: true
+                        fogOpacity: 0.0, // Reduced from 0.4
+                        enabled: false
                     });
                     break;
                 case 'icemountain':
@@ -1221,13 +1221,22 @@ class Game {
                 this.bloomPass.strength = 0.0;
             }
 
-            this.scene.fog.near = 300;
-            this.scene.fog.far = 2000;
+            if (levelConfig.type === 'city') {
+                this.scene.fog.near = 1000;
+                this.scene.fog.far = 30000;
+                if (this.camera.far !== 45000) {
+                    this.camera.far = 45000;
+                    this.camera.updateProjectionMatrix();
+                }
+            } else {
+                this.scene.fog.near = 300;
+                this.scene.fog.far = 2000;
 
-            // Reset camera for standard levels
-            if (this.camera.far !== 6000) {
-                this.camera.far = 6000;
-                this.camera.updateProjectionMatrix();
+                // Reset camera for standard levels
+                if (this.camera.far !== 6000) {
+                    this.camera.far = 6000;
+                    this.camera.updateProjectionMatrix();
+                }
             }
         }
 
@@ -1279,7 +1288,7 @@ class Game {
             const gridStep = blockSize + roadWidth;
             // Half step is center of road between block 0 and 1
             const spawnX = gridStep / 2;
-            
+
             console.log(`[Game] City Level: Spawning at safe road position X=${spawnX}`);
             this.car.position.set(spawnX, 2, 0);
             this.car.physics.position.copy(this.car.position);
