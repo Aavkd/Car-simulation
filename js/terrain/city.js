@@ -38,6 +38,11 @@ export class CityGenerator {
 
         // Cache
         this._districtCache = new Map();
+
+        // Lighting System
+        this.allLights = []; // Stores {x,y,z} of all placed lights
+        this.lightPool = [];
+        this.lightPoolSize = 20; // Number of active dynamic lights
     }
 
     rand(n) {
@@ -518,6 +523,13 @@ export class CityGenerator {
             const bulbWorld = bulbPosVector.clone().applyMatrix4(dummy.matrix);
             glowPositions.push(bulbWorld.x, bulbWorld.y, bulbWorld.z);
 
+            // Store for dynamic lighting system
+            this.allLights.push({
+                x: bulbWorld.x,
+                y: bulbWorld.y,
+                z: bulbWorld.z
+            });
+
             lightIdx++;
         };
 
@@ -643,6 +655,21 @@ export class CityGenerator {
         });
         this.glowPoints = new THREE.Points(glowGeometry, this.glowMat);
         this.mesh.add(this.glowPoints);
+
+        // --- 6. Initialize Light Pool ---
+        const poolGroup = new THREE.Group();
+        // Use a warmer, more realistic sodium vapor color
+        const lightColor = 0xff9933; 
+        
+        for (let i = 0; i < this.lightPoolSize; i++) {
+            // Intensity: 1.5, Distance: ~100 units, Decay: 1.5
+            const light = new THREE.PointLight(lightColor, 2.5, 60 * this.scale, 1.5);
+            light.visible = false;
+            // light.castShadow = true; // Too expensive for many lights
+            this.lightPool.push(light);
+            poolGroup.add(light);
+        }
+        this.mesh.add(poolGroup);
 
         return this.mesh;
     }
@@ -883,14 +910,60 @@ export class CityGenerator {
     update(playerPos, sky, deltaTime) {
         if (this.bulbMat && sky) {
             const isNight = sky.isNight ? sky.isNight() : false;
-            // Smoothly toggle light color/intensity? 
-            // For now, toggle: Day = Black, Night = Orange
+
+            // 1. Material Updates
             if (isNight) {
                 this.bulbMat.color.setHex(0xffaa00);
-                if (this.glowMat) this.glowMat.opacity = 0.5;
+                if (this.glowMat) this.glowMat.opacity = 0.8;
             } else {
                 this.bulbMat.color.setHex(0x111111); // Dark grey (off)
                 if (this.glowMat) this.glowMat.opacity = 0;
+            }
+
+            // 2. Dynamic Light Pooling
+            if (isNight && playerPos && this.allLights.length > 0) {
+                const px = playerPos.x;
+                const pz = playerPos.z;
+                const range = 250 * this.scale; // Check lights within range
+                const rangeSq = range * range;
+
+                // Simple distance filter
+                const candidates = [];
+                // Only check every Nth light or full check? 
+                // Full check of ~2000 items is fast (approx 0.1ms).
+                for (let i = 0; i < this.allLights.length; i++) {
+                    const l = this.allLights[i];
+                    const dx = l.x - px;
+                    const dz = l.z - pz;
+                    if (Math.abs(dx) > range || Math.abs(dz) > range) continue;
+
+                    const distSq = dx * dx + dz * dz;
+                    if (distSq < rangeSq) {
+                        candidates.push({ light: l, distSq: distSq });
+                    }
+                }
+
+                // Sort by distance to find closest
+                candidates.sort((a, b) => a.distSq - b.distSq);
+
+                // Assign pool lights to closest candidates
+                const activeCount = Math.min(candidates.length, this.lightPoolSize);
+                
+                for (let i = 0; i < this.lightPoolSize; i++) {
+                    const poolLight = this.lightPool[i];
+                    if (i < activeCount) {
+                        const target = candidates[i].light;
+                        poolLight.position.set(target.x, target.y, target.z);
+                        poolLight.visible = true;
+                    } else {
+                        poolLight.visible = false;
+                    }
+                }
+            } else {
+                // Day time or no player: Hide all lights
+                for (let i = 0; i < this.lightPoolSize; i++) {
+                    this.lightPool[i].visible = false;
+                }
             }
         }
     }
