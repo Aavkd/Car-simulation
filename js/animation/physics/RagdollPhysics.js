@@ -123,6 +123,9 @@ export class RagdollPhysics {
         this.accumulator = 0;
         this.fixedDeltaTime = 1 / 60; // 60 Hz physics
         this.maxSubSteps = 8; // Prevent spiral of death
+        
+        // Phase 3: Neighbor cache for O(1) areConnected() lookups
+        this._neighborCache = new Map(); // particle -> Set of connected particles
     }
 
     addParticle(position, mass, radius, isPinned) {
@@ -134,6 +137,17 @@ export class RagdollPhysics {
     addConstraint(particleA, particleB, stiffness) {
         const constraint = new PhysicsConstraint(particleA, particleB, stiffness);
         this.constraints.push(constraint);
+        
+        // Phase 3: Update neighbor cache for O(1) lookups
+        if (!this._neighborCache.has(particleA)) {
+            this._neighborCache.set(particleA, new Set());
+        }
+        if (!this._neighborCache.has(particleB)) {
+            this._neighborCache.set(particleB, new Set());
+        }
+        this._neighborCache.get(particleA).add(particleB);
+        this._neighborCache.get(particleB).add(particleA);
+        
         return constraint;
     }
 
@@ -228,21 +242,10 @@ export class RagdollPhysics {
         }
     }
 
-    // Helper to check connections. 
-    // Ideally we cache this or store neighbors on particles.
-    // Given the small scale, iterating constraints is "okay" but caching is better.
-    // Let's cache it on the particle itself during setup? 
-    // Since we don't change constraints often, that's best.
-    // But modification of existing classes is risky without full refactor.
-    // Let's simple check constraints for now.
+    // Phase 3: O(1) lookup using neighbor cache
     areConnected(pA, pB) {
-        for (const c of this.constraints) {
-            if ((c.particleA === pA && c.particleB === pB) ||
-                (c.particleA === pB && c.particleB === pA)) {
-                return true;
-            }
-        }
-        return false;
+        const neighbors = this._neighborCache.get(pA);
+        return neighbors ? neighbors.has(pB) : false;
     }
 
     setTerrain(terrain) {
@@ -252,27 +255,69 @@ export class RagdollPhysics {
     resolveCollisions() {
         // Default ground at Y=0
         const defaultGroundY = 0;
+        // Reusable vectors to avoid GC pressure
+        const groundNormal = new THREE.Vector3();
+        const surfacePoint = new THREE.Vector3();
+        const toParticle = new THREE.Vector3();
+        const velocity = new THREE.Vector3();
+        const tangentVelocity = new THREE.Vector3();
 
         for (const particle of this.particles) {
             let groundY = defaultGroundY;
+            groundNormal.set(0, 1, 0); // Default up
 
-            // If terrain is available, get exact height at particle position
+            // If terrain is available, get exact height and normal at particle position
             if (this.terrain) {
                 groundY = this.terrain.getHeightAt(particle.position.x, particle.position.z);
+                
+                // Get terrain normal if available (Phase 3 - slope handling)
+                if (typeof this.terrain.getNormalAt === 'function') {
+                    const normal = this.terrain.getNormalAt(
+                        particle.position.x, 
+                        particle.position.z
+                    );
+                    if (normal) {
+                        groundNormal.copy(normal);
+                    }
+                }
             }
 
-            // Ground collision
-            if (particle.position.y < groundY + particle.radius) {
-                // FIX: Correct BOTH positions to zero vertical velocity
-                // This prevents particles from tunneling back through the ground
-                particle.position.y = groundY + particle.radius;
-                particle.previousPosition.y = particle.position.y; // Zero out Y velocity
+            // Calculate penetration along terrain normal
+            surfacePoint.set(
+                particle.position.x,
+                groundY,
+                particle.position.z
+            );
+            toParticle.subVectors(particle.position, surfacePoint);
+            const signedDistance = toParticle.dot(groundNormal);
 
-                // Apply ground friction to horizontal velocity only
-                const velocityX = particle.position.x - particle.previousPosition.x;
-                const velocityZ = particle.position.z - particle.previousPosition.z;
-                particle.previousPosition.x = particle.position.x - velocityX * this.groundFriction;
-                particle.previousPosition.z = particle.position.z - velocityZ * this.groundFriction;
+            // Ground collision - using signed distance along normal
+            if (signedDistance < particle.radius) {
+                const penetration = particle.radius - signedDistance;
+
+                // Project out along normal (works for both flat and sloped terrain)
+                particle.position.add(
+                    groundNormal.clone().multiplyScalar(penetration)
+                );
+
+                // Calculate velocity and zero component in normal direction
+                velocity.subVectors(particle.position, particle.previousPosition);
+                const normalVelocity = velocity.dot(groundNormal);
+
+                if (normalVelocity < 0) {
+                    // Moving into ground - remove that velocity component
+                    particle.previousPosition.add(
+                        groundNormal.clone().multiplyScalar(normalVelocity)
+                    );
+                }
+
+                // Apply friction to tangential velocity only
+                tangentVelocity.copy(velocity).sub(
+                    groundNormal.clone().multiplyScalar(velocity.dot(groundNormal))
+                );
+                particle.previousPosition.add(
+                    tangentVelocity.multiplyScalar(1 - this.groundFriction)
+                );
             }
         }
     }
@@ -282,5 +327,6 @@ export class RagdollPhysics {
         this.particles = [];
         this.constraints = [];
         this.angularConstraints = [];
+        this._neighborCache.clear();
     }
 }

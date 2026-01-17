@@ -18,6 +18,9 @@ export class ActiveRagdollController {
 
         // State
         this.isRagdoll = false;
+        
+        // Phase 3: Cache for stable hinge axes (prevents NaN and flipping)
+        this._lastHingeAxes = new Map();
 
         // UI Compatibility State Object
         this.state = {
@@ -376,10 +379,30 @@ export class ActiveRagdollController {
                 // For a leg: (Hip->Knee) x (Knee->Ankle).
                 // If leg bends back, this points Left (or Right depending on system).
                 // Mixamo Rig: +X is usually the hinge axis for knees.
-                const hingeAxis = new THREE.Vector3().crossVectors(primaryAxis, secondaryVec).normalize();
+                let hingeAxis = new THREE.Vector3().crossVectors(primaryAxis, secondaryVec);
 
-                // If hinge axis is valid (not straight line)
-                if (hingeAxis.lengthSq() > 0.001) {
+                // Phase 3 FIX: Handle degenerate case (straight limb)
+                if (hingeAxis.lengthSq() < 0.001) {
+                    // Use cached axis or compute perpendicular
+                    const cached = this._lastHingeAxes.get(boneName);
+                    if (cached) {
+                        hingeAxis.copy(cached);
+                    } else {
+                        // Generate stable perpendicular axis
+                        hingeAxis.set(1, 0, 0);
+                        if (Math.abs(primaryAxis.x) > 0.9) {
+                            hingeAxis.set(0, 0, 1);
+                        }
+                        hingeAxis.crossVectors(hingeAxis, primaryAxis).normalize();
+                    }
+                } else {
+                    hingeAxis.normalize();
+                    // Cache for next frame
+                    this._lastHingeAxes.set(boneName, hingeAxis.clone());
+                }
+
+                // If hinge axis is valid (not degenerate), construct rotation matrix
+                if (hingeAxis.lengthSq() > 0.0001) {
                     // Construct Basis:
                     // Y = Primary
                     // X = Hinge (Right)
